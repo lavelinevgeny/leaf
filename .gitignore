@@ -1,0 +1,60 @@
+# Dependencies/builds
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.vite/
+*.tsbuildinfo
+# Runtime/private data; never force-add these
+.env
+.env.*
+!.env.example
+.data/
+data/
+secrets/
+.private/
+.local/
+backups/
+exports/
+uploads/
+logs/
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+*.p12
+*.pfx
+*.har
+# Browser/test artifacts are private by default
+playwright-report/
+test-results/
+artifacts/
+screenshots/
+blob-report/
+# Local AI credentials, settings and sessions
+.codex/
+.claude/*
+!.claude/settings.json
+CLAUDE.local.md
+AGENTS.local.md
+AGENTS.override.md
+.mcp.json
+# Developer-only tools; no binaries in the repo
+.tools/
+.worktrees/
+worktrees/
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+# Scanner reports may contain sensitive paths or values
+*gitleaks-report*
+*secret-scan-report*

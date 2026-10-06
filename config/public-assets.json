@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "note": "New binary assets require human privacy review and a new exact SHA-256 entry. Never add a directory-wide exemption.",
+  "assets": [
+    {
+      "path": "design/references/01-main-screen.png",
+      "sha256": "9f508c2069a9d7fcd41250d7515c8ad005011e0891feff026f37fc270697665f",
+      "review": "Selected generated UI concept; illustrative identities removed where present; no production data."
+    },
+    {
+      "path": "design/references/02-task-panel.png",
+      "sha256": "3f8ccdefdb0055161f5d85b2fdd4e89f09c7dbc648a9bc9c552c09faf52ea57d",
+      "review": "Selected generated UI concept; illustrative identities removed where present; no production data."
+    },
+    {
+      "path": "design/references/03-dependencies.png",
+      "sha256": "3dc66d31f059e0940e58f151a3153b9c2f223ba5bad8f69ad00232aff28ed86f",
+      "review": "Selected generated UI concept; illustrative identities removed where present; no production data."
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+name: Kit and repository safety
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: kit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  kit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Node for kit checks
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Validate kit
+        run: npm run check:kit
+      - name: Test repository guard
+        run: npm run test:kit
+      - name: Check tracked content and reachable history
+        run: |
+          node scripts/security-check.mjs --tracked
+          node scripts/security-check.mjs --history
+      - name: Install pinned Gitleaks source release
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          go version
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Scan history with redaction
+        run: node scripts/run-gitleaks.mjs --history
+# This validates the starter kit, NOT the future application.
+# S0 must add real typecheck/lint/unit/integration/build jobs; S3 adds E2E.
+# No deployments, registry pushes, secrets or pull_request_target execution.

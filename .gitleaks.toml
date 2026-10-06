@@ -1,0 +1,6 @@
+title = "leaf public repository"
+
+[extend]
+useDefault = true
+
+# No blanket allowlist for docs, tests, fixtures, or generated code.

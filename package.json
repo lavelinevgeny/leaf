@@ -1,0 +1,19 @@
+{
+  "name": "leaf",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "leaf repository starter kit; application implementation pending",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check:kit": "node scripts/check-kit.mjs",
+    "test:kit": "node --test scripts/security.test.mjs",
+    "security:workspace": "node scripts/security-check.mjs --workspace",
+    "security:staged": "node scripts/security-check.mjs --staged && node scripts/run-gitleaks.mjs --staged",
+    "security:history": "node scripts/security-check.mjs --tracked && node scripts/security-check.mjs --history && node scripts/run-gitleaks.mjs --history",
+    "hooks:install": "node scripts/install-hooks.mjs"
+  }
+}

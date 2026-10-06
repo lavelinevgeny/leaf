@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+node scripts/security-check.mjs --staged
+node scripts/run-gitleaks.mjs --staged

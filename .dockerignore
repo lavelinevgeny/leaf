@@ -1,0 +1,30 @@
+# Default-deny build context. Extend deliberately with Dockerfile review.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!tsconfig*.json
+!vite.config.*
+!index.html
+!src/
+!src/**
+!migrations/
+!migrations/**
+!public/
+!public/**
+# Defense in depth, even under an allowed subtree
+**/.env
+**/.env.*
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/*.pem
+**/*.key
+**/secrets/**
+**/exports/**
+**/backups/**
+**/uploads/**
+**/logs/**
+**/.codex/**
+**/.claude/**
+**/*.log

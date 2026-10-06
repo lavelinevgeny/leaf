@@ -1,0 +1,37 @@
+{
+  "format": "leaf-kit-calendar-v1",
+  "cases": [
+    {
+      "id": "workweek-weekend",
+      "calendar": "weekdays",
+      "start": "2026-10-09",
+      "duration": 2,
+      "finishInclusive": "2026-10-12",
+      "nextFSStart": "2026-10-13"
+    },
+    {
+      "id": "all-days-weekend",
+      "calendar": "all-days",
+      "start": "2026-10-09",
+      "duration": 2,
+      "finishInclusive": "2026-10-10",
+      "nextFSStart": "2026-10-11"
+    },
+    {
+      "id": "year-boundary",
+      "calendar": "weekdays",
+      "start": "2026-12-31",
+      "duration": 2,
+      "finishInclusive": "2027-01-01",
+      "nextFSStart": "2027-01-04"
+    },
+    {
+      "id": "leap-day",
+      "calendar": "all-days",
+      "start": "2028-02-28",
+      "duration": 2,
+      "finishInclusive": "2028-02-29",
+      "nextFSStart": "2028-03-01"
+    }
+  ]
+}

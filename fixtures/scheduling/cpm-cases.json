@@ -1,0 +1,358 @@
+{
+  "format": "leaf-kit-cpm-v1",
+  "units": "integer working-day boundaries; finish exclusive",
+  "cases": [
+    {
+      "id": "one-day",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 1,
+          "predecessors": []
+        }
+      ],
+      "expected": {
+        "finish": 1,
+        "criticalTasks": [
+          "A"
+        ],
+        "criticalEdges": [],
+        "ES": {
+          "A": 0
+        },
+        "float": {
+          "A": 0
+        }
+      }
+    },
+    {
+      "id": "parallel-base",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 2,
+          "predecessors": []
+        },
+        {
+          "id": "B",
+          "duration": 5,
+          "predecessors": [
+            "A"
+          ]
+        },
+        {
+          "id": "C",
+          "duration": 3,
+          "predecessors": []
+        },
+        {
+          "id": "D",
+          "duration": 1,
+          "predecessors": [
+            "B",
+            "C"
+          ]
+        }
+      ],
+      "expected": {
+        "finish": 8,
+        "criticalTasks": [
+          "A",
+          "B",
+          "D"
+        ],
+        "criticalEdges": [
+          "A>B",
+          "B>D"
+        ],
+        "ES": {
+          "A": 0,
+          "B": 2,
+          "C": 0,
+          "D": 7
+        },
+        "float": {
+          "A": 0,
+          "B": 0,
+          "C": 4,
+          "D": 0
+        }
+      }
+    },
+    {
+      "id": "critical-switch",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 2,
+          "predecessors": []
+        },
+        {
+          "id": "B",
+          "duration": 5,
+          "predecessors": [
+            "A"
+          ]
+        },
+        {
+          "id": "C",
+          "duration": 9,
+          "predecessors": []
+        },
+        {
+          "id": "D",
+          "duration": 1,
+          "predecessors": [
+            "B",
+            "C"
+          ]
+        }
+      ],
+      "expected": {
+        "finish": 10,
+        "criticalTasks": [
+          "C",
+          "D"
+        ],
+        "criticalEdges": [
+          "C>D"
+        ],
+        "ES": {
+          "A": 0,
+          "B": 2,
+          "C": 0,
+          "D": 9
+        },
+        "float": {
+          "A": 2,
+          "B": 2,
+          "C": 0,
+          "D": 0
+        }
+      }
+    },
+    {
+      "id": "equal-paths",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 2,
+          "predecessors": []
+        },
+        {
+          "id": "B",
+          "duration": 5,
+          "predecessors": [
+            "A"
+          ]
+        },
+        {
+          "id": "C",
+          "duration": 7,
+          "predecessors": []
+        },
+        {
+          "id": "D",
+          "duration": 1,
+          "predecessors": [
+            "B",
+            "C"
+          ]
+        }
+      ],
+      "expected": {
+        "finish": 8,
+        "criticalTasks": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "criticalEdges": [
+          "A>B",
+          "B>D",
+          "C>D"
+        ],
+        "ES": {
+          "A": 0,
+          "B": 2,
+          "C": 0,
+          "D": 7
+        },
+        "float": {
+          "A": 0,
+          "B": 0,
+          "C": 0,
+          "D": 0
+        }
+      }
+    },
+    {
+      "id": "independent-components",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 2,
+          "predecessors": []
+        },
+        {
+          "id": "B",
+          "duration": 5,
+          "predecessors": []
+        }
+      ],
+      "expected": {
+        "finish": 5,
+        "criticalTasks": [
+          "B"
+        ],
+        "criticalEdges": [],
+        "ES": {
+          "A": 0,
+          "B": 0
+        },
+        "float": {
+          "A": 3,
+          "B": 0
+        }
+      }
+    },
+    {
+      "id": "not-before-gap",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 2,
+          "notBefore": 5,
+          "predecessors": []
+        },
+        {
+          "id": "B",
+          "duration": 1,
+          "predecessors": [
+            "A"
+          ]
+        }
+      ],
+      "expected": {
+        "finish": 8,
+        "criticalTasks": [
+          "A",
+          "B"
+        ],
+        "criticalEdges": [
+          "A>B"
+        ],
+        "ES": {
+          "A": 5,
+          "B": 7
+        },
+        "float": {
+          "A": 0,
+          "B": 0
+        }
+      }
+    },
+    {
+      "id": "fixed-not-critical",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 2,
+          "predecessors": []
+        },
+        {
+          "id": "B",
+          "duration": 1,
+          "fixedStart": 5,
+          "fixedFinish": 6,
+          "predecessors": [
+            "A"
+          ]
+        },
+        {
+          "id": "C",
+          "duration": 10,
+          "predecessors": []
+        }
+      ],
+      "expected": {
+        "finish": 10,
+        "criticalTasks": [
+          "C"
+        ],
+        "criticalEdges": [],
+        "ES": {
+          "A": 0,
+          "B": 5,
+          "C": 0
+        },
+        "float": {
+          "A": 7,
+          "B": 4,
+          "C": 0
+        },
+        "constraintFloat": {
+          "A": 3,
+          "B": 0,
+          "C": 0
+        }
+      }
+    },
+    {
+      "id": "fixed-conflict",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 7,
+          "predecessors": []
+        },
+        {
+          "id": "B",
+          "duration": 1,
+          "fixedStart": 5,
+          "fixedFinish": 6,
+          "predecessors": [
+            "A"
+          ]
+        }
+      ],
+      "expected": {
+        "error": "FIXED_PRECEDENCE_CONFLICT"
+      }
+    },
+    {
+      "id": "cycle",
+      "tasks": [
+        {
+          "id": "A",
+          "duration": 1,
+          "predecessors": [
+            "B"
+          ]
+        },
+        {
+          "id": "B",
+          "duration": 1,
+          "predecessors": [
+            "A"
+          ]
+        }
+      ],
+      "expected": {
+        "error": "DEPENDENCY_CYCLE"
+      }
+    },
+    {
+      "id": "empty",
+      "tasks": [],
+      "expected": {
+        "finish": null,
+        "criticalTasks": [],
+        "criticalEdges": [],
+        "ES": {},
+        "float": {}
+      }
+    }
+  ]
+}
