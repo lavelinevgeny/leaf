@@ -16,3 +16,4 @@
 !migrations/
 !migrations/001-initial.sql
 !migrations/002-scheduling.sql
+!migrations/003-optional-scheduling.sql

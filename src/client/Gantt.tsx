@@ -3,9 +3,10 @@ import { indexToDate } from '../domain/calendar.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import {
   calendarDays,
+  sourceMarkers,
   dateX,
   HEADER_HEIGHT,
-  intervalOf,
+  ganttInterval,
   ROW_HEIGHT,
   shiftDate,
   windowFor,
@@ -73,9 +74,9 @@ export function Gantt({
     return (
       !disabled &&
       task.status !== 'done' &&
-      task.planMode !== 'unscheduled' &&
+      ganttInterval(task, tree.schedule)?.kind === 'work' &&
       !tree.schedule.summaries[task.id] &&
-      !tree.schedule.tasks[task.id]?.blockedReason
+      !!tree.schedule.tasks[task.id]?.startDate
     );
   }
   function begin(
@@ -84,7 +85,7 @@ export function Gantt({
     kind: 'move' | 'resize',
   ) {
     if (!editable(task) || event.button !== 0) return;
-    const interval = intervalOf(task, tree.schedule);
+    const interval = ganttInterval(task, tree.schedule);
     if (!interval?.finish) return;
     event.stopPropagation();
     event.preventDefault();
@@ -244,7 +245,7 @@ export function Gantt({
         );
       })}
       {rows.map(({ task }, index) => {
-        const interval = intervalOf(task, tree.schedule);
+        const interval = ganttInterval(task, tree.schedule);
         const y = HEADER_HEIGHT + index * ROW_HEIGHT;
         let x1 = interval ? dateX(interval.start, start, view.dayWidth) : 0;
         let x2 = interval?.finish
@@ -257,7 +258,7 @@ export function Gantt({
           } else x2 += preview.delta * view.dayWidth;
         }
         const visible = interval && x2 >= 0 && x1 < view.width;
-        const bar = visible && interval.kind !== 'note';
+        const bar = visible;
         const cx1 = cap(x1),
           cx2 = cap(Math.max(x1 + 3, x2));
         return (
@@ -280,9 +281,9 @@ export function Gantt({
               <g
                 role="button"
                 tabIndex={0}
-                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${critical.has(task.id) ? `, ${strings.critical}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
+                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? ', Условное размещение; начало не задано' : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${critical.has(task.id) ? `, ${strings.critical}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
                 aria-disabled={disabled}
-                className={`gantt-work ${interval.kind}${critical.has(task.id) ? ' critical' : ''}${task.status === 'done' ? ' completed' : ''}${tree.schedule.summaries[task.id]?.partial ? ' partial' : ''}`}
+                className={`gantt-work ${interval.kind}${critical.has(task.id) ? ' critical' : ''}${task.status === 'done' ? ' completed' : ''}`}
                 onPointerDown={(event) => begin(event, task, 'move')}
                 onPointerMove={move}
                 onPointerUp={finish}
@@ -330,6 +331,12 @@ export function Gantt({
               >
                 <title>
                   {task.title}: {interval.start} – {interval.finish}
+                  {interval.kind === 'conditional'
+                    ? ' (Условное размещение; начало не задано)'
+                    : ''}
+                  {interval.clipped
+                    ? ' (Отображение ограничено предельной датой)'
+                    : ''}
                   {task.status === 'done' ? ` (${strings.doneHint})` : ''}
                 </title>
                 {interval.kind === 'summary' ? (
@@ -385,20 +392,28 @@ export function Gantt({
                   )}
               </g>
             )}
-            {visible &&
-              interval.kind === 'note' &&
-              [
-                interval.start,
-                ...(interval.finish && interval.finish !== interval.start
-                  ? [interval.finish]
-                  : []),
-              ].map((date) => (
-                <g
-                  key={date}
-                  data-gantt-note={task.id}
+            {sourceMarkers(task, tree.schedule)
+              .filter(
+                (source) =>
+                  dateX(source.date, start, view.dayWidth) >= 0 &&
+                  dateX(source.date, start, view.dayWidth) < view.width,
+              )
+              .map((source) => (
+                <line
+                  key={source.kind}
+                  data-gantt-marker={`${task.id}:${source.kind}`}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${task.title}, ${date}`}
+                  aria-label={`${task.title}, ${source.kind === 'source-start' ? 'Исходное начало' : 'Исходное окончание'}: ${source.date}`}
+                  x1={
+                    dateX(source.date, start, view.dayWidth) + view.dayWidth / 2
+                  }
+                  x2={
+                    dateX(source.date, start, view.dayWidth) + view.dayWidth / 2
+                  }
+                  y1={y + 10}
+                  y2={y + 28}
+                  className="gantt-note"
                   onClick={() => onSelect(task)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -406,18 +421,7 @@ export function Gantt({
                       onSelect(task);
                     }
                   }}
-                >
-                  <title>
-                    {task.title}: {date}
-                  </title>
-                  <line
-                    x1={dateX(date, start, view.dayWidth) + view.dayWidth / 2}
-                    x2={dateX(date, start, view.dayWidth) + view.dayWidth / 2}
-                    y1={y + 10}
-                    y2={y + 28}
-                    className="gantt-note"
-                  />
-                </g>
+                />
               ))}
           </g>
         );

@@ -114,9 +114,13 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await expect(row(page, 'Задача B1')).toHaveAttribute('aria-level', '2');
   await page.keyboard.press('Alt+ArrowLeft');
   await expect(row(page, 'Задача B1')).toHaveAttribute('aria-level', '1');
+  // The move restores keyboard focus on the next frame after its DOM update.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
   page.once('dialog', (dialog) => dialog.accept());
-  await row(page, 'Задача A').focus();
-  await page.keyboard.press('Delete');
+  await row(page, 'Задача A').press('Delete');
   await expect(row(page, 'Задача A')).toHaveCount(0);
   await expect(row(page, 'Внук A')).toHaveCount(0);
   await page
@@ -170,7 +174,11 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
   });
   expect(missing.status()).toBe(403);
   expect(
-    await (await page.request.get(`${runtime.origin}/api/projects`)).json(),
+    await (
+      await page.request.get(`${runtime.origin}/api/projects`, {
+        headers: { 'X-Leaf-Contract-Version': '2' },
+      })
+    ).json(),
   ).toEqual([]);
   await project(page);
   await add(page, 'Задача A');
@@ -209,11 +217,14 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
     page.getByRole('textbox', { name: 'Описание', exact: true }),
   ).toHaveValue('Черновик при сбое');
   const projects = (await (
-    await page.request.get(`${runtime.origin}/api/projects`)
+    await page.request.get(`${runtime.origin}/api/projects`, {
+      headers: { 'X-Leaf-Contract-Version': '2' },
+    })
   ).json()) as { id: string }[];
   const tree = (await (
     await page.request.get(
       `${runtime.origin}/api/projects/${projects[0]!.id}/tree`,
+      { headers: { 'X-Leaf-Contract-Version': '2' } },
     )
   ).json()) as { project: { revision: number } };
   expect(tree.project.revision).toBe(2);

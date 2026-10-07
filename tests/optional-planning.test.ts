@@ -3,7 +3,7 @@ import {
   applySourcePatch,
   realInterval,
   validateSourceInput,
-} from '../src/domain/optional-planning.js';
+} from '../src/domain/planning.js';
 import {
   commandEnvelopeV2Schema,
   commandV2Schema,
@@ -18,7 +18,7 @@ import {
   sourcePatchSchema,
   taskV2Schema,
   type SourceFields,
-} from '../src/shared/optional-contracts.js';
+} from '../src/shared/contracts.js';
 
 const emptySource: SourceFields = {
   inputStart: null,

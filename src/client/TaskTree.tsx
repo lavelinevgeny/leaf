@@ -173,23 +173,11 @@ export function TaskTree({
               ◆
             </span>
           )}
-          {collapsed.has(task.id) &&
-            schedule?.summaries[task.id]?.containsCritical && (
-              <span
-                title={strings.containsCritical}
-                aria-label={strings.containsCritical}
-              >
-                ◇
-              </span>
-            )}
           <span
             className="task-date"
             title={computedDateLabel(task, schedule) || strings.noDate}
           >
             {compactDateLabel(task, schedule) || strings.noDate}
-            {schedule?.summaries[task.id]?.partial && (
-              <span title={strings.partial}> *</span>
-            )}
           </span>
         </div>
       ))}

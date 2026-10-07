@@ -4,11 +4,8 @@ import {
   sourcePatchSchema,
   type SourcePatch,
   type TaskV2,
-} from '../shared/optional-contracts.js';
-import {
-  applySourcePatch,
-  validateSourceInput,
-} from '../domain/optional-planning.js';
+} from '../shared/contracts.js';
+import { applySourcePatch, validateSourceInput } from '../domain/planning.js';
 import type { CalendarType } from '../domain/scheduling-types.js';
 import { DomainError } from '../domain/tree.js';
 

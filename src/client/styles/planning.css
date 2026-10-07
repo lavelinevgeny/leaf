@@ -447,3 +447,21 @@
     justify-content: flex-start;
   }
 }
+.gantt-work.conditional {
+  opacity: 0.42;
+}
+.duration-choice {
+  position: fixed;
+  z-index: 20;
+  right: 24px;
+  top: 100px;
+  max-width: 380px;
+  background: white;
+  border: 1px solid #cadbd0;
+  padding: 20px;
+  box-shadow: 0 6px 24px #0002;
+}
+.duration-choice button {
+  display: block;
+  margin-top: 10px;
+}

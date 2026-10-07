@@ -10,7 +10,7 @@ Read `START_HERE.md` first, then follow the current owner task; S0 starts only w
 - The final subtask comparison image was explicitly excluded. No subtask-detail layout is approved. Do not recover it or treat it as a requirement.
 - Written product rules override incidental mockup fields, labels, dates, status colors and drawing errors. C13–C14 allow muted Gantt bars for subtasks without a start, anchored to a known minimum date in their parent group, using supplied duration or one display day. Under working default D13 these visual values are not persisted or used as real dates in summaries/CPM. Hierarchy is NOT precedence.
 - `docs/DECISIONS.md` separates confirmed requirements from working defaults. Do not silently promote suggestions into owner decisions.
-- C15 excludes a separate deadline from the target model and UI; the optional finish date remains. Existing S2–S3 deadline fields are legacy implementation awaiting compatible adaptation.
+- C15 excludes a separate deadline from the target model and UI; the optional finish date remains. Task 5 removes legacy deadline fields from the active model; exact historical originals remain in the server-private migration archive.
 
 ## Architecture and scope
 

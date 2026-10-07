@@ -2,8 +2,8 @@ import {
   privateSnapshotV2Schema,
   applyPrivateSourcePatch,
 } from '../src/server/optional-snapshot.js';
-import { calculateOptionalSchedule } from '../src/domain/optional-scheduling.js';
-import { projectTreeV2Schema } from '../src/shared/optional-contracts.js';
+import { calculateSchedule } from '../src/domain/scheduling.js';
+import { projectTreeV2Schema } from '../src/shared/contracts.js';
 import { canonical } from '../src/shared/canonical.js';
 import { replayLegacyOperation } from '../src/server/legacy-compatibility.js';
 import Database from 'better-sqlite3';
@@ -776,7 +776,7 @@ describe('durable private unavailable provenance', () => {
       );
       expect(undo.legacyIntervalUnavailable).toEqual([aid]);
       expect(
-        calculateOptionalSchedule({
+        calculateSchedule({
           calendarType: undo.project.calendarType,
           tasks: undo.tasks,
           dependencies: undo.dependencies,

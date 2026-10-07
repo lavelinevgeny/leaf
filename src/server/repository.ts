@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import {
   commandEnvelopeSchema,
   createProjectSchema,
@@ -23,19 +23,23 @@ import {
 import { calculateSchedule } from '../domain/scheduling.js';
 import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import {
-  applyTaskPlan,
-  completedInterval,
   emptyPlanning,
-  fixedDuration,
   validateDependencies,
   validateDependency,
 } from '../domain/planning.js';
 
-interface Snapshot {
-  project: Project;
-  tasks: Task[];
-  dependencies: Dependency[];
-}
+import { canonical } from '../shared/canonical.js';
+import { replayLegacyOperation } from './legacy-compatibility.js';
+import {
+  applyPrivateSourcePatch,
+  privateSnapshotV2Schema,
+  type PrivateSnapshotV2 as Snapshot,
+} from './optional-snapshot.js';
+import type { SourcePatch } from '../shared/contracts.js';
+const projectColumns =
+  'id,title,revision,calendarType,timezone,createdAt,updatedAt';
+const taskColumns =
+  'id,projectId,parentId,title,description,sortOrder,status,inputStart,inputFinish,durationDays,createdAt,updatedAt';
 interface UndoRecord {
   sequence: number;
   afterRevision: number;
@@ -46,15 +50,8 @@ interface OperationRecord {
   sessionId: string;
   payload: string;
   response: string;
-}
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value !== null && typeof value === 'object')
-    return `{${Object.entries(value)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
-      .join(',')}}`;
-  return JSON.stringify(value);
+  contractVersion: number;
+  responseSha256: string;
 }
 function validatedTreeResponse(value: unknown): ProjectTree {
   const parsed = projectTreeSchema.safeParse(value);
@@ -68,7 +65,7 @@ export class Repository {
   ) {}
   listProjects(): Project[] {
     return this.db
-      .prepare('SELECT * FROM projects ORDER BY createdAt,id')
+      .prepare(`SELECT ${projectColumns} FROM projects ORDER BY createdAt,id`)
       .all() as Project[];
   }
   createProject(title: string): Project {
@@ -78,7 +75,6 @@ export class Repository {
       id: randomUUID(),
       title: input.title,
       revision: 0,
-      startDate: null,
       calendarType: 'weekdays',
       timezone: 'UTC',
       createdAt: timestamp,
@@ -97,19 +93,33 @@ export class Repository {
   }
   private snapshot(projectId: string): Snapshot {
     const project = this.db
-      .prepare('SELECT * FROM projects WHERE id=?')
+      .prepare(`SELECT ${projectColumns} FROM projects WHERE id=?`)
       .get(projectId) as Project | undefined;
     if (!project)
       throw new DomainError('PROJECT_NOT_FOUND', 'Проект не найден.', 404);
     const tasks = this.db
       .prepare(
-        'SELECT * FROM tasks WHERE projectId=? ORDER BY parentId,sortOrder,id',
+        `SELECT ${taskColumns} FROM tasks WHERE projectId=? ORDER BY parentId,sortOrder,id`,
       )
       .all(projectId) as Task[];
     const dependencies = this.db
-      .prepare('SELECT * FROM dependencies WHERE projectId=? ORDER BY id')
+      .prepare(
+        'SELECT id,projectId,predecessorId,successorId FROM dependencies WHERE projectId=? ORDER BY id',
+      )
       .all(projectId) as Dependency[];
-    return { project, tasks, dependencies };
+    const legacyIntervalUnavailable = (
+      this.db
+        .prepare(
+          'SELECT taskId FROM task_schedule_provenance WHERE taskId IN (SELECT id FROM tasks WHERE projectId=?) ORDER BY taskId',
+        )
+        .all(projectId) as { taskId: string }[]
+    ).map((row) => row.taskId);
+    return privateSnapshotV2Schema.parse({
+      project,
+      tasks,
+      dependencies,
+      legacyIntervalUnavailable,
+    });
   }
   private latestUndo(
     projectId: string,
@@ -125,7 +135,10 @@ export class Repository {
     return this.db.transaction(() => {
       const snapshot = this.snapshot(projectId);
       return validatedTreeResponse({
-        ...snapshot,
+        contractVersion: 2,
+        project: snapshot.project,
+        tasks: snapshot.tasks,
+        dependencies: snapshot.dependencies,
         schedule: this.calculate(snapshot),
         canUndo:
           this.latestUndo(projectId, sessionId)?.afterRevision ===
@@ -135,7 +148,7 @@ export class Repository {
   }
   private calculate(snapshot: Snapshot) {
     return calculateSchedule({
-      startDate: snapshot.project.startDate,
+      unavailableTaskIds: snapshot.legacyIntervalUnavailable,
       calendarType: snapshot.project.calendarType,
       tasks: snapshot.tasks,
       dependencies: snapshot.dependencies,
@@ -145,11 +158,21 @@ export class Repository {
     return this.db.transaction(() => {
       const snapshot = this.snapshot(projectId);
       return {
+        contractVersion: 2 as const,
         projectId,
         revision: snapshot.project.revision,
         schedule: this.calculate(snapshot),
       };
     })();
+  }
+  replayLegacy(
+    projectId: string,
+    body: unknown,
+    sessionId: string,
+  ): ProjectTree {
+    return this.db.transaction(() =>
+      replayLegacyOperation(this.db, projectId, sessionId, body),
+    )();
   }
   applyCommand(
     projectId: string,
@@ -193,13 +216,14 @@ export class Repository {
       .transaction(() => {
         const existing = this.db
           .prepare(
-            'SELECT projectId,sessionId,payload,response FROM operations WHERE operationId=?',
+            'SELECT projectId,sessionId,payload,response,contractVersion,responseSha256 FROM operations WHERE operationId=?',
           )
           .get(input.operationId) as OperationRecord | undefined;
         if (existing) {
           if (
             existing.projectId !== projectId ||
             existing.sessionId !== sessionId ||
+            existing.contractVersion !== 2 ||
             existing.payload !== payload
           )
             throw new DomainError(
@@ -207,6 +231,11 @@ export class Repository {
               'Идентификатор операции уже использован.',
               409,
             );
+          if (
+            createHash('sha256').update(existing.response).digest('hex') !==
+            existing.responseSha256
+          )
+            throw new Error('Invalid operation digest');
           return validatedTreeResponse(JSON.parse(existing.response));
         }
         let snapshot = this.snapshot(projectId);
@@ -227,7 +256,9 @@ export class Repository {
               'Отмена недоступна после изменений другой сессии.',
               409,
             );
-          snapshot = JSON.parse(undo.beforeSnapshot) as Snapshot;
+          snapshot = privateSnapshotV2Schema.parse(
+            JSON.parse(undo.beforeSnapshot),
+          );
           this.db
             .prepare('DELETE FROM undo_snapshots WHERE sequence=?')
             .run(undo.sequence);
@@ -260,7 +291,7 @@ export class Repository {
         const result = this.getTree(projectId, sessionId);
         this.db
           .prepare(
-            'INSERT INTO operations(operationId,projectId,sessionId,payload,response) VALUES (?,?,?,?,?)',
+            'INSERT INTO operations(operationId,projectId,sessionId,payload,response,contractVersion,responseContractVersion,responseSha256) VALUES (?,?,?,?,?,2,2,?)',
           )
           .run(
             input.operationId,
@@ -268,6 +299,7 @@ export class Repository {
             sessionId,
             payload,
             JSON.stringify(result),
+            createHash('sha256').update(JSON.stringify(result)).digest('hex'),
           );
         return result;
       })
@@ -276,7 +308,7 @@ export class Repository {
   private save(snapshot: Snapshot): void {
     this.db
       .prepare(
-        'UPDATE projects SET title=@title,revision=@revision,updatedAt=@updatedAt,startDate=@startDate,calendarType=@calendarType,timezone=@timezone WHERE id=@id',
+        'UPDATE projects SET title=@title,revision=@revision,updatedAt=@updatedAt,calendarType=@calendarType,timezone=@timezone WHERE id=@id',
       )
       .run(snapshot.project);
     this.db
@@ -286,9 +318,13 @@ export class Repository {
       .prepare('DELETE FROM tasks WHERE projectId=?')
       .run(snapshot.project.id);
     const insert = this.db.prepare(
-      'INSERT INTO tasks(id,projectId,parentId,title,description,sortOrder,status,inputStart,inputFinish,createdAt,updatedAt,planMode,durationDays,notBefore,deadline,completedStart,completedFinish,completedStartIndex,completedFinishIndex) VALUES (@id,@projectId,@parentId,@title,@description,@sortOrder,@status,@inputStart,@inputFinish,@createdAt,@updatedAt,@planMode,@durationDays,@notBefore,@deadline,@completedStart,@completedFinish,@completedStartIndex,@completedFinishIndex)',
+      'INSERT INTO tasks(id,projectId,parentId,title,description,sortOrder,status,inputStart,inputFinish,createdAt,updatedAt,durationDays) VALUES (@id,@projectId,@parentId,@title,@description,@sortOrder,@status,@inputStart,@inputFinish,@createdAt,@updatedAt,@durationDays)',
     );
     for (const task of snapshot.tasks) insert.run(task);
+    const provenance = this.db.prepare(
+      "INSERT INTO task_schedule_provenance(taskId,reason) VALUES (?, 'legacy-interval-unavailable')",
+    );
+    for (const id of snapshot.legacyIntervalUnavailable) provenance.run(id);
     const insertEdge = this.db.prepare(
       'INSERT INTO dependencies(id,projectId,predecessorId,successorId) VALUES (@id,@projectId,@predecessorId,@successorId)',
     );
@@ -334,6 +370,10 @@ export class Repository {
           if (edge.predecessorId === parent.id) edge.predecessorId = workId;
           if (edge.successorId === parent.id) edge.successorId = workId;
         }
+        snapshot.legacyIntervalUnavailable =
+          snapshot.legacyIntervalUnavailable.map((id) =>
+            id === parent.id ? workId : id,
+          );
         Object.assign(parent, emptyPlanning);
         parent.status = 'todo';
         parent.updatedAt = timestamp;
@@ -342,55 +382,43 @@ export class Repository {
     switch (command.type) {
       case 'task.edit': {
         const task = find(command.taskId);
+        const patch: SourcePatch = {};
+        for (const key of [
+          'inputStart',
+          'inputFinish',
+          'durationDays',
+        ] as const) {
+          if (key in command.changes)
+            Object.assign(patch, { [key]: command.changes[key] });
+        }
         if (
-          task.status === 'done' &&
-          command.changes.status &&
-          command.changes.status !== 'done'
+          tasks.some((item) => item.parentId === task.id) &&
+          Object.keys(patch).length
         )
-          this.apply(
-            snapshot,
-            {
-              type: 'task.update',
-              taskId: task.id,
-              changes: { status: command.changes.status },
-            },
-            timestamp,
+          throw new DomainError(
+            'SUMMARY_DATES',
+            'Сводная задача не имеет собственных сроков.',
           );
-        if (command.plan)
-          this.apply(
-            snapshot,
-            { type: 'task.plan', taskId: task.id, plan: command.plan },
-            timestamp,
-          );
-        if (Object.keys(command.changes).length)
-          this.apply(
-            snapshot,
-            { type: 'task.update', taskId: task.id, changes: command.changes },
-            timestamp,
-          );
+        const status = command.changes.status;
+        const result = applyPrivateSourcePatch(
+          task,
+          patch,
+          snapshot.project.calendarType,
+          snapshot.legacyIntervalUnavailable.includes(task.id),
+          task.status === 'done' && status && status !== 'done'
+            ? status
+            : undefined,
+        );
+        Object.assign(task, result.task, command.changes, {
+          updatedAt: timestamp,
+        });
+        if (!result.unavailable)
+          snapshot.legacyIntervalUnavailable =
+            snapshot.legacyIntervalUnavailable.filter((id) => id !== task.id);
         break;
       }
       case 'project.schedule': {
         Object.assign(snapshot.project, command.changes);
-        for (const task of tasks)
-          task.durationDays = fixedDuration(
-            task,
-            snapshot.project.calendarType,
-          );
-        break;
-      }
-      case 'task.plan': {
-        const task = find(command.taskId);
-        if (tasks.some((item) => item.parentId === task.id))
-          throw new DomainError(
-            'SUMMARY_PLANNING',
-            'Сводная задача не имеет собственной работы.',
-          );
-        Object.assign(
-          task,
-          applyTaskPlan(task, command.plan, snapshot.project.calendarType),
-          { updatedAt: timestamp },
-        );
         break;
       }
       case 'dependency.create': {
@@ -467,44 +495,9 @@ export class Repository {
         break;
       }
       case 'task.update': {
-        const task = find(command.taskId);
-        if (
-          tasks.some((item) => item.parentId === task.id) &&
-          ('inputStart' in command.changes || 'inputFinish' in command.changes)
-        )
-          throw new DomainError(
-            'SUMMARY_DATES',
-            'Даты сводной задачи не редактируются.',
-          );
-        const changes = command.changes;
-        if (
-          task.planMode !== 'unscheduled' &&
-          (('inputStart' in changes &&
-            changes.inputStart !== task.inputStart) ||
-            ('inputFinish' in changes &&
-              changes.inputFinish !== task.inputFinish))
-        )
-          throw new DomainError(
-            'SCHEDULED_DATES',
-            'Изменяйте режим и даты работы командой планирования.',
-          );
-        if (changes.status === 'done' && task.status !== 'done')
-          Object.assign(
-            task,
-            completedInterval(task, this.calculate(snapshot).tasks[task.id]),
-          );
-        else if (
-          changes.status !== undefined &&
-          changes.status !== 'done' &&
-          task.status === 'done'
-        )
-          Object.assign(task, {
-            completedStart: null,
-            completedFinish: null,
-            completedStartIndex: null,
-            completedFinishIndex: null,
-          });
-        Object.assign(task, changes, { updatedAt: timestamp });
+        Object.assign(find(command.taskId), command.changes, {
+          updatedAt: timestamp,
+        });
         break;
       }
       case 'task.move': {
@@ -533,6 +526,8 @@ export class Repository {
         const task = find(command.taskId);
         const deleted = subtreeIds(tasks, task.id);
         snapshot.tasks = tasks.filter((item) => !deleted.has(item.id));
+        snapshot.legacyIntervalUnavailable =
+          snapshot.legacyIntervalUnavailable.filter((id) => !deleted.has(id));
         snapshot.dependencies = snapshot.dependencies.filter(
           (edge) =>
             !deleted.has(edge.predecessorId) && !deleted.has(edge.successorId),

@@ -1,136 +1,86 @@
+import type { CalendarType } from './scheduling-types.js';
+import { DomainError } from './tree.js';
+import { isWorkingDay, workingDaysInclusive } from './calendar.js';
+import type { SourceFields, SourcePatch } from '../shared/contracts.js';
+
+export function validateSourceInput(
+  source: SourceFields,
+  calendar: CalendarType,
+): void {
+  if (source.inputStart === null || source.inputFinish === null) return;
+  let span: number;
+  try {
+    if (
+      !isWorkingDay(source.inputStart, calendar) ||
+      !isWorkingDay(source.inputFinish, calendar)
+    )
+      throw new RangeError('NON_WORKING_DATE');
+    span = workingDaysInclusive(
+      source.inputStart,
+      source.inputFinish,
+      calendar,
+    );
+  } catch {
+    throw new DomainError(
+      'INVALID_INTERVAL',
+      'Укажите допустимый полный интервал.',
+    );
+  }
+  if (source.durationDays !== null && source.durationDays !== span)
+    throw new DomainError(
+      'DURATION_MISMATCH',
+      'Длительность не совпадает с интервалом. Измените или очистите её.',
+    );
+}
+
+export function applySourcePatch<T extends SourceFields>(
+  task: T,
+  patch: SourcePatch,
+  calendar: CalendarType,
+): T {
+  const next = { ...task, ...patch };
+  if (
+    Object.keys(patch).some(
+      (key) =>
+        next[key as keyof SourceFields] !== task[key as keyof SourceFields],
+    )
+  )
+    validateSourceInput(next, calendar);
+  return next;
+}
+
+export function realInterval(
+  source: SourceFields,
+  calendar: CalendarType,
+): { startDate: string; finishDate: string; calendarSpanDays: number } | null {
+  if (source.inputStart === null || source.inputFinish === null) return null;
+  try {
+    validateSourceInput(source, calendar);
+    return {
+      startDate: source.inputStart,
+      finishDate: source.inputFinish,
+      calendarSpanDays: workingDaysInclusive(
+        source.inputStart,
+        source.inputFinish,
+        calendar,
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
 import type {
-  CalendarType,
-  ScheduledTask,
   SchedulingTask,
   SchedulingDependency,
 } from './scheduling-types.js';
-import type { TaskPlan } from '../shared/contracts.js';
-import { workingDaysInclusive } from './calendar.js';
-import { DomainError } from './tree.js';
-
 export const emptyPlanning = {
-  planMode: 'unscheduled' as const,
-  durationDays: null,
   inputStart: null,
   inputFinish: null,
-  notBefore: null,
-  deadline: null,
-  completedStart: null,
-  completedFinish: null,
-  completedStartIndex: null,
-  completedFinishIndex: null,
+  durationDays: null,
 };
-export function applyTaskPlan<T extends SchedulingTask>(
-  task: T,
-  plan: TaskPlan,
-  calendarType: CalendarType,
-): T {
-  if (task.status === 'done')
-    throw new DomainError(
-      'DONE_PLANNING',
-      'Верните завершённую задачу в работу перед планированием.',
-    );
-  const result: T = {
-    ...task,
-    ...emptyPlanning,
-    deadline: plan.deadline === undefined ? task.deadline : plan.deadline,
-  };
-  if (plan.mode === 'unscheduled') {
-    result.inputStart = plan.inputStart ?? null;
-    result.inputFinish = plan.inputFinish ?? null;
-  } else if (plan.mode === 'auto') {
-    result.planMode = 'auto';
-    result.durationDays = plan.durationDays;
-    result.notBefore =
-      plan.notBefore === undefined
-        ? task.planMode === 'auto'
-          ? task.notBefore
-          : null
-        : plan.notBefore;
-  } else {
-    result.planMode = 'fixed';
-    result.inputStart = plan.inputStart;
-    result.inputFinish = plan.inputFinish;
-    try {
-      result.durationDays = workingDaysInclusive(
-        plan.inputStart,
-        plan.inputFinish,
-        calendarType,
-      );
-    } catch {
-      throw new DomainError(
-        'INVALID_FIXED_INTERVAL',
-        'Закреплённый интервал должен иметь рабочие границы и допустимую длительность.',
-      );
-    }
-  }
-  return result;
-}
-export function completedInterval(
-  task: SchedulingTask,
-  computed: ScheduledTask | undefined,
-): Pick<
-  SchedulingTask,
-  | 'completedStart'
-  | 'completedFinish'
-  | 'completedStartIndex'
-  | 'completedFinishIndex'
-> {
-  if (task.planMode === 'unscheduled')
-    return {
-      completedStart: null,
-      completedFinish: null,
-      completedStartIndex: null,
-      completedFinishIndex: null,
-    };
-  if (
-    !computed ||
-    computed.ES === null ||
-    computed.EF === null ||
-    computed.blockedReason !== null ||
-    computed.EF <= computed.ES
-  )
-    throw new DomainError(
-      'INCOMPLETE_COMPLETION',
-      'Нельзя завершить запланированную работу без рассчитанного интервала.',
-    );
-  return computed.startDate !== null && computed.finishDate !== null
-    ? {
-        completedStart: computed.startDate,
-        completedFinish: computed.finishDate,
-        completedStartIndex: null,
-        completedFinishIndex: null,
-      }
-    : {
-        completedStart: null,
-        completedFinish: null,
-        completedStartIndex: computed.ES,
-        completedFinishIndex: computed.EF,
-      };
-}
-export function fixedDuration(
-  task: SchedulingTask,
-  calendarType: CalendarType,
-): number | null {
-  if (
-    task.planMode !== 'fixed' ||
-    task.inputStart === null ||
-    task.inputFinish === null
-  )
-    return task.durationDays;
-  try {
-    const duration = workingDaysInclusive(
-      task.inputStart,
-      task.inputFinish,
-      calendarType,
-    );
-    return duration;
-  } catch {
-    return task.durationDays;
-  }
-}
 export function validateDependency(
-  tasks: readonly SchedulingTask[],
+  tasks: readonly Pick<SchedulingTask, 'id' | 'parentId'>[],
   dependencies: readonly SchedulingDependency[],
   predecessorId: string,
   successorId: string,
@@ -196,7 +146,7 @@ export function validateDependency(
   }
 }
 export function validateDependencies(
-  tasks: readonly SchedulingTask[],
+  tasks: readonly Pick<SchedulingTask, 'id' | 'parentId'>[],
   dependencies: readonly SchedulingDependency[],
 ): void {
   const accepted: SchedulingDependency[] = [];

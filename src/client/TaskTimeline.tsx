@@ -5,7 +5,8 @@ import { TaskTree, type TreeAction } from './TaskTree.js';
 import { Gantt } from './Gantt.js';
 import {
   computedDateLabel,
-  intervalOf,
+  ganttInterval,
+  sourceMarkers,
   shiftDate,
   todayInZone,
   type Scale,
@@ -23,6 +24,12 @@ interface Props {
   disabled: boolean;
   show: boolean;
   reveal: GanttReveal | null;
+}
+function timelineDate(task: Task, tree: ProjectTree) {
+  return (
+    ganttInterval(task, tree.schedule)?.start ??
+    sourceMarkers(task, tree.schedule)[0]?.date
+  );
 }
 export function TaskTimeline({
   tree,
@@ -42,12 +49,10 @@ export function TaskTimeline({
   const [scale, setScale] = useState<Scale>('days');
   const [start, setStart] = useState(() =>
     shiftDate(
-      tree.schedule.originDate ??
-        tree.tasks
-          .map((task) => intervalOf(task, tree.schedule)?.start)
-          .filter((date): date is string => !!date)
-          .sort()[0] ??
-        today,
+      tree.tasks
+        .map((task) => timelineDate(task, tree))
+        .filter((date): date is string => !!date)
+        .sort()[0] ?? today,
       -3,
     ),
   );
@@ -58,7 +63,7 @@ export function TaskTimeline({
   useEffect(() => {
     if (!reveal) return;
     const task = tree.tasks.find((item) => item.id === reveal.taskId);
-    const date = task && intervalOf(task, tree.schedule)?.start;
+    const date = task && timelineDate(task, tree);
     if (date) setStart(shiftDate(date, -3));
     if (horizontal.current) horizontal.current.scrollLeft = 0;
     requestAnimationFrame(() => {
@@ -68,13 +73,6 @@ export function TaskTimeline({
       row?.scrollIntoView({ block: 'nearest' });
     });
   }, [reveal]);
-  // Origin changes made in the project form reveal the newly dated plan.
-  useEffect(() => {
-    if (tree.schedule.originDate) {
-      setStart(shiftDate(tree.schedule.originDate, -3));
-      if (horizontal.current) horizontal.current.scrollLeft = 0;
-    }
-  }, [tree.schedule.originDate]);
   const movePeriod = (direction: number) => {
     setStart((previous) =>
       shiftDate(

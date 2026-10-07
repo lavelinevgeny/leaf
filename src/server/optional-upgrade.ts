@@ -2,11 +2,8 @@ import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { canonical } from '../shared/canonical.js';
 import { DomainError } from '../domain/tree.js';
-import {
-  realInterval,
-  validateSourceInput,
-} from '../domain/optional-planning.js';
-import { calculateOptionalSchedule } from '../domain/optional-scheduling.js';
+import { realInterval, validateSourceInput } from '../domain/planning.js';
+import { calculateSchedule } from '../domain/scheduling.js';
 import {
   loadLegacyContexts,
   loadLegacyOriginals,
@@ -99,7 +96,7 @@ function preview(db: Database.Database): OptionalUpgradePreview {
         invalid = true;
       if (invalid) counts.invalid++;
     }
-    const result = calculateOptionalSchedule({
+    const result = calculateSchedule({
       calendarType: projected.project.calendarType,
       tasks: projected.tasks,
       dependencies: projected.dependencies,

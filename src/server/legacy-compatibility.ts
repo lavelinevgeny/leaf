@@ -6,10 +6,10 @@ import {
   taskV2Schema,
   type ProjectTreeV2,
   type SourceFields,
-} from '../shared/optional-contracts.js';
+} from '../shared/contracts.js';
 import { canonical } from '../shared/canonical.js';
-import { calculateOptionalSchedule } from '../domain/optional-scheduling.js';
-import { realInterval } from '../domain/optional-planning.js';
+import { calculateSchedule } from '../domain/scheduling.js';
+import { realInterval } from '../domain/planning.js';
 import {
   privateSnapshotV2Schema,
   type PrivateSnapshotV2,
@@ -275,7 +275,7 @@ export function adaptLegacyTree(
     context,
     resolutions,
   );
-  const schedule = calculateOptionalSchedule({
+  const schedule = calculateSchedule({
     calendarType: snapshot.project.calendarType,
     tasks: snapshot.tasks,
     dependencies: snapshot.dependencies,

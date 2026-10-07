@@ -37,7 +37,11 @@ async function login() {
   return response.cookies[0]!.value;
 }
 function headers(cookie: string) {
-  return { origin, cookie: `leaf_session=${cookie}` };
+  return {
+    origin,
+    'x-leaf-contract-version': '2',
+    cookie: `leaf_session=${cookie}`,
+  };
 }
 async function project(cookie: string) {
   const response = await app.inject({
@@ -60,7 +64,12 @@ async function command(
     method: 'POST',
     url: `/api/projects/${tree.project.id}/commands`,
     headers: headers(cookie),
-    payload: { expectedRevision: revision, operationId, command: cmd },
+    payload: {
+      contractVersion: 2 as const,
+      expectedRevision: revision,
+      operationId,
+      command: cmd,
+    },
   });
 }
 describe('authenticated API boundary', () => {
@@ -316,6 +325,7 @@ describe('authenticated API boundary', () => {
         url: `/%61pi/projects/${created.id}/commands`,
         headers: requestHeaders,
         payload: {
+          contractVersion: 2 as const,
           expectedRevision: baseline.project.revision,
           operationId: randomUUID(),
           command: {
@@ -447,7 +457,7 @@ describe('authenticated API boundary', () => {
     expect(
       (
         await command(cookie, tree, {
-          type: 'task.update',
+          type: 'task.edit',
           taskId,
           changes: { inputStart: '2026-02-30' },
         })
@@ -468,6 +478,7 @@ describe('authenticated API boundary', () => {
       headers: headers(cookie),
       payload: {
         title: 'Renamed',
+        contractVersion: 2 as const,
         expectedRevision: undone.json<ProjectTree>().project.revision,
         operationId: randomUUID(),
       },

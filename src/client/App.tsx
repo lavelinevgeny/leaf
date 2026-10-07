@@ -7,7 +7,6 @@ import type {
   ProjectTree,
   RenameProject,
   Task,
-  TaskPlan,
 } from '../shared/contracts.js';
 import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import { api, ApiError } from './api.js';
@@ -20,7 +19,8 @@ import { strings } from './strings.js';
 import { ProjectPlan } from './ProjectPlan.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
-import { planForGesture } from './planning-view.js';
+import { workingDaysInclusive } from '../domain/calendar.js';
+import { gesturePatch } from './planning-view.js';
 import './styles/app.css';
 import './styles/planning.css';
 
@@ -52,6 +52,13 @@ export function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tree, setTree] = useState<ProjectTree | null>(null);
+  const [durationChoice, setDurationChoice] = useState<{
+    task: Task;
+    patch: import('../shared/contracts.js').SourcePatch;
+    target: string;
+    projectId: string;
+    revision: number;
+  } | null>(null);
   const [selected, setSelected] = useState<Task | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>('details');
   const [panelHistory, setPanelHistory] = useState<string[]>([]);
@@ -125,6 +132,12 @@ export function App() {
       treeRef.current.project.revision > next.project.revision
     )
       return false;
+    setDurationChoice((choice) =>
+      choice?.projectId === next.project.id &&
+      choice.revision === next.project.revision
+        ? choice
+        : null,
+    );
     treeRef.current = next;
     setTree(next);
     setQuickDrafts((previous) => {
@@ -161,12 +174,16 @@ export function App() {
         project.id === next.project.id ? next.project : project,
       ),
     );
-    setSelected((previous) =>
-      previous
-        ? (next.tasks.find((task) => task.id === previous.id) ??
-          (dirtyRef.current ? previous : null))
-        : null,
-    );
+    setSelected((previous) => {
+      if (!previous) return null;
+      const current = next.tasks.find((task) => task.id === previous.id);
+      if (current) return current;
+      if (dirtyRef.current) return previous;
+      requestAnimationFrame(() =>
+        document.getElementById('quick-task')?.focus(),
+      );
+      return null;
+    });
     return true;
   }
   function canNavigate(allowRename = false) {
@@ -185,6 +202,7 @@ export function App() {
     return true;
   }
   async function loadProject(id: string, preserveDraft = false) {
+    setDurationChoice(null);
     const sequence = ++loadSequence.current;
     currentProject.current = id;
     setLoading(true);
@@ -354,6 +372,7 @@ export function App() {
       projectId: treeRef.current.project.id,
       knownIds: treeRef.current.tasks.map((task) => task.id),
       envelope: {
+        contractVersion: 2,
         expectedRevision: treeRef.current.project.revision,
         operationId: crypto.randomUUID(),
         command: value,
@@ -508,24 +527,64 @@ export function App() {
   async function planTask(task: Task, kind: 'move' | 'resize', target: string) {
     if (!canNavigate() || !treeRef.current) return;
     try {
-      const plan = planForGesture(
+      if (
+        treeRef.current.schedule.summaries[task.id] ||
+        !treeRef.current.schedule.tasks[task.id]?.startDate
+      )
+        return;
+      const intent = gesturePatch(
         task,
-        treeRef.current.schedule.tasks[task.id],
-        treeRef.current.project,
+        treeRef.current.project.calendarType,
         kind,
         target,
       );
-      if (await command({ type: 'task.plan', taskId: task.id, plan })) {
-        if (
-          kind === 'move' &&
-          plan.mode === 'auto' &&
-          treeRef.current.schedule.tasks[task.id]?.startDate !== plan.notBefore
-        )
-          setNotice(strings.constrainedMove);
+      if (intent.requiresDurationChoice) {
+        setDurationChoice({
+          task,
+          patch: intent.patch,
+          target,
+          projectId: treeRef.current.project.id,
+          revision: treeRef.current.project.revision,
+        });
+        return;
       }
+      await command({
+        type: 'task.edit',
+        taskId: task.id,
+        changes: intent.patch,
+      });
     } catch {
       setNotice(strings.invalidGesture);
     }
+  }
+  function finishDurationChoice(syncDuration: boolean) {
+    const choice = durationChoice;
+    const current = treeRef.current;
+    setDurationChoice(null);
+    if (
+      !choice ||
+      !current ||
+      current.project.id !== choice.projectId ||
+      current.project.revision !== choice.revision ||
+      !canNavigate()
+    )
+      return;
+    const task = current.tasks.find((item) => item.id === choice.task.id);
+    if (!task?.inputStart || task.status === 'done') return;
+    void command({
+      type: 'task.edit',
+      taskId: task.id,
+      changes: {
+        ...choice.patch,
+        durationDays: syncDuration
+          ? workingDaysInclusive(
+              task.inputStart,
+              choice.target,
+              current.project.calendarType,
+            )
+          : null,
+      },
+    });
   }
   async function createProject(title: string) {
     if (!canNavigate() || createUncertain || !title.trim()) return false;
@@ -560,6 +619,7 @@ export function App() {
       projectId: treeRef.current.project.id,
       envelope: {
         title: rename,
+        contractVersion: 2,
         expectedRevision: treeRef.current.project.revision,
         operationId: crypto.randomUUID(),
       },
@@ -887,6 +947,27 @@ export function App() {
           )}
         </div>
       </main>
+      {durationChoice && (
+        <div
+          role="dialog"
+          aria-label="Длительность не совпадает"
+          className="duration-choice"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setDurationChoice(null);
+          }}
+        >
+          <p>Новая дата окончания не совпадает с заданной длительностью.</p>
+          <button onClick={() => finishDurationChoice(true)}>
+            Синхронно изменить длительность
+          </button>
+          <button onClick={() => finishDurationChoice(false)}>
+            Очистить длительность
+          </button>
+          <button autoFocus onClick={() => setDurationChoice(null)}>
+            Отмена
+          </button>
+        </div>
+      )}
       {selectedTask && tree && (
         <TaskPanel
           key={selectedTask.id}
@@ -911,40 +992,9 @@ export function App() {
           onSelect={selectTask}
           onAction={action}
           onMove={(task, parentId) => void moveTask(task, parentId)}
-          onSave={(changes, plan?: TaskPlan) => {
-            const summary = tree.tasks.some(
-              (task) => task.parentId === selectedTask.id,
-            );
-            if (
-              plan &&
-              !(
-                plan.mode === 'unscheduled' &&
-                selectedTask.planMode === 'unscheduled' &&
-                plan.deadline === selectedTask.deadline
-              )
-            )
-              return command({
-                type: 'task.edit',
-                taskId: selectedTask.id,
-                changes: {
-                  title: changes.title,
-                  description: changes.description,
-                  status: changes.status,
-                },
-                plan,
-              });
-            return command({
-              type: 'task.update',
-              taskId: selectedTask.id,
-              changes: summary
-                ? {
-                    title: changes.title,
-                    description: changes.description,
-                    status: changes.status,
-                  }
-                : changes,
-            });
-          }}
+          onSave={(changes) =>
+            command({ type: 'task.edit', taskId: selectedTask.id, changes })
+          }
           onDirty={setPanelDirty}
           onClose={closePanel}
           busy={busy}

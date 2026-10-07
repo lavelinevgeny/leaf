@@ -18,8 +18,8 @@ export const strings = {
   details: 'Детали',
   dependencies: 'Зависимости',
   planning: 'Планирование',
-  projectPlan: 'План проекта',
-  saveProjectPlan: 'Сохранить план проекта',
+  projectPlan: 'Настройки проекта',
+  saveProjectPlan: 'Сохранить настройки проекта',
   projectStart: 'Начало проекта',
   calendar: 'Календарь',
   timezone: 'Часовой пояс проекта',
@@ -63,7 +63,7 @@ export const strings = {
   treeWidth: 'Ширина дерева',
   showOnGantt: 'Показать на Ганте',
   gestureHint:
-    'Перенос — начало; правый край — длительность. ←/→ — рабочий день, Shift+←/→ — окончание. Esc — отмена жеста.',
+    'Перенос — обе даты; правый край — окончание. ←/→ — рабочий день, Shift+←/→ — окончание. Esc — отмена жеста.',
   invalidGesture:
     'Недопустимая дата: проверьте рабочие дни, начало и окончание. План не изменён.',
   constrainedMove:

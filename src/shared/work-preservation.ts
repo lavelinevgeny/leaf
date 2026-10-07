@@ -7,7 +7,7 @@ import type {
 export function requiresWorkPreservation(
   task: Pick<
     SchedulingTask,
-    'id' | 'planMode' | 'inputStart' | 'inputFinish' | 'deadline' | 'status'
+    'id' | 'durationDays' | 'inputStart' | 'inputFinish' | 'status'
   >,
   dependencies: readonly Pick<
     SchedulingDependency,
@@ -15,10 +15,9 @@ export function requiresWorkPreservation(
   >[],
 ): boolean {
   return (
-    task.planMode !== 'unscheduled' ||
+    task.durationDays !== null ||
     task.inputStart !== null ||
     task.inputFinish !== null ||
-    task.deadline !== null ||
     task.status === 'done' ||
     dependencies.some(
       (edge) => edge.predecessorId === task.id || edge.successorId === task.id,
