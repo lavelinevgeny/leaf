@@ -1,6 +1,6 @@
 # ADR 008 — критический путь введённого расписания
 
-Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md). O06/G-CPM закрыт как выбор политики; новый CPM ещё не реализован.
+Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md); technical annex прошёл два независимых review. O06/G-CPM закрыт как выбор политики; новый CPM ещё не реализован, Task7 требует Task5 GREEN.
 
 ## Контекст
 
@@ -24,6 +24,8 @@ Pure analysis остаётся серверным и детерминирова�
 
 ## Проверка
 
-Математические policy inputs и P01–P11 приняты владельцем. Технический implementation annex Task 6 должен определить полный typed DTO/strict schemas, pure function contracts, numerical fixture format, runnable RED/GREEN steps и добавить fork/join, deep-summary, conflict+unknown и undo/restart cases. Его два независимых APPROVED ещё не получены; прежние ревью относятся к прежним SHA.
+Математические policy inputs и P01–P11 приняты владельцем. [Технический implementation annex Task 6](../superpowers/plans/2026-10-07-explicit-date-cpm.md) определяет полный typed DTO/strict schemas, pure function contracts, numerical fixture format, runnable RED/GREEN steps, fork/join, deep-summary, conflict+unknown и undo/restart cases. Substantive candidate `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` получил Spec **APPROVED** и Standards/executability **APPROVED**; последующая запись review metadata не меняет формулы, типы или snippets и не является review реализации.
 
 Task 7 реализует принятые формулы и проверяет точные task/edge IDs, gaps, независимые компоненты, done, partial/infeasible, calendar, глубокую дату и одну отмену. Документальные kit checks не заменяют application tests/OS16. Production release по-прежнему требует S4–S6.
+
+Новый CPM документом не реализован; Task5 GREEN остаётся условием Task7. Нормативная C16 классифицирует сохранённый invalid/mismatch source как unknown/incomplete без доказанного FS-конфликта; Task7 явно адаптирует промежуточную классификацию Task2 в этих границах. C17 unavailable-lock representation остаётся pending Task4/5; изменённый scheduling input требует amendment annex и двух новых независимых reviews до подключения CPM.
