@@ -16,6 +16,10 @@ S2–S3 хранит Auto/done расчётные интервалы, относ
 
 ## Подтверждение конкретного upgrade
 
+Неактивная preparation Task 3 замораживает прежние schemas независимо от target DTO и требует resolution по tuple `(context kind, context key, task ID)` с SHA-256 canonical original task. Проверяется каждый current/operation/undo context, включая удалённые задачи. Exact SQL 003 проверяется по SHA-256 и одному archive boundary до любых DDL/write; helper работает только внутри внешней transaction. Registry, production acknowledgement и активные mutation routes этим шагом не подключаются.
+
+Однократная адаптация сохраняет target response JSON в `operations.response`, `responseContractVersion=2` и SHA-256. Original payload остаётся byte-identical с `contractVersion=1`, original response — в archive. Lookup-only replay сравнивает canonical original body, project и session, затем проверяет frozen response digest/schema; он не перечитывает current tree и не вызывает resolver или scheduler. Task 5 обязан записывать version/digest и для новых target mutations; Task 7 должен продолжать принимать исторический pending result без пересчёта.
+
 Технический policy ID — `legacy-scheduling-v1`. До изменения существующей БД с pending migration 003 формируется preview: aggregate category counts и `previewDigest` по всем архивируемым scheduling originals, включая raw operation payload/response и undo JSON. Никаких auth/session values, task titles или source bodies в выводе.
 
 Процедура upgrade принимает explicit `{ policyId: 'legacy-scheduling-v1', previewDigest }`. Это одноразовое подтверждение конкретного preview, не env/global bypass. Перед любым DDL/write внутри existing immediate migration transaction preview пересчитывается; неверный policy ID, отсутствие подтверждения или другой digest дают `MIGRATION_APPROVAL_REQUIRED`/`MIGRATION_PREVIEW_CHANGED` и полный rollback. Ревизии, источники, edges и history входят в digest; подтверждение устаревшего снимка не применяется к изменённой БД.
