@@ -1,5 +1,11 @@
 # Статус разработки
 
+## Task 2: исправление после review — 2026-10-07
+
+Spec review candidate `bd5bad5c8e1429e56a3af77db91b8cba640bf1db` получил APPROVED; standards review нашёл недетерминированный результат для повторного task ID с разными parent/source fields. Исправлен только неактивный модуль: duplicate identity прекращает расчёт до построения иерархии и coverage, возвращая pending infeasible, coverage 0/0, пустые проекции и safe diagnostics. Вход не изменяется; произвольная duplicate запись не используется для проекций.
+
+Две независимые регрессии на точной malformed fixture и варианте с разными source fields сначала упали; GREEN проверяет все шесть перестановок каждой. Дополнительный контроль повторных dependency ID и пар с разными endpoints подтверждает детерминированность существующей сортировки и maps без изменения их алгоритма. Прошли `npm test -- tests/optional-scheduling.test.ts` — 51/51 без пропусков, `typecheck`, `lint`, `format:check`. Полные unit/integration/build/E2E повторно не запускались: правка ограничена ранее проверенным ранним отказом неактивного модуля на malformed graph. Active приложение, owner policy и shared contracts не менялись. Следующий шаг — independent re-review точного fix diff.
+
 ## Task 2 адаптации сроков — 2026-10-07
 
 Подготовлены неактивные `src/domain/optional-scheduling-types.ts` и `src/domain/optional-scheduling.ts`: реальные пары без вывода отсутствующих границ из duration, проверка исходных FS-краёв, полный summary по конечным потомкам и отдельный conditional display. `knownStartMin` хранится независимо от валидности полного интервала и других source fields; сводный диапазон публикуется только при полном coverage ветви. Итеративные обходы поддерживают произвольную глубину и находят настоящие циклические компоненты без включения downstream задач. Узкий `validateOptionalDependency` копирует проверенный leaf-only validator; активные validator и Repository остаются прежними до Task 5.

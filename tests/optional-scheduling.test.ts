@@ -623,6 +623,109 @@ describe('narrow optional graph validation', () => {
   });
 
   it.each([
+    [t('A'), t('A', 'P'), t('P')],
+    [
+      t('A', null, '2026-10-05', '2026-10-06'),
+      t('A', 'P', null, '2026-10-09', 3),
+      t('P'),
+    ],
+  ])(
+    'fails closed for ambiguous task IDs in every permutation: %#',
+    (first, second, parent) => {
+      const tasks = Object.freeze(
+        [first!, second!, parent!].map((task) => Object.freeze(task)),
+      );
+      const before = structuredClone(tasks);
+      const expected: OptionalResult = {
+        analysisStatus: 'pending-policy',
+        feasibility: 'infeasible',
+        coverage: { knownLeafCount: 0, totalLeafCount: 0 },
+        tasks: {},
+        summaries: {},
+        display: {},
+        criticalTaskIds: [],
+        criticalDependencyIds: [],
+        diagnostics: [
+          {
+            code: 'DUPLICATE_TASK_ID',
+            taskIds: ['A'],
+            dependencyIds: [],
+            messageKey: 'scheduling.DUPLICATE_TASK_ID',
+          },
+        ],
+      };
+      for (const order of [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+      ]) {
+        const permuted = Object.freeze(order.map((index) => tasks[index]!));
+        expect(schedule(permuted)).toEqual(expected);
+        expect(JSON.stringify(schedule(permuted))).toBe(
+          JSON.stringify(expected),
+        );
+      }
+      expect(tasks).toEqual(before);
+    },
+  );
+
+  it('keeps duplicate dependency IDs and pairs deterministic for different endpoints', () => {
+    const graphTasks = Object.freeze(
+      [t('A'), t('B'), t('C')].map((task) => Object.freeze(task)),
+    );
+    const dependencies = Object.freeze(
+      [e('Same', 'A', 'B'), e('Same', 'B', 'C'), e('Z', 'A', 'B')].map((edge) =>
+        Object.freeze(edge),
+      ),
+    );
+    const before = structuredClone({ tasks: graphTasks, dependencies });
+    const expected: OptionalResult = {
+      analysisStatus: 'pending-policy',
+      feasibility: 'infeasible',
+      coverage: { knownLeafCount: 0, totalLeafCount: 3 },
+      tasks: { A: unknown, B: unknown, C: unknown },
+      summaries: {},
+      display: {},
+      criticalTaskIds: [],
+      criticalDependencyIds: [],
+      diagnostics: [
+        {
+          code: 'DUPLICATE_DEPENDENCY',
+          taskIds: ['A', 'B'],
+          dependencyIds: ['Same', 'Z'],
+          messageKey: 'scheduling.DUPLICATE_DEPENDENCY',
+        },
+        {
+          code: 'DUPLICATE_DEPENDENCY_ID',
+          taskIds: ['B', 'C'],
+          dependencyIds: ['Same'],
+          messageKey: 'scheduling.DUPLICATE_DEPENDENCY_ID',
+        },
+      ],
+    };
+    for (const order of [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+    ]) {
+      const permuted = Object.freeze(
+        order.map((index) => dependencies[index]!),
+      );
+      expect(schedule([...graphTasks].reverse(), permuted)).toEqual(expected);
+      expect(JSON.stringify(schedule(graphTasks, permuted))).toBe(
+        JSON.stringify(expected),
+      );
+    }
+    expect({ tasks: graphTasks, dependencies }).toEqual(before);
+  });
+
+  it.each([
     [[t('A'), t('A')], [], 'DUPLICATE_TASK_ID'],
     [[t('A', 'Foreign')], [], 'INVALID_PARENT'],
     [[t('P', 'Q'), t('Q', 'P')], [], 'TREE_CYCLE'],

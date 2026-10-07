@@ -237,9 +237,15 @@ export function calculateOptionalSchedule(
 
   const taskMap = new Map<string, OptionalTask>();
   for (const task of tasks) {
-    if (taskMap.has(task.id)) diagnostic('DUPLICATE_TASK_ID', [task.id]);
+    if (taskMap.has(task.id)) {
+      diagnostic('DUPLICATE_TASK_ID', [task.id]);
+      continue;
+    }
     taskMap.set(task.id, task);
   }
+  // Duplicate identities make hierarchy and leaf coverage ambiguous; fail
+  // before any projection can depend on which duplicate appeared first.
+  if (infeasible) return finishResult();
   const ids = [...taskMap.keys()];
   const children = new Map(ids.map((id) => [id, [] as string[]]));
   for (const task of taskMap.values())
