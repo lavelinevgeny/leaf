@@ -10,7 +10,7 @@
 
 **Spec:** [Принятое приложение C16, разделы 1–4/P01–P11](../specs/2026-10-07-optional-scheduling-policy-proposal.md), [утверждённая спецификация, разделы 8–11/N06/OS16](../specs/2026-10-07-optional-scheduling-design.md), [ADR 008](../../adr/008-explicit-date-cpm.md), [основной план, Tasks 1/2/5/6/7](2026-10-07-optional-scheduling.md). Читать также [DECISIONS](../../DECISIONS.md), [SCHEDULING](../../SCHEDULING.md), [ACCEPTANCE](../../ACCEPTANCE.md), [PRIVACY](../../PRIVACY.md), [AGENT_WORKFLOW](../../AGENT_WORKFLOW.md).
 
-**Status:** Technical annex Task 6 подготовлен для двух independent reviews. C16/O06/G-CPM CLOSED как выбор политики; Task 6 GREEN и Task 7 execution ещё не заявлены. Базовые APPROVED основного плана не распространяются на этот документ. Ни один fenced test ниже не является уже реализованным application test.
+**Status:** C17 input amendment 2026-10-08 подготовлен для двух новых independent reviews. Substantive candidate29f193e ранее получил два APPROVED; они не распространяются на этот изменённый typed/algorithm body. C16/O06/G-CPM CLOSED как выбор политики; Task7 требует Task4 review и Task5 GREEN. Ни один fenced test ниже не является уже реализованным application test.
 
 ## Global Constraints
 
@@ -27,10 +27,11 @@
 - Не менять стек, lockfile, scanner policy, Git identity или hooks. Без ORM, платного Gantt, graph editor, облаков, CDN, telemetry, AI API, очередей и ресурсов.
 - Только три PNG из [design/README](../../../design/README.md); исключённый коллаж не использовать. Русский UI, English identifiers/commit subjects.
 - Push, deploy, release и production migration требуют отдельного поручения владельца. Положительное ревью плана этого разрешения не даёт.
-- Все последующие задачи требуют Task 5 GREEN и двух APPROVED этого annex на один точный SHA. Preparation files `optional-*.ts` уже удалены Task 5; не создавать их повторно.
+- Все последующие задачи требуют Task5 GREEN и двух APPROVED текущего amended annex на один точный SHA. Task5 удаляет temporary shared/domain optional modules; server-only `optional-migration.ts`/`optional-upgrade.ts`/`optional-snapshot.ts` и compatibility contracts сохраняются.
 - Frozen `pending-policy` ответы принимаются в прежней форме без defaults/добавления floats и не пересчитываются. Live `calculateSchedule` после подключения никогда не возвращает pending.
 - Calendar spans, source dates, summary и display не записываются анализом. Duration-only, start+duration, finish+duration и условные полосы не входят в CPM.
 - Нормативная C16 раздел 3 имеет приоритет над промежуточной классификацией Task 2: saved invalid/mismatch interval даёт unknown/incomplete, пока нет доказанного FS-конфликта. Malformed graph fail closed; мутации уже отклоняет existing validator. Task 7 меняет эту классификацию явно, без исправления source.
+- C17 private unavailable provenance переживает active/undo/reopen и передаётся в pure input как `unavailableTaskIds`. Marked leaf исключён из real/coverage/summary/CPM даже при валидной retained pair; raw source FS/minima/notes сохраняются. Public Task/DTO не содержит provenance.
 
 ## Вход из Task 5 и карта файлов
 
@@ -45,6 +46,7 @@ export interface OptionalInput {
   calendarType: CalendarType;
   tasks: readonly OptionalTask[];
   dependencies: readonly SchedulingDependency[];
+  unavailableTaskIds?: readonly string[];
 }
 export function calculateSchedule(input: OptionalInput): OptionalResult;
 export function realInterval(
@@ -68,13 +70,17 @@ export function validateDependencies(
 | `src/domain/explicit-cpm.ts` | Новый pure coordinate/weak-component/backward analysis; без SQL/React/legacy imports |
 | `src/domain/scheduling.ts` | Выделить existing projection; добавить диагностику unknown, normative status classification; один calculateSchedule |
 | `src/domain/calendar.ts` | Существующую O(1)/O(log year) арифметику переиспользовать без новых зависимостей |
-| `src/server/repository.ts` | Parse live result before commit; cached response parse union without recalculation |
+| `src/server/repository.ts` | PrivateSnapshotV2→pure unavailable IDs; public field picking; parse live before commit, cache union without recalculation |
+| `src/server/optional-snapshot.ts` | Reviewed Task4 server-private strict schema/type/applyPrivateSourcePatch; Task7 imports, не дублирует публично |
+| `src/server/legacy-pending-types.ts`, `legacy-pending-source.ts`, `legacy-pending-projection.ts` | Frozen initial migration/preview projection, private structural input/frozen source validation; no active solver import |
+| `src/server/legacy-compatibility.ts`, `optional-upgrade.ts`, `optional-migration.ts` | Initial adaptation/preview используют frozen pending/source helper; archive/resolution/acknowledgement rules сохраняются |
 | `src/client/ScheduleStatus.tsx`, `strings.ts` | Status/float/partial copy и отсутствие ложного global результата |
 | `src/client/Gantt.tsx`, `gantt-view.ts`, `Dependencies.tsx`, `TaskTree.tsx` | Global и partial IDs показывать раздельно; summary только индикатор потомков |
 | `tests/helpers/explicit-cpm-fixtures.ts` | Literal numerical matrix ниже; никакого вызова solver для expected |
 | `tests/explicit-cpm-contracts.test.ts` | Strict union, frozen pending equality, compile-time type assignment |
 | `tests/explicit-cpm.test.ts` | P01–P11/N06/fork/join/partial/extremes/invariance/deep fixtures |
 | `tests/explicit-cpm-repository.test.ts` | Revision/undo/restart/retry/frozen response/rollback на disposable SQLite |
+| `tests/legacy-pending-projection.test.ts` | Literal initial frozen outcomes, adapter/preview/SQL003 without live solver; positive current LIVE controls |
 | `tests/scheduling-api.test.ts` | Live HTTP response strict parse, status/unknown/conflict priorities |
 | `tests/client/explicit-cpm.test.tsx` | Literal server DTOs, unknown/partial/error/keyboard |
 | `tests/e2e/explicit-cpm.spec.ts` | Реальный browser edit→recalculate→undo→restart и collapse/graph |
@@ -82,6 +88,39 @@ export function validateDependencies(
 | `docs/STATUS.md`, `docs/adr/008-explicit-date-cpm.md` | Фактические checks/limitations и ссылка на реализованный annex после GREEN |
 
 Исторические `fixtures/scheduling/cpm-cases.json` проверяют прежний Auto, не заменяются новым observed-interval oracle. `calendar-cases.json` сохраняется. Новые literal fixtures находятся в TypeScript test helper и исполняются Vitest; `check:kit` этого не доказывает.
+
+### C17 private input boundary — 2026-10-08
+
+Task4 задаёт server-only `PrivateSnapshotV2 = SnapshotV2 & {legacyIntervalUnavailable:string[]}`, `privateSnapshotV2Schema` и `applyPrivateSourcePatch` в `src/server/optional-snapshot.ts`. В Task5 imports shared optional-contracts/planning меняются на active contracts/planning; этот private server module сохраняется. Его strict schema имеет следующий exact shape; schema/type уже принадлежит Task4, Task7 не создаёт второй public schema:
+
+```ts
+// src/server/optional-snapshot.ts — Task4 boundary, already implemented before Task5.
+import {z} from 'zod';
+import {snapshotV2Schema,type TaskV2,type SourcePatch} from '../shared/contracts.js';
+import type {CalendarType} from '../domain/scheduling-types.js';
+export const privateSnapshotV2Schema=snapshotV2Schema.extend({
+  legacyIntervalUnavailable:z.array(z.uuid()),
+}).superRefine((snapshot,ctx)=>{
+  const ids=new Set(snapshot.tasks.map(task=>task.id));
+  if(new Set(snapshot.legacyIntervalUnavailable).size!==snapshot.legacyIntervalUnavailable.length||
+    snapshot.legacyIntervalUnavailable.some(id=>!ids.has(id))||
+    snapshot.tasks.some(task=>task.projectId!==snapshot.project.id)||
+    snapshot.dependencies.some(edge=>edge.projectId!==snapshot.project.id))
+    ctx.addIssue({code:'custom',message:'Invalid private scheduling provenance'});
+});
+export type PrivateSnapshotV2=z.infer<typeof privateSnapshotV2Schema>;
+// Existing Task4 export; declaration identifies its exact interface, not a replacement body.
+export declare function applyPrivateSourcePatch(
+  task:TaskV2,patch:SourcePatch,calendar:CalendarType,unavailable:boolean,
+  reopenedStatus?:'todo'|'doing',
+):{task:TaskV2;unavailable:boolean};
+```
+
+Private persistence table `task_schedule_provenance` имеет `taskId PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE` и reason `legacy-interval-unavailable`. SQL003/pin/resolver/archive outcome относятся к Task4 writer/review, не изменяются Task7. `projectLegacySnapshot` возвращает PRIVATE snapshot; `adaptLegacyTree` и Repository выбирают только project/tasks/dependencies для public DTO и передают `legacyIntervalUnavailable` в optional pure-input field. Нельзя spread private snapshot в public tree или публичный snapshotSchema. Public source/status/duration остаются без изменения; публичный client не отправляет unavailable IDs.
+
+Leaf marker означает неизвестный real interval: blank real map, не knownLeafCount, null full summary при таком потомке, grouped sorted `LEGACY_INTERVAL_UNAVAILABLE` diagnostic. Parent marker сам не является leaf provenance и не исключает известные child leaves; при preserveWork исходная work provenance переносится на созданный leaf child. Marked leaf остаётся vertex ID в topo/weak components и сохраняет original graph edges, но не имеет WorkingInterval. `Hknown` исключает marked leaf, включает unmarked known leaves даже в blocked component. Raw known predecessor.inputFinish/successor.inputStart по-прежнему доказывают FS-конфликт; infeasible подавляет normal и partial analysis.
+
+Clear разрешён только explicit source-key patch после validation, включая equal values; отсутствующие/undefined поля не считаются patch. На ORIGINAL done требуется explicit status todo/doing в том же command. Details/status-only/calendar/edge edits marker сохраняют; reopen не интерпретирует retained valid pair как восстановленный lock. Private metadata входит в beforeSnapshot/undo и восстанавливается атомарно с tasks. Полностью определённые TaskD regressions ниже проверяют pass-through, clear/undo/reopen; ordinary unmarked explicit done сохраняет P06/N06-done semantics.
 
 ## Полный контракт результата
 
@@ -312,7 +351,7 @@ export function calculateSchedule(input: OptionalInput): LiveResult;
 
 Default internal origin `'0001-01-01'` is Monday and working in both calendars. It is a technical coordinate, never a release date. Alternative working origins are only test injection into pure helpers; no new application option.
 
-Civil ordinal O(0001-01-01)=0; proleptic Gregorian leap rule. For all-days W(date)=O(date). For weekdays, only Monday–Friday dates admitted and `W(date)=5*floor(O/7)+(O mod 7)`. `s=W(start)-W(origin)`, `f=W(finish)-W(origin)+1`, `d=f-s`. Existing `dateToIndex`/`workingDaysInclusive` implement this without day iteration.
+Civil ordinal O(0001-01-01)=0; proleptic Gregorian leap rule. For all-days W(date)=O(date). For weekdays, only Monday–Friday dates admitted and `W(date)=5*floor(O/7)+(O mod 7)`. `s=W(start)-W(origin)`, `f=W(finish)-W(origin)+1`, `d=f-s`. Existing `dateToIndex`/`workingDaysInclusive` implement this without day iteration. `toWorkingInterval` проверяет только candidate source pair; graph builder сначала исключает unavailable ID и не вызывает этот helper для marked leaf. Отдельная raw FS-проверка использует source границы независимо от admission.
 
 ```ts
 export function toWorkingInterval(
@@ -330,11 +369,11 @@ At inclusive `9999-12-31`, f may lie one boundary beyond the last representable 
 
 Implementation sequence inside `analyzeExplicitDates`:
 
-1. Take leaf IDs/real pairs/summary/display from projection without mutating it. Detect malformed graph diagnostics (`DUPLICATE_TASK_ID`, `INVALID_PARENT`, `TREE_CYCLE`, `DUPLICATE_DEPENDENCY_ID`, `DEPENDENCY_TASK_NOT_FOUND`, `SELF_DEPENDENCY`, `DEPENDENCY_REQUIRES_LEAVES`, `DUPLICATE_DEPENDENCY`, `DEPENDENCY_CYCLE`, `INVALID_PROJECT_CALENDAR`) or `EXPLICIT_PRECEDENCE_CONFLICT`. Return infeasible before any normal/partial analysis.
-2. For every missing pair append `UNKNOWN_INTERVAL` ([task], no edges); for invalid full pair append `INVALID_INTERVAL`; for valid date pair whose supplied duration mismatches append `DURATION_MISMATCH`. Do not duplicate equivalent existing projection diagnostic. Missing pair is not replaced by duration/display. FS checks still use independently known predecessor finish/successor start even when realInterval=null.
+1. Take leaf IDs/real pairs/summary/display from projection without mutating it. Detect malformed graph diagnostics (`DUPLICATE_TASK_ID`, `INVALID_PARENT`, `TREE_CYCLE`, `DUPLICATE_DEPENDENCY_ID`, `DEPENDENCY_TASK_NOT_FOUND`, `SELF_DEPENDENCY`, `DEPENDENCY_REQUIRES_LEAVES`, `DUPLICATE_DEPENDENCY`, `DEPENDENCY_CYCLE`, `INVALID_PROJECT_CALENDAR`, `INVALID_UNAVAILABLE_TASK`) or `EXPLICIT_PRECEDENCE_CONFLICT`. Return infeasible before any normal/partial analysis.
+2. For every unmarked missing pair append `UNKNOWN_INTERVAL` ([task], no edges); for invalid full pair append `INVALID_INTERVAL`; for valid date pair whose supplied duration mismatches append `DURATION_MISMATCH`. Marked leaves receive grouped sorted `LEGACY_INTERVAL_UNAVAILABLE` and no redundant UNKNOWN_INTERVAL. Do not duplicate equivalent projection diagnostics. Missing/marked pair is not replaced by duration/display/retained source. FS checks still use independently known predecessor finish/successor start even when realInterval=null or leaf is marked.
 3. Necessary absent FS edge bound → `UNKNOWN_PRECEDENCE`, both endpoints and original edge ID; nonworking/invalid necessary bound → `INVALID_PRECEDENCE_BOUNDARY`. Check all checkable edges, preserving unknown diagnostics alongside conflict. `EXPLICIT_PRECEDENCE_CONFLICT` reports exact endpoints/edge; no automatic shift. Graph errors fail closed; saved source/calendar mismatch alone means incomplete. Existing mutation validator still rejects newly supplied invalid pairs and graph.
 4. Build CpmGraph with iterative Kahn topological traversal and iterative undirected BFS/DFS weak components over **all** leaves and **all** original edges, including unknown. Sort leaf IDs, component members, components by smallest ID, IDs in result and diagnostics by `code/taskIds/dependencyIds` using existing deterministic comparison. Use indexed queue cursor, no `shift()` for 10000-node graph. Sorting O((V+E)log(V+E)), passes O(V+E), memory O(V+E); arithmetic does not depend on date span.
-5. `knownHorizon=max(f of all valid leaves)`; null if none. If all leaves known, H=knownHorizon. In reverse topo iterate all known leaves; terminal LF=H; otherwise min(H, successors' LS); LS=LF-d, projectFloat=LS-s; constraintFloat=done?0:min(H-f, successors' **entered s** minus f). Derive critical tasks float=0; edge critical iff both float=0 **and f(predecessor)=s(successor)**.
+5. `knownHorizon=max(f of all admitted unmarked valid leaves)`; null if none. If all leaves known, H=knownHorizon. In reverse topo iterate all known leaves; terminal LF=H; otherwise min(H, successors' LS); LS=LF-d, projectFloat=LS-s; constraintFloat=done?0:min(H-f, successors' **entered s** minus f). Derive critical tasks float=0; edge critical iff both float=0 **and f(predecessor)=s(successor)**.
 6. In incomplete use Hknown across all known leaves, then analyzedIds as union of complete weak components. Run same reverse pass on these vertices; publish only `knownHorizonFloat` (ordinary projectFloat from that horizon) in separate partial tasks. No partial constraintFloat. Known vertices in blocked components influence Hknown but receive no partial entry. If Hknown exists but analyzedIds empty, publish partial object with empty maps/sets and blocked count=all leaves; if none known, partialAnalysis=null.
 7. Make every live leaf task/summary carry ordinary null floats/critical in incomplete/infeasible. For ready aggregate `containsCritical` bottom-up by OR of critical **leaf** membership. For partial aggregate separate `partialCriticalSummaryIds` by leaf membership regardless of whether the summary range is complete; missing summary range remains null. Do not introduce graph edges from parentId.
 8. Copy source intervals/display unchanged into the typed final result; Repository performs strict live schema parsing before commit. `calculateSchedule` does only `analyzeExplicitDates(input, projectExplicitSchedule(input))`; it does not call legacy calculator, use today or write anything.
@@ -416,6 +455,12 @@ export const readyFixtures: ReadyFixture[] = [
     leaf('C','2026-10-05','2026-10-14') ],dependencies:[edge('AB','A','B')] },
     horizon:'2026-10-14',floats:[['A',7,3],['B',4,0],['C',0,0]],
     critical:['C'],criticalEdges:[] },
+  { id: 'C17-unmarked-done-control', input: { calendarType:'all-days',tasks:[
+    leaf('D','2026-10-05','2026-10-07',3,'done'),
+    leaf('K','2026-10-09','2026-10-10'),leaf('C','2026-10-05','2026-10-08')],
+    dependencies:[edge('DK','D','K')]},
+    horizon:'2026-10-10',floats:[['C',2,2],['D',1,0],['K',0,0]],
+    critical:['K'],criticalEdges:[] },
   { id: 'F01-fork-join', input: { calendarType: 'all-days', tasks: [
     leaf('A','2026-10-05','2026-10-06'),leaf('B','2026-10-07','2026-10-09'),
     leaf('C','2026-10-07','2026-10-08'),leaf('D','2026-10-10','2026-10-11') ],
@@ -610,6 +655,121 @@ it.each([
 ```
 
 ### Дополнительные exact boundary/status cases
+
+C17 marked valid-source cases добавить в тот же `tests/explicit-cpm.test.ts`; calculateSchedule/projectExplicitSchedule/graph helpers и leaf/edge imports определены выше. Expected не вызывает solver.
+
+```ts
+const c17Input=():OptionalInput=>({
+  calendarType:'all-days',unavailableTaskIds:['D'],
+  tasks:[
+    leaf('P',null,null),
+    leaf('D','2026-10-05','2026-10-07',3,'done','P'),
+    leaf('K','2026-10-09','2026-10-10',null,'todo','P'),
+    leaf('U',null,null,3,'todo','P'),
+    leaf('C','2026-10-05','2026-10-08')],
+  dependencies:[edge('DK','D','K')],
+});
+it('C17 valid retained done source stays unknown and blocks its whole weak component',()=>{
+  const input=c17Input(),before=structuredClone(input),r=calculateSchedule(input);
+  expect(r.analysisStatus).toBe('incomplete');expect(r.feasibility).toBe('incomplete');
+  expect(r.coverage).toEqual({knownLeafCount:2,totalLeafCount:4});
+  expect(r.tasks.D).toEqual({startDate:null,finishDate:null,calendarSpanDays:null,
+    projectFloat:null,constraintFloat:null});
+  expect(r.summaries.P).toEqual({startDate:null,finishDate:null,calendarSpanDays:null,
+    knownLeafCount:1,totalLeafCount:3,containsCritical:null});
+  expect(r.display.U).toEqual({kind:'conditional',startDate:'2026-10-05',
+    finishDate:'2026-10-07',clipped:false});
+  expect(r.diagnostics).toEqual([
+    {code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:['D'],dependencyIds:[],
+      messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'},
+    {code:'UNKNOWN_INTERVAL',taskIds:['U'],dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL'},
+  ]);
+  expect(r.criticalTaskIds).toEqual([]);expect(r.criticalDependencyIds).toEqual([]);
+  if(r.analysisStatus!=='incomplete')throw new Error('Expected incomplete');
+  expect(r.partialAnalysis).toEqual({labelKey:'scheduling.PARTIAL_ANALYSIS',
+    knownHorizonFinishDate:'2026-10-10',coverage:{analyzedLeafCount:1,blockedLeafCount:3},
+    tasks:{C:{knownHorizonFloat:2}},partialCriticalTaskIds:[],
+    partialCriticalDependencyIds:[],partialCriticalSummaryIds:[]});
+  const graph=buildCpmGraph(input,'2026-10-05');
+  expect([...graph.vertices.keys()]).toEqual(['C','K']);
+  expect(graph.leafIds).toEqual(['C','D','K','U']);
+  expect(graph.weakComponents).toEqual([['C'],['D','K'],['U']]);
+  expect(graph.dependencies).toEqual([edge('DK','D','K')]);
+  expect(input).toEqual(before);
+  expect(analyzeExplicitDates(input,projectExplicitSchedule(input),'2026-10-20')).toEqual(r);
+});
+it('C17 excludes marked late finish from Hknown while preserving source minima',()=>{
+  const input=c17Input();
+  input.tasks=input.tasks.map(t=>t.id==='D'?{...t,inputFinish:'2026-10-20',durationDays:16}:t);
+  input.dependencies=[];
+  const r=calculateSchedule(input);
+  if(r.analysisStatus!=='incomplete')throw new Error('Expected incomplete');
+  expect(r.partialAnalysis).toEqual({labelKey:'scheduling.PARTIAL_ANALYSIS',
+    knownHorizonFinishDate:'2026-10-10',coverage:{analyzedLeafCount:2,blockedLeafCount:2},
+    tasks:{C:{knownHorizonFloat:2},K:{knownHorizonFloat:0}},
+    partialCriticalTaskIds:['K'],partialCriticalDependencyIds:[],partialCriticalSummaryIds:['P']});
+  expect(input.tasks.find(t=>t.id==='D')).toMatchObject({
+    inputStart:'2026-10-05',inputFinish:'2026-10-20',durationDays:16,status:'done'});
+  expect(r.display.U).toEqual({kind:'conditional',startDate:'2026-10-05',
+    finishDate:'2026-10-07',clipped:false});
+});
+it('marked source still proves raw FS conflict and preserves unavailable plus unknown diagnostics',()=>{
+  const input=c17Input();
+  input.tasks=input.tasks.map(t=>t.id==='K'?{...t,inputStart:'2026-10-07'}:t);
+  const r=calculateSchedule(input);
+  expect(r.analysisStatus).toBe('infeasible');expect(r.feasibility).toBe('infeasible');
+  if(r.analysisStatus!=='infeasible')throw new Error('Expected infeasible');
+  expect(r.coverage).toEqual({knownLeafCount:2,totalLeafCount:4});
+  expect(r.partialAnalysis).toBeNull();expect(r.horizonFinishDate).toBeNull();
+  expect(r.criticalTaskIds).toEqual([]);expect(r.criticalDependencyIds).toEqual([]);
+  expect(r.diagnostics).toEqual([
+    {code:'EXPLICIT_PRECEDENCE_CONFLICT',taskIds:['D','K'],dependencyIds:['DK'],
+      messageKey:'scheduling.EXPLICIT_PRECEDENCE_CONFLICT'},
+    {code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:['D'],dependencyIds:[],
+      messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'},
+    {code:'UNKNOWN_INTERVAL',taskIds:['U'],dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL'},
+  ]);
+  expect(r.tasks.D).toMatchObject({startDate:null,finishDate:null});
+  expect(r.tasks.K).toMatchObject({startDate:'2026-10-07',finishDate:'2026-10-10',
+    projectFloat:null,constraintFloat:null});
+  expect(input.dependencies).toEqual([edge('DK','D','K')]);
+});
+it('ordinary unmarked explicit done retains real pair and structural float',()=>{
+  const marked=c17Input();
+  const input:OptionalInput={calendarType:marked.calendarType,
+    tasks:marked.tasks.filter(t=>t.id!=='U'),dependencies:marked.dependencies};
+  const r=calculateSchedule(input);
+  if(r.analysisStatus!=='ready')throw new Error('Expected ready');
+  expect(r.coverage).toEqual({knownLeafCount:3,totalLeafCount:3});
+  expect(r.tasks.D).toEqual({startDate:'2026-10-05',finishDate:'2026-10-07',
+    calendarSpanDays:3,projectFloat:1,constraintFloat:0});
+  expect(r.tasks.K).toMatchObject({projectFloat:0,constraintFloat:0});
+  expect(r.tasks.C).toMatchObject({projectFloat:2,constraintFloat:2});
+  expect(r.criticalTaskIds).toEqual(['K']);expect(r.criticalDependencyIds).toEqual([]);
+  expect(r.diagnostics).toEqual([]);
+});
+it('only marked and missing leaves have no Hknown but keep retained-start conditional anchor',()=>{
+  const original=c17Input();
+  const input:OptionalInput={...original,tasks:original.tasks.filter(t=>['P','D','U'].includes(t.id)),
+    dependencies:[]};
+  const r=calculateSchedule(input);
+  if(r.analysisStatus!=='incomplete')throw new Error('Expected incomplete');
+  expect(r.coverage).toEqual({knownLeafCount:0,totalLeafCount:2});
+  expect(r.partialAnalysis).toBeNull();expect(r.horizonFinishDate).toBeNull();
+  expect(r.summaries.P).toEqual({startDate:null,finishDate:null,calendarSpanDays:null,
+    knownLeafCount:0,totalLeafCount:2,containsCritical:null});
+  expect(r.display.U).toEqual({kind:'conditional',startDate:'2026-10-05',
+    finishDate:'2026-10-07',clipped:false});
+});
+it('foreign unavailable ID fails closed before analysis',()=>{
+  const input:OptionalInput={...c17Input(),unavailableTaskIds:['foreign']};
+  const r=calculateSchedule(input);
+  expect(r.analysisStatus).toBe('infeasible');
+  expect(r.diagnostics).toEqual([{code:'INVALID_UNAVAILABLE_TASK',taskIds:['foreign'],
+    dependencyIds:[],messageKey:'scheduling.INVALID_UNAVAILABLE_TASK'}]);
+  expect(r.criticalTaskIds).toEqual([]);expect(r.criticalDependencyIds).toEqual([]);
+});
+```
 
 Все следующие tests обязательны, включая две разновидности P09 (без U и с U). Добавить в тот же test файл:
 
@@ -959,11 +1119,13 @@ it.each([
 
 ```ts
 export function buildCpmGraph(input: OptionalInput, originDate='0001-01-01'): CpmGraph {
+  const unavailable=new Set(input.unavailableTaskIds??[]);
   const parents=new Set(input.tasks.flatMap(t=>t.parentId===null?[]:[t.parentId]));
   const leaves=input.tasks.filter(t=>!parents.has(t.id)).toSorted((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
   const leafIds=leaves.map(t=>t.id);
   const vertices=new Map<string,CpmVertex>();
   for(const t of leaves) {
+    if(unavailable.has(t.id)) continue;
     const w=toWorkingInterval(t,input.calendarType,originDate);
     if(w) vertices.set(t.id,{id:t.id,status:t.status,...w});
   }
@@ -1078,16 +1240,18 @@ diagnostic('INVALID_DURATION', [id], [], 'incomplete'); // invalid saved duratio
 // In the full-pair validateSourceInput catch:
 diagnostic(error.code, [id], [], 'incomplete');
 // Missing pair branch after the full-pair validation branch:
-if(real === null && (task.inputStart === null || task.inputFinish === null))
+if(real === null && !unavailable.has(id) && (task.inputStart === null || task.inputFinish === null))
   diagnostic('UNKNOWN_INTERVAL', [id], [], 'incomplete');
 // FS required-bound validation, replacing NON_WORKING_DATE and caught INVALID_INTERVAL:
 diagnostic('INVALID_PRECEDENCE_BOUNDARY', taskIds, [edge.id], 'incomplete');
 // Keep UNKNOWN_PRECEDENCE when a required edge bound is absent.
 // Keep EXPLICIT_PRECEDENCE_CONFLICT with default error severity when f > successor s.
 // Graph diagnostics keep error severity and existing early return before source loops.
+// Immediately after Task4 unavailable-ID references are checked:
+if(infeasible) return finishResult(); // INVALID_UNAVAILABLE_TASK is a malformed input.
 ```
 
-`INVALID_INTERVAL`/`INVALID_DURATION` source checks continue once after recording the error, retaining existing valid start anchor and invalidDisplay behavior. Не добавлять UNKNOWN_INTERVAL после этих continue; full invalid pair получает только error.code. Source errors не меняют `infeasible`, поэтому все FS edges продолжают проверяться. Result initializer/finishResult используют ExplicitProjection и не содержат analysisStatus/global IDs.
+`INVALID_INTERVAL`/`INVALID_DURATION` source checks continue once after recording the error, retaining existing valid start anchor and invalidDisplay behavior. Не добавлять UNKNOWN_INTERVAL после этих continue; full invalid pair получает только error.code. Source errors не меняют `infeasible`, поэтому все FS edges продолжают проверяться. Result initializer/finishResult используют ExplicitProjection и не содержат analysisStatus/global IDs. Task4 `unavailable` Set/grouped LEGACY_INTERVAL_UNAVAILABLE/INVALID_UNAVAILABLE_TASK checks сохраняются; real copy condition остаётся `real !== null && !unavailable.has(id)`. KnownStartMin собирается до этой condition и не теряет marked source minima. Raw FS loop никогда не пропускает marked endpoint.
 
 ### Адаптация существующего Task2 test suite после live switch
 
@@ -1185,7 +1349,7 @@ Graph expected literals заменяют pending fields на live `analysisStatu
 const graphErrors=new Set(['DUPLICATE_TASK_ID','INVALID_PARENT','TREE_CYCLE',
   'DUPLICATE_DEPENDENCY_ID','DEPENDENCY_TASK_NOT_FOUND','SELF_DEPENDENCY',
   'DEPENDENCY_REQUIRES_LEAVES','DUPLICATE_DEPENDENCY','DEPENDENCY_CYCLE',
-  'INVALID_PROJECT_CALENDAR']);
+  'INVALID_PROJECT_CALENDAR','INVALID_UNAVAILABLE_TASK']);
 function criticalSummaryIds(input:OptionalInput,criticalIds:readonly string[]):string[] {
   const map=new Map(input.tasks.map(t=>[t.id,t]));
   const counts=new Map(input.tasks.map(t=>[t.id,0]));
@@ -1207,6 +1371,7 @@ export function analyzeExplicitDates(
   input:OptionalInput,projection:ExplicitProjection,originDate='0001-01-01',
 ):LiveResult {
   const taskById=new Map(input.tasks.map(t=>[t.id,t]));
+  const unavailable=new Set(input.unavailableTaskIds??[]);
   const diagnostics=projection.diagnostics.map(d=>({
     ...d,taskIds:[...d.taskIds].sort(),dependencyIds:[...d.dependencyIds].sort(),
   }));
@@ -1220,8 +1385,17 @@ export function analyzeExplicitDates(
     diagnosticKeys.add(key);
     diagnostics.push({code,taskIds:[id],dependencyIds:[],messageKey:'scheduling.'+code});
   };
+  const unavailableLeaves=Object.keys(projection.tasks).filter(id=>unavailable.has(id)).sort();
+  if(unavailableLeaves.length&&!diagnostics.some(d=>graphErrors.has(d.code))){
+    const key=JSON.stringify(['LEGACY_INTERVAL_UNAVAILABLE',unavailableLeaves,[]]);
+    if(!diagnosticKeys.has(key)){
+      diagnosticKeys.add(key);
+      diagnostics.push({code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:unavailableLeaves,
+        dependencyIds:[],messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'});
+    }
+  }
   if(!diagnostics.some(d=>graphErrors.has(d.code))) for(const id of Object.keys(projection.tasks).sort()) {
-    if(sourceErrorIds.has(id)) continue;
+    if(unavailable.has(id)||sourceErrorIds.has(id)) continue;
     const t=taskById.get(id)!;
     if(realInterval(t,input.calendarType)!==null) continue;
     if(t.inputStart===null||t.inputFinish===null){
@@ -1292,7 +1466,7 @@ export function analyzeExplicitDates(
 
 Projection must emit exactly one source diagnostic per unknown/invalid leaf. It must never add UNKNOWN_INTERVAL alongside INVALID_INTERVAL/DURATION_MISMATCH/INVALID_DURATION for the same invalid source. The constructor builds canonical diagnosticKeys once and deduplicates each add with Set.has; it never scans the growing diagnostics array per leaf. The 10000 independent unknown-leaf test instruments Array.some callback work (at most 20N), so a quadratic deduplication loop fails without a timing-only oracle. Copy diagnostic sort keys use ordinal string comparison. Legacy-specific saved diagnosis can coexist but never supplies a real interval. A partial missing pair retaining finish-only source is unknown even if display is known.
 
-C17 handoff boundary: Task4/5 должны сохранить reviewed durable unknown outcome для unavailable historical done lock, включая active/undo snapshot, даже если retained source выглядит как допустимая пара. Текущий source-only OptionalTask сам не различает provenance такого legacy исхода. Не считать сохранённую пару восстановленным lock и не менять source/status ради этого различия; неоднозначный migration case fail closed до reviewed representation. Если решение Task4 меняет exact Task5 scheduling input, сначала обновить этот annex и снова получить два independent reviews, затем подключать CPM. P06/N06-done описывают обычные explicit done интервалы, не восстановление historical lock.
+C17 handoff реализуется exact private/pure contract выше: Task4 PrivateSnapshotV2.legacyIntervalUnavailable → Task5 OptionalInput.unavailableTaskIds. Source-only OptionalTask не получает public provenance. Task4 implementation/review и Task5 pass-through/undo/clear persistence обязательны до Task7; новый amended annex требует двух independent reviews. P06/N06-done описывают обычные unmarked explicit done интервалы.
 
 - [ ] **Step 4: Run GREEN.** `npm test -- tests/explicit-cpm-contracts.test.ts tests/explicit-cpm.test.ts tests/calendar.test.ts tests/optional-scheduling.test.ts`; after Task 5 suite name is still `optional-scheduling.test.ts` unless integrator moved it explicitly. Then `npm run typecheck`, `npm run lint`, `npm run test:unit` and independent oracle. No skip/empty suites.
 - [ ] **Step 5: Commit B/C together.** Stage `src/domain/explicit-cpm.ts`, `src/domain/scheduling.ts`, fixture/tests and package unit list; staged guard/Gitleaks and normal hooks; commit `feat: analyze explicit task intervals and partial components`. Two independent reviews of this SHA include literal floats/IDs/diagnostics, immutability, complexity and negative-origin invariance.
@@ -1301,7 +1475,7 @@ C17 handoff boundary: Task4/5 должны сохранить reviewed durable u
 
 **Files:** Modify `src/server/repository.ts`, `tests/scheduling-api.test.ts`, `tests/optional-migration.test.ts`; create `tests/explicit-cpm-repository.test.ts`; modify integration list in `package.json`.
 
-**Interfaces:** Consumes Task 5 Repository: `createProject(title): Project`, `getTree(projectId,sessionId): ProjectTreeV2`, `applyCommand(projectId,CommandEnvelopeV2,sessionId): ProjectTreeV2`, `replayLegacy(projectId,body:unknown,sessionId): ProjectTreeV2` and `openDatabase(path)` for newly created/schema3 synthetic DB. Existing `change` transaction parses response before commit and caches exact result. Command body/header contract remains V2.
+**Interfaces:** Consumes Task5 Repository: `createProject(title): Project`, `getTree(projectId,sessionId): ProjectTreeV2`, `getSchedule(projectId): ScheduleResponseV2`, `applyCommand(projectId,CommandEnvelopeV2,sessionId): ProjectTreeV2`, `replayLegacy(projectId,body:unknown,sessionId): ProjectTreeV2` and `openDatabase(path)` for newly created/schema3 synthetic DB. Existing mutate/save/snapshot seams use PrivateSnapshotV2; transaction parses live public response before commit and caches exact result. Command body/header contract remains V2.
 
 - [ ] **Step 1: Write independently expected P04→P05→undo→restart test.** Новый test file целиком создаёт disposable DB; не читает application runtime. Exact task/dependency IDs создаёт Repository; ожидаемые множества берутся по literal titles/from-to mapping, не из calculator.
 
@@ -1325,10 +1499,11 @@ function validatedCachedTreeResponse(value:unknown):ProjectTreeV2 {
 }
 // Replace only this method inside the existing Repository class:
 class Repository {
-private calculate(snapshot:Snapshot):LiveScheduleResultV2 {
+private calculate(snapshot:PrivateSnapshotV2):LiveScheduleResultV2 {
   const parsed=liveScheduleResultV2Schema.safeParse(calculateSchedule({
     calendarType:snapshot.project.calendarType,tasks:snapshot.tasks,
     dependencies:snapshot.dependencies,
+    unavailableTaskIds:snapshot.legacyIntervalUnavailable,
   }));
   if(!parsed.success) throw new Error('Invalid internal schedule response');
   return parsed.data;
@@ -1336,7 +1511,51 @@ private calculate(snapshot:Snapshot):LiveScheduleResultV2 {
 }
 ```
 
-`private calculate` — method fragment внутри существующего Repository class, не top-level function. `getTree` и current mutation response вызывают validatedTreeResponse; `getSchedule`/route используют validatedScheduleResponse. New operation response сохраняется только после этих live validators в той же transaction. `findOperation`/`replayLegacy` проверяют digest и вызывают validatedCachedTreeResponse без solver; union применяется только к stored historical replies/client parsing. Fresh pending result никогда не проходит current precommit boundary.
+`private calculate` — method fragment внутри существующего Repository class, не top-level function; `PrivateSnapshotV2` импортируется только из server/optional-snapshot. `getTree` и current mutation response вызывают validatedTreeResponse; `getSchedule`/route используют validatedScheduleResponse. New operation response сохраняется только после этих live validators в той же transaction. `findOperation`/`replayLegacy` проверяют digest и вызывают validatedCachedTreeResponse без solver; union применяется только к stored historical replies/client parsing. Fresh pending result никогда не проходит current precommit boundary.
+
+Task5 уже заменяет snapshot/save/undo на PrivateSnapshotV2 и сохраняет provenance table; Task7 проверяет exact pass-through выше. В существующем getTree нельзя spread private snapshot. Public construction имеет следующую literal форму; canUndo expression использует existing latestUndo:
+
+```ts
+return validatedTreeResponse({
+  contractVersion:2,
+  project:snapshot.project,tasks:snapshot.tasks,dependencies:snapshot.dependencies,
+  schedule:this.calculate(snapshot),
+  canUndo:this.latestUndo(projectId,sessionId)?.afterRevision===snapshot.project.revision,
+});
+// Existing getSchedule transaction returns:
+return validatedScheduleResponse({
+  contractVersion:2,projectId,revision:snapshot.project.revision,
+  schedule:this.calculate(snapshot),
+});
+```
+
+На Task5 task.edit seam source patch извлекается только из defined keys. Следующий exact fragment находится внутри существующего case с task/snapshot/command/timestamp/find/hasChildren; private helper принадлежит Task4, Repository public signature не расширяется:
+
+```ts
+const patch:SourcePatch={};
+if(command.changes.inputStart!==undefined)patch.inputStart=command.changes.inputStart;
+if(command.changes.inputFinish!==undefined)patch.inputFinish=command.changes.inputFinish;
+if(command.changes.durationDays!==undefined)patch.durationDays=command.changes.durationDays;
+const returnsToWork=task.status==='done'&&
+  (command.changes.status==='todo'||command.changes.status==='doing');
+if(task.status==='done'&&Object.keys(patch).length&&!returnsToWork)
+  throw new DomainError('DONE_PLANNING','Верните завершённую задачу в работу перед изменением сроков.');
+if(hasChildren(task.id)&&Object.keys(patch).length)
+  throw new DomainError('SUMMARY_DATES','Сводная задача не имеет собственных сроков.');
+const marked=new Set(snapshot.legacyIntervalUnavailable);
+const reopenedStatus=command.changes.status==='todo'||command.changes.status==='doing'
+  ?command.changes.status:undefined;
+const outcome=applyPrivateSourcePatch(task,patch,snapshot.project.calendarType,
+  marked.has(task.id),reopenedStatus);
+Object.assign(task,outcome.task,{updatedAt:timestamp});
+if(command.changes.title!==undefined)task.title=command.changes.title;
+if(command.changes.description!==undefined)task.description=command.changes.description;
+if(command.changes.status!==undefined)task.status=command.changes.status;
+if(outcome.unavailable)marked.add(task.id);else marked.delete(task.id);
+snapshot.legacyIntervalUnavailable=[...marked].sort();
+```
+
+Imports SourcePatch из shared/contracts, applyPrivateSourcePatch/PrivateSnapshotV2/privateSnapshotV2Schema из server/optional-snapshot. Task5 save синхронизирует private marker rows в той же transaction; undo читает privateSnapshotV2Schema и восстанавливает их вместе с tasks. Details/status/calendar/edges не вызывают explicit source acknowledgement; preserveWork переносит marker на work child. SQL/pin/migration acknowledgement/frozen outcome conversion остаются под review Task4 и не дублируются Task7.
 
 
 ```ts
@@ -1348,7 +1567,9 @@ import {randomUUID,createHash} from 'node:crypto';
 import {openDatabase} from '../src/server/database.js';
 import {Repository} from '../src/server/repository.js';
 import * as scheduling from '../src/domain/scheduling.js';
-import {projectTreeV2Schema,type ProjectTreeV2,type CommandV2} from '../src/shared/contracts.js';
+import {projectTreeV2Schema,snapshotV2Schema,taskV2Schema,commandV2Schema,
+  type ProjectTreeV2,type CommandV2} from '../src/shared/contracts.js';
+import {privateSnapshotV2Schema} from '../src/server/optional-snapshot.js';
 let directory:string,path:string,db:ReturnType<typeof openDatabase>,repository:Repository;
 const session='synthetic-explicit-cpm-session';
 beforeEach(()=>{
@@ -1489,6 +1710,7 @@ function rawState(projectId:string) {
     dependencies:db.prepare('SELECT * FROM dependencies WHERE projectId=? ORDER BY id').all(projectId),
     operations:db.prepare('SELECT * FROM operations WHERE projectId=? ORDER BY operationId').all(projectId),
     undo:db.prepare('SELECT * FROM undo_snapshots WHERE projectId=? ORDER BY sequence').all(projectId),
+    provenance:db.prepare('SELECT p.taskId,p.reason FROM task_schedule_provenance p JOIN tasks t ON t.id=p.taskId WHERE t.projectId=? ORDER BY p.taskId').all(projectId),
   };
 }
 it.each(['pending','infeasible-with-partial'] as const)('rolls back invalid fresh %s outcome',kind=>{
@@ -1534,6 +1756,170 @@ it('done keeps structural float and only explicit return permits source edit wit
   assertFloats(working,[['A',6,3],['B',3,3],['C',0,0]]);
   const undone=step(working,{type:'undo'});
   expect(undone.tasks).toEqual(done.tasks);expect(undone.schedule).toEqual(done.schedule);
+});
+```
+
+C17 server regressions добавить в тот же `tests/explicit-cpm-repository.test.ts`. Setup/step/rawState/db/path/repository/session/scheduling/UUID imports определены выше. Marker rows вставляются только в собственную schema3 synthetic DB как literal migrated starting fixture; production migration не запускается.
+
+```ts
+function provenance(projectId:string) {
+  return db.prepare('SELECT p.taskId,p.reason FROM task_schedule_provenance p JOIN tasks t ON t.id=p.taskId WHERE t.projectId=? ORDER BY p.taskId').all(projectId);
+}
+function c17Stored() {
+  const project=repository.createProject('Synthetic C17 provenance');
+  let tree=repository.getTree(project.id,session);
+  tree=step(tree,{type:'project.schedule',changes:{calendarType:'all-days'}});
+  tree=step(tree,{type:'task.create',title:'P',parentId:null});
+  const p=tree.tasks.find(t=>t.title==='P')!.id;
+  for(const [title,parentId] of [['D',p],['K',p],['C',null]] as const)
+    tree=step(tree,{type:'task.create',title,parentId});
+  const by=ids(tree);
+  tree=step(tree,{type:'task.edit',taskId:by.D!,changes:{
+    inputStart:'2026-10-05',inputFinish:'2026-10-07',durationDays:3,status:'done'}});
+  tree=step(tree,{type:'task.edit',taskId:by.K!,changes:{
+    inputStart:'2026-10-09',inputFinish:'2026-10-10'}});
+  tree=step(tree,{type:'task.edit',taskId:by.C!,changes:{
+    inputStart:'2026-10-05',inputFinish:'2026-10-08'}});
+  tree=step(tree,{type:'dependency.create',predecessorId:by.D!,successorId:by.K!});
+  expect(tree.schedule.analysisStatus).toBe('ready'); // ordinary explicit done control
+  db.prepare("INSERT INTO task_schedule_provenance(taskId,reason) VALUES (?, 'legacy-interval-unavailable')").run(by.D!);
+  return {tree:repository.getTree(project.id,session),by};
+}
+function assertC17Unknown(tree:ProjectTreeV2,by:Record<string,string>) {
+  expect(tree.schedule.analysisStatus).toBe('incomplete');
+  if(tree.schedule.analysisStatus!=='incomplete')throw new Error('Expected incomplete');
+  expect(tree.schedule.coverage).toEqual({knownLeafCount:2,totalLeafCount:3});
+  expect(tree.schedule.tasks[by.D!]).toEqual({startDate:null,finishDate:null,
+    calendarSpanDays:null,projectFloat:null,constraintFloat:null});
+  expect(tree.schedule.summaries[by.P!]).toEqual({startDate:null,finishDate:null,
+    calendarSpanDays:null,knownLeafCount:1,totalLeafCount:2,containsCritical:null});
+  expect(tree.schedule.partialAnalysis).toEqual({labelKey:'scheduling.PARTIAL_ANALYSIS',
+    knownHorizonFinishDate:'2026-10-10',coverage:{analyzedLeafCount:1,blockedLeafCount:2},
+    tasks:{[by.C!]:{knownHorizonFloat:2}},partialCriticalTaskIds:[],
+    partialCriticalDependencyIds:[],partialCriticalSummaryIds:[]});
+  expect(tree.schedule.diagnostics).toEqual([{code:'LEGACY_INTERVAL_UNAVAILABLE',
+    taskIds:[by.D!],dependencyIds:[],messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'}]);
+  expect(tree.schedule.criticalTaskIds).toEqual([]);expect(tree.schedule.criticalDependencyIds).toEqual([]);
+  expect(provenance(tree.project.id)).toEqual([{taskId:by.D!,reason:'legacy-interval-unavailable'}]);
+  expect(tree).not.toHaveProperty('legacyIntervalUnavailable');
+  expect(tree).not.toHaveProperty('unavailableTaskIds');
+  expect(tree.tasks.find(t=>t.id===by.D!)).toMatchObject({
+    inputStart:'2026-10-05',inputFinish:'2026-10-07',durationDays:3});
+}
+it('passes private provenance into every current pure calculation without public leakage',()=>{
+  const {tree:before,by}=c17Stored(),state=rawState(before.project.id);
+  const spy=vi.spyOn(scheduling,'calculateSchedule');
+  const tree=repository.getTree(before.project.id,session);
+  assertC17Unknown(tree,by);
+  expect(repository.getSchedule(before.project.id).schedule).toEqual(tree.schedule);
+  const edited=step(tree,{type:'task.edit',taskId:by.D!,changes:{description:'Synthetic detail'}});
+  expect(edited.project.revision).toBe(tree.project.revision+1);assertC17Unknown(edited,by);
+  expect(spy).toHaveBeenCalled();
+  for(const [input] of spy.mock.calls){
+    expect(input.unavailableTaskIds).toEqual([by.D!]);
+    expect(input.tasks.find(t=>t.id===by.D!)).toMatchObject({
+      inputStart:'2026-10-05',inputFinish:'2026-10-07',durationDays:3,status:'done'});
+  }
+  expect(rawState(before.project.id).operations).toHaveLength(state.operations.length+1);
+  spy.mockRestore();
+  db.close();db=openDatabase(path);repository=new Repository(db);
+  const reopened=repository.getTree(before.project.id,session);
+  expect(reopened.schedule).toEqual(edited.schedule);assertC17Unknown(reopened,by);
+});
+it('validated equal source acknowledgement requires original done return and undo/reopen restores unknown',()=>{
+  const {tree:before,by}=c17Stored(),state=rawState(before.project.id);
+  expect(()=>step(before,{type:'task.edit',taskId:by.D!,changes:{inputStart:'2026-10-05'}})).toThrow();
+  expect(rawState(before.project.id)).toEqual(state);
+  expect(()=>step(before,{type:'task.edit',taskId:by.D!,changes:{
+    status:'doing',title:'Rejected invalid source',durationDays:2}})).toThrow();
+  expect(rawState(before.project.id)).toEqual(state);
+  const acknowledged=step(before,{type:'task.edit',taskId:by.D!,changes:{
+    status:'doing',inputStart:'2026-10-05'}});
+  expect(acknowledged.project.revision).toBe(before.project.revision+1);
+  expect(provenance(before.project.id)).toEqual([]);
+  expect(acknowledged.tasks.find(t=>t.id===by.D!)).toMatchObject({
+    status:'doing',inputStart:'2026-10-05',inputFinish:'2026-10-07',durationDays:3});
+  if(acknowledged.schedule.analysisStatus!=='ready')throw new Error('Expected ready');
+  expect(acknowledged.schedule.tasks[by.D!]).toMatchObject({projectFloat:1,constraintFloat:1});
+  expect(acknowledged.schedule.criticalTaskIds).toEqual([by.K!]);
+  expect(acknowledged.schedule.criticalDependencyIds).toEqual([]);
+  const row=db.prepare('SELECT beforeSnapshot FROM undo_snapshots WHERE projectId=? ORDER BY sequence DESC LIMIT 1')
+    .get(before.project.id) as {beforeSnapshot:string};
+  expect(privateSnapshotV2Schema.parse(JSON.parse(row.beforeSnapshot)).legacyIntervalUnavailable).toEqual([by.D!]);
+  const undone=step(acknowledged,{type:'undo'});
+  expect(undone.tasks).toEqual(before.tasks);expect(undone.dependencies).toEqual(before.dependencies);
+  expect(undone.schedule).toEqual(before.schedule);assertC17Unknown(undone,by);
+  db.close();db=openDatabase(path);repository=new Repository(db);
+  assertC17Unknown(repository.getTree(before.project.id,session),by);
+});
+it('status-only calendar and edge commands retain marker and source bytes',()=>{
+  const {tree:before,by}=c17Stored();
+  const source=before.tasks.find(t=>t.id===by.D!)!;
+  const status=step(before,{type:'task.edit',taskId:by.D!,changes:{status:'doing'}});
+  assertC17Unknown(status,by);
+  const calendar=step(status,{type:'project.schedule',changes:{calendarType:'weekdays'}});
+  expect(provenance(before.project.id)).toEqual([{taskId:by.D!,reason:'legacy-interval-unavailable'}]);
+  expect(calendar.tasks.find(t=>t.id===by.D!)).toMatchObject({
+    inputStart:source.inputStart,inputFinish:source.inputFinish,durationDays:source.durationDays,status:'doing'});
+  expect(calendar.schedule.analysisStatus).toBe('incomplete');
+  const deleted=step(calendar,{type:'dependency.delete',dependencyId:calendar.dependencies[0]!.id});
+  const created=step(deleted,{type:'dependency.create',predecessorId:by.D!,successorId:by.K!});
+  expect(provenance(before.project.id)).toEqual([{taskId:by.D!,reason:'legacy-interval-unavailable'}]);
+  expect(created.schedule.diagnostics.some(d=>d.code==='LEGACY_INTERVAL_UNAVAILABLE')).toBe(true);
+  const weekdayUndo=step(created,{type:'undo'});
+  expect(provenance(before.project.id)).toEqual([{taskId:by.D!,reason:'legacy-interval-unavailable'}]);
+  expect(weekdayUndo.tasks).toEqual(deleted.tasks);
+});
+it('marked raw FS conflict commits once, suppresses analysis and undo restores unknown partial',()=>{
+  const {tree:before,by}=c17Stored(),state=rawState(before.project.id);
+  const after=step(before,{type:'task.edit',taskId:by.K!,changes:{inputStart:'2026-10-07'}});
+  expect(after.project.revision).toBe(before.project.revision+1);
+  expect(rawState(before.project.id).operations).toHaveLength(state.operations.length+1);
+  expect(rawState(before.project.id).undo).toHaveLength(state.undo.length+1);
+  if(after.schedule.analysisStatus!=='infeasible')throw new Error('Expected infeasible');
+  expect(after.schedule.partialAnalysis).toBeNull();
+  expect(after.schedule.criticalTaskIds).toEqual([]);expect(after.schedule.criticalDependencyIds).toEqual([]);
+  expect(after.schedule.diagnostics).toEqual([
+    {code:'EXPLICIT_PRECEDENCE_CONFLICT',taskIds:[by.D!,by.K!].sort(),
+      dependencyIds:[before.dependencies[0]!.id],messageKey:'scheduling.EXPLICIT_PRECEDENCE_CONFLICT'},
+    {code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:[by.D!],dependencyIds:[],
+      messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'},
+  ]);
+  expect(provenance(before.project.id)).toEqual([{taskId:by.D!,reason:'legacy-interval-unavailable'}]);
+  expect(after.tasks.find(t=>t.id===by.D!)).toEqual(before.tasks.find(t=>t.id===by.D!));
+  const undone=step(after,{type:'undo'});
+  expect(undone.schedule).toEqual(before.schedule);assertC17Unknown(undone,by);
+});
+it('preserveWork transfers marker to original work child and undo restores original marked leaf',()=>{
+  const {tree:before,by}=c17Stored(),original=before.tasks.find(t=>t.id===by.D!)!;
+  const parent=step(before,{type:'task.create',title:'New child',parentId:by.D!,preserveWork:true});
+  const work=parent.tasks.find(t=>t.parentId===by.D&&t.status==='done'&&t.inputStart==='2026-10-05')!;
+  expect(work).toBeDefined();
+  expect(work).toMatchObject({inputStart:original.inputStart,inputFinish:original.inputFinish,
+    durationDays:original.durationDays,status:'done'});
+  expect(provenance(before.project.id)).toEqual([{taskId:work.id,reason:'legacy-interval-unavailable'}]);
+  expect(parent.dependencies.find(e=>e.id===before.dependencies[0]!.id))
+    .toMatchObject({predecessorId:work.id,successorId:by.K!});
+  expect(parent.schedule.tasks[work.id]).toMatchObject({startDate:null,finishDate:null});
+  const undone=step(parent,{type:'undo'});
+  expect(undone.tasks).toEqual(before.tasks);expect(undone.dependencies).toEqual(before.dependencies);
+  expect(undone.schedule).toEqual(before.schedule);assertC17Unknown(undone,by);
+});
+it('private schema rejects duplicate foreign or cross-project markers and public schemas reject provenance',()=>{
+  const {tree,by}=c17Stored();
+  const value={project:tree.project,tasks:tree.tasks,dependencies:tree.dependencies,
+    legacyIntervalUnavailable:[by.D!]};
+  expect(privateSnapshotV2Schema.parse(value)).toEqual(value);
+  expect(privateSnapshotV2Schema.safeParse({...value,legacyIntervalUnavailable:[by.D!,by.D!]}).success).toBe(false);
+  expect(privateSnapshotV2Schema.safeParse({...value,
+    legacyIntervalUnavailable:['99999999-9999-4999-8999-999999999999']}).success).toBe(false);
+  expect(privateSnapshotV2Schema.safeParse({...value,tasks:value.tasks.map(t=>t.id===by.D?
+    {...t,projectId:'99999999-9999-4999-8999-999999999999'}:t)}).success).toBe(false);
+  expect(snapshotV2Schema.safeParse(value).success).toBe(false);
+  expect(projectTreeV2Schema.safeParse({...tree,legacyIntervalUnavailable:[by.D!]}).success).toBe(false);
+  expect(taskV2Schema.safeParse({...tree.tasks.find(t=>t.id===by.D),unavailable:true}).success).toBe(false);
+  expect(commandV2Schema.safeParse({type:'task.edit',taskId:by.D!,
+    changes:{unavailableTaskIds:[]}}).success).toBe(false);
 });
 ```
 
@@ -1640,6 +2026,256 @@ Task5 V2 headers/body helpers остаются обязательными; setup
 
 - [ ] **Step 3: Preserve frozen legacy replay.** Добавить runnable durable regression ниже; принятый Task5 M08 продолжает выполняться.
 
+#### Initial migration после подключения live CPM
+
+Cached replies уже frozen и не вызывают math. Отдельно **initial** S2→003 migration/preview должна сохранять exact Task4 pending projection policy: она не вызывает live calculateSchedule или projectExplicitSchedule. Иначе новые UNKNOWN_INTERVAL/severity/C16 fields изменили бы archival conversion outcome. Server-only compatibility helper `projectLegacyPendingSchedule(input:LegacyPendingInput):FrozenPendingScheduleV2` копирует pure pending real/FS/summary/display body Task4, без CPM/Auto selection/product route. Active Repository имеет единственный live calculateSchedule.
+
+**Files в TaskD дополнительно:** Create `src/server/legacy-pending-types.ts`, `legacy-pending-source.ts`, `legacy-pending-projection.ts`; Modify `src/server/legacy-compatibility.ts`/`optional-upgrade.ts`/`optional-migration.ts` и `tests/optional-migration.test.ts`. Frozen date arithmetic использует уже server-only `legacy-calendar.ts` Task3; source validation тоже frozen. В этих модулях нет runtime import active scheduling/planning/calendar. General DomainError class не вычисляет даты/severity; публичный exact frozen schema/type — неизменяемый archive contract.
+
+Literal private type module целиком:
+
+```ts
+// src/server/legacy-pending-types.ts: server-only compatibility, not public task fields.
+export type CalendarType='weekdays'|'all-days';
+export interface SourceFields {
+  inputStart:string|null;inputFinish:string|null;durationDays:number|null;
+}
+export type SourcePatch=Partial<SourceFields>;
+export interface OptionalTask extends SourceFields {
+  id:string;parentId:string|null;status:'todo'|'doing'|'done';
+}
+export interface SchedulingDependency {id:string;predecessorId:string;successorId:string}
+export interface LegacyPendingInput {
+  calendarType:CalendarType;tasks:readonly OptionalTask[];
+  dependencies:readonly SchedulingDependency[];unavailableTaskIds?:readonly string[];
+}
+export interface RealTask {startDate:string|null;finishDate:string|null;calendarSpanDays:number|null}
+export interface ConditionalDisplay {
+  kind:'conditional';startDate:string;finishDate:string;clipped:boolean;
+}
+```
+
+После записи types module выполнить следующий точный command из repository root. Он извлекает только public reviewed source blob; не читает .git history transcripts/runtime. `f5e92abf7d2cb9655cfe11e6173f70ae375df857` — Task4 substantive candidate с двумя independent APPROVED (Spec/Standards). Если меняется этот reviewed source body, сначала amend pin/tests и снова review annex. Command полностью создаёт оба frozen implementation modules без runtime live imports/unsafe casts, сохраняет прежнее тело/calculation/diagnostic severity:
+
+```sh
+node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {writeFileSync} from 'node:fs';
+const pin='f5e92abf7d2cb9655cfe11e6173f70ae375df857';
+const read=path=>execFileSync('git',['show',pin+':'+path],{encoding:'utf8'});
+const calendarBody=s=>s.replace(/^\/\/[^\n]*\n/,'').replace(/^import type[^\n]*\n/,'');
+assert.equal(calendarBody(read('src/domain/calendar.ts')),
+  calendarBody(read('src/server/legacy-calendar.ts')),'Frozen calendar must match Task4 arithmetic');
+const header='// Frozen pending projection from '+pin+'; server-only migration compatibility.\n';
+let source=read('src/domain/optional-planning.ts')
+  .replaceAll("'./scheduling-types.js'","'./legacy-pending-types.js'")
+  .replaceAll("'./tree.js'","'../domain/tree.js'")
+  .replaceAll("'./calendar.js'","'./legacy-calendar.js'")
+  .replaceAll("'../shared/optional-contracts.js'","'./legacy-pending-types.js'");
+writeFileSync('src/server/legacy-pending-source.ts',header+source);
+let projection=read('src/domain/optional-scheduling.ts');
+assert.ok(projection.includes('  OptionalResult,\n'),'Expected Task4 result type import');
+projection=projection.replace('  OptionalResult,\n','')
+  .replaceAll('OptionalInput','LegacyPendingInput')
+  .replaceAll("'./calendar.js'","'./legacy-calendar.js'")
+  .replaceAll("'./optional-planning.js'","'./legacy-pending-source.js'")
+  .replaceAll("'./optional-scheduling-types.js'","'./legacy-pending-types.js'")
+  .replaceAll("'./scheduling-types.js'","'./legacy-pending-types.js'")
+  .replaceAll("'./tree.js'","'../domain/tree.js'")
+  .replace('export function calculateOptionalSchedule(','export function projectLegacyPendingSchedule(');
+writeFileSync('src/server/legacy-pending-projection.ts',header+
+  "import type {FrozenPendingScheduleV2 as OptionalResult} from '../shared/contracts.js';\n"+projection);
+JS
+```
+
+Initial adaptation в existing `adaptLegacyTree` после PRIVATE projectLegacySnapshot использует следующий exact block; imports projectLegacyPendingSchedule из server/legacy-pending-projection и frozenPendingScheduleV2Schema из shared/contracts. Public picker исключает private marker. Его final return не вызывает current Repository:
+
+```ts
+const pendingParsed=frozenPendingScheduleV2Schema.safeParse(projectLegacyPendingSchedule({
+  calendarType:snapshot.project.calendarType,tasks:snapshot.tasks,
+  dependencies:snapshot.dependencies,unavailableTaskIds:snapshot.legacyIntervalUnavailable,
+}));
+if(!pendingParsed.success)throw new Error('Invalid frozen legacy schedule response');
+return projectTreeV2Schema.parse({
+  contractVersion:2,project:snapshot.project,tasks:snapshot.tasks,
+  dependencies:snapshot.dependencies,canUndo:parsed.data.canUndo,schedule:pendingParsed.data,
+});
+```
+
+`legacy-compatibility.ts` resolution admission imports realInterval из legacy-pending-source; `optional-upgrade.ts` preview imports realInterval/validateSourceInput оттуда и projectLegacyPendingSchedule из legacy-pending-projection; `optional-migration.ts` validation imports validateSourceInput оттуда. В existing preview loop заменить только call calculateOptionalSchedule на `projectLegacyPendingSchedule` с тем же private IDs input; archive/raw bytes/contextDigest/resolution outcomes не меняются. Strict public frozen DTO остаётся прежним. Эти imports не доходят до browser; active source editor и current scheduler используют active planning.
+
+Следующий полный literal compatibility test file `tests/legacy-pending-projection.test.ts` включить в integration list вместе с optional-migration suite; в TaskD RED/GREEN commands добавить это имя. Expected старых pending результатов записан вручную, active live control отдельно:
+
+```ts
+import {expect,it,vi} from 'vitest';
+import {projectLegacyPendingSchedule} from '../src/server/legacy-pending-projection.js';
+import {adaptLegacyTree,projectLegacySnapshot,resolveLegacySources} from '../src/server/legacy-compatibility.js';
+import {frozenPendingScheduleV2Schema,projectTreeV2Schema} from '../src/shared/contracts.js';
+import * as scheduling from '../src/domain/scheduling.js';
+import type {LegacyPendingInput} from '../src/server/legacy-pending-types.js';
+import type {LegacySnapshot} from '../src/server/legacy-contracts.js';
+const p='11111111-1111-4111-8111-111111111111';
+const a='22222222-2222-4222-8222-222222222222';
+const b='22222222-2222-4222-8222-222222222223';
+const timestamp='2026-10-07T00:00:00.000Z';
+const realNull={startDate:null,finishDate:null,calendarSpanDays:null};
+const leaf=(id:string,inputStart:string|null,inputFinish:string|null,durationDays:number|null=null)=>({
+  id,parentId:null,status:'todo' as const,inputStart,inputFinish,durationDays});
+const pending=(input:LegacyPendingInput,feasibility:'feasible'|'incomplete'|'infeasible',
+  tasks:Record<string,{startDate:string|null;finishDate:string|null;calendarSpanDays:number|null}>,
+  diagnostics:{code:string;taskIds:string[];dependencyIds:string[];messageKey:string}[])=>({
+  analysisStatus:'pending-policy',feasibility,
+  coverage:{knownLeafCount:Object.values(tasks).filter(t=>t.startDate!==null).length,totalLeafCount:input.tasks.length},
+  tasks,summaries:{},display:{},criticalTaskIds:[],criticalDependencyIds:[],diagnostics});
+it('initial frozen validmissing stays feasible while current live is incomplete',()=>{
+  const input:LegacyPendingInput={calendarType:'all-days',tasks:[
+    leaf(a,'2026-10-05','2026-10-06'),leaf(b,null,null)],dependencies:[]};
+  const literal=pending(input,'feasible',{
+    [a]:{startDate:'2026-10-05',finishDate:'2026-10-06',calendarSpanDays:2},[b]:realNull},[]);
+  expect(projectLegacyPendingSchedule(input)).toEqual(literal);
+  expect(frozenPendingScheduleV2Schema.parse(literal)).toEqual(literal);
+  const current=scheduling.calculateSchedule(input);
+  expect(current.analysisStatus).toBe('incomplete');
+  expect(current.diagnostics).toEqual([{code:'UNKNOWN_INTERVAL',taskIds:[b],dependencyIds:[],
+    messageKey:'scheduling.UNKNOWN_INTERVAL'}]);
+});
+it('initial frozen invalid source retains infeasible severity while live is unknown/incomplete',()=>{
+  const input:LegacyPendingInput={calendarType:'all-days',
+    tasks:[leaf(a,'2026-10-05','2026-10-06',3)],dependencies:[]};
+  const diagnostics=[{code:'DURATION_MISMATCH',taskIds:[a],dependencyIds:[],
+    messageKey:'scheduling.DURATION_MISMATCH'}];
+  expect(projectLegacyPendingSchedule(input)).toEqual(pending(input,'infeasible',{[a]:realNull},diagnostics));
+  expect(scheduling.calculateSchedule(input).analysisStatus).toBe('incomplete');
+});
+it('initial frozen unavailable and raw FS conflict preserve their exact pending outcomes',()=>{
+  const unavailable:LegacyPendingInput={calendarType:'all-days',unavailableTaskIds:[a],
+    tasks:[{...leaf(a,'2026-10-05','2026-10-07',3),status:'done'}],dependencies:[]};
+  const diagnostic={code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:[a],dependencyIds:[],
+    messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'};
+  expect(projectLegacyPendingSchedule(unavailable)).toEqual(pending(unavailable,'incomplete',{[a]:realNull},[diagnostic]));
+  const edgeId='33333333-3333-4333-8333-333333333333';
+  const conflict:LegacyPendingInput={...unavailable,tasks:[...unavailable.tasks,
+    leaf(b,'2026-10-07','2026-10-10')],dependencies:[{id:edgeId,predecessorId:a,successorId:b}]};
+  expect(projectLegacyPendingSchedule(conflict)).toEqual(pending(conflict,'infeasible',{
+    [a]:realNull,[b]:{startDate:'2026-10-07',finishDate:'2026-10-10',calendarSpanDays:4}},[
+    {code:'EXPLICIT_PRECEDENCE_CONFLICT',taskIds:[a,b],dependencyIds:[edgeId],messageKey:'scheduling.EXPLICIT_PRECEDENCE_CONFLICT'},
+    diagnostic]));
+});
+function legacyDone(relative:boolean):LegacySnapshot {
+  const project:LegacySnapshot['project']={id:p,title:'Synthetic initial frozen migration',revision:9,startDate:null,
+    calendarType:'all-days',timezone:'UTC',createdAt:timestamp,updatedAt:timestamp};
+  const task:LegacySnapshot['tasks'][number]={...leaf(a,'2026-10-05','2026-10-07',3),projectId:p,title:'Synthetic D',
+    description:'',sortOrder:0,status:'done',planMode:'fixed',notBefore:null,deadline:null,
+    completedStart:null,completedFinish:null,completedStartIndex:relative?0:null,
+    completedFinishIndex:relative?3:null,createdAt:timestamp,updatedAt:timestamp};
+  return {project,tasks:[task],dependencies:[]};
+}
+it.each([true,false])('post-CPM initial migration consumes only frozen projection; relative=%s',relative=>{
+  const legacy=legacyDone(relative),context={kind:'active' as const,key:p};
+  const resolutions=resolveLegacySources([{context,snapshot:legacy}]);
+  const projected=projectLegacySnapshot(legacy,context,resolutions);
+  expect(projected.legacyIntervalUnavailable).toEqual(relative?[a]:[]);
+  const originalLive=scheduling.calculateSchedule;
+  const spy=vi.spyOn(scheduling,'calculateSchedule').mockImplementation(()=>{throw new Error('Current live solver must not run');});
+  let frozen;
+  try{
+    frozen=adaptLegacyTree({...legacy,canUndo:false,schedule:{
+      feasibility:'feasible',originDate:null,projectFinishIndex:null,coverage:{knownLeafCount:0,totalLeafCount:1},
+      tasks:{[a]:{ES:null,EF:null,LS:null,LF:null,projectFloat:null,constraintFloat:null,
+        startDate:null,finishDate:null,blockedReason:null}},summaries:{},criticalTaskIds:[],
+      criticalDependencyIds:[],diagnostics:[]}},context,resolutions);
+    expect(spy).not.toHaveBeenCalled();
+  }finally{spy.mockRestore();}
+  const literal=pending({calendarType:'all-days',tasks:projected.tasks,dependencies:[]},
+    relative?'incomplete':'feasible',relative?{[a]:realNull}:{
+      [a]:{startDate:'2026-10-05',finishDate:'2026-10-07',calendarSpanDays:3}},
+    relative?[{code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:[a],dependencyIds:[],
+      messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'}]:[]);
+  expect(frozen.schedule).toEqual(literal);
+  expect(frozen.tasks[0]).toMatchObject({inputStart:'2026-10-05',inputFinish:'2026-10-07',
+    durationDays:3,status:'done'});
+  expect(frozen).not.toHaveProperty('legacyIntervalUnavailable');
+  expect(projectTreeV2Schema.parse(frozen)).toEqual(frozen);
+  const current=originalLive({calendarType:'all-days',tasks:projected.tasks,
+    dependencies:[],unavailableTaskIds:projected.legacyIntervalUnavailable});
+  expect(current.analysisStatus).toBe(relative?'incomplete':'ready');
+  if(!relative&&current.analysisStatus==='ready'){
+    expect(current.tasks[a]).toMatchObject({projectFloat:0,constraintFloat:0});
+    expect(current.criticalTaskIds).toEqual([a]);
+  }
+});
+```
+
+В тот же test file добавить actual SQL003 initial-migration regression. Оно использует legacyDone/pending/leaf/constants выше; :memory: — исключительно disposable synthetic DB, никакого startup/production acknowledgement bypass.
+
+```ts
+import Database from 'better-sqlite3';
+import {readFileSync} from 'node:fs';
+import {canonical} from '../src/shared/canonical.js';
+import {loadLegacyContexts,prepareOptionalMigration} from '../src/server/optional-migration.js';
+import {previewOptionalUpgrade} from '../src/server/optional-upgrade.js';
+it('post-CPM SQL003 creates exact pending cache and durable private marker without live solver',()=>{
+  const db=new Database(':memory:');db.pragma('foreign_keys=ON');
+  try{
+    db.exec('CREATE TABLE migrations(version INTEGER PRIMARY KEY) STRICT');
+    for(const [file,version] of [['001-initial.sql',1],['002-scheduling.sql',2]] as const){
+      db.exec(readFileSync('migrations/'+file,'utf8'));
+      db.prepare('INSERT INTO migrations(version) VALUES (?)').run(version);
+    }
+    const legacy=legacyDone(true);
+    for(const [table,row] of [['projects',legacy.project],['tasks',legacy.tasks[0]!]] as const){
+      const fields=Object.keys(row);
+      db.prepare('INSERT INTO '+table+' ('+fields.join(',')+') VALUES ('+fields.map(()=>'?').join(',')+')')
+        .run(...Object.values(row));
+    }
+    const operationId='44444444-4444-4444-8444-444444444444';
+    const body={expectedRevision:8,operationId,command:{
+      type:'task.update',taskId:a,changes:{description:'Synthetic archived detail'}}};
+    const payload=canonical(body);
+    const originalResponse=JSON.stringify({...legacy,canUndo:false,schedule:{
+      feasibility:'feasible',originDate:null,projectFinishIndex:null,coverage:{knownLeafCount:0,totalLeafCount:1},
+      tasks:{[a]:{ES:null,EF:null,LS:null,LF:null,projectFloat:null,constraintFloat:null,
+        startDate:null,finishDate:null,blockedReason:null}},summaries:{},criticalTaskIds:[],
+      criticalDependencyIds:[],diagnostics:[]}});
+    db.prepare('INSERT INTO operations(operationId,projectId,sessionId,payload,response) VALUES (?,?,?,?,?)')
+      .run(operationId,p,'synthetic-initial-migration-session',payload,originalResponse);
+    const resolutions=resolveLegacySources(loadLegacyContexts(db));
+    const spy=vi.spyOn(scheduling,'calculateSchedule').mockImplementation(()=>{throw new Error('Live solver must not run during migration');});
+    try{
+      const preview=previewOptionalUpgrade(db);
+      expect(preview.policyId).toBe('legacy-scheduling-v1');
+      expect(preview.counts).toEqual({sourceIntervals:0,materializedAuto:0,materializedDone:0,
+        unavailableAbsolute:2,replacedDoneSource:0,invalid:0,fsConflicts:0,unavailableHistory:1});
+      db.transaction(()=>{
+        prepareOptionalMigration(db,readFileSync('migrations/003-optional-scheduling.sql','utf8'),resolutions);
+        db.prepare('INSERT INTO migrations(version) VALUES (3)').run();
+      }).immediate();
+      expect(spy).not.toHaveBeenCalled();
+    }finally{spy.mockRestore();}
+    expect(db.prepare('SELECT taskId,reason FROM task_schedule_provenance ORDER BY taskId').all())
+      .toEqual([{taskId:a,reason:'legacy-interval-unavailable'}]);
+    expect(db.prepare('SELECT inputStart,inputFinish,durationDays,status FROM tasks WHERE id=?').get(a))
+      .toEqual({inputStart:'2026-10-05',inputFinish:'2026-10-07',durationDays:3,status:'done'});
+    const row=db.prepare('SELECT payload,response,responseContractVersion FROM operations WHERE operationId=?')
+      .get(operationId) as {payload:string;response:string;responseContractVersion:number};
+    expect(row.payload).toBe(payload);expect(row.responseContractVersion).toBe(2);
+    const frozen=projectTreeV2Schema.parse(JSON.parse(row.response));
+    expect(frozen.schedule).toEqual(pending({calendarType:'all-days',
+      tasks:[leaf(a,'2026-10-05','2026-10-07',3)],dependencies:[]},'incomplete',{[a]:realNull},
+      [{code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:[a],dependencyIds:[],
+        messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'}]));
+    expect(frozen).not.toHaveProperty('legacyIntervalUnavailable');
+    expect(db.prepare("SELECT originalText FROM scheduling_migration_archive WHERE projectId=? AND kind='operation-response' AND recordKey=?")
+      .get(p,operationId)).toEqual({originalText:originalResponse});
+    const current=scheduling.calculateSchedule({calendarType:'all-days',tasks:frozen.tasks,
+      dependencies:frozen.dependencies,unavailableTaskIds:[a]});
+    expect(current.analysisStatus).toBe('incomplete');
+    expect(current.tasks[a]).toMatchObject({startDate:null,finishDate:null,projectFloat:null,constraintFloat:null});
+  }finally{db.close();}
+});
+```
+
 Concrete legacy replay regression добавить в `tests/explicit-cpm-repository.test.ts`. Дополнительные imports: `Database` from better-sqlite3, `readFileSync` from node:fs (добавить к existing fs import), `canonical` from shared/canonical и `prepareOptionalMigration` from server/optional-migration. Fixture выполняет только reviewed SQL в своём tmpdir; нет production upgrade acknowledgement bypass.
 
 ```ts
@@ -1729,7 +2365,7 @@ it('frozen legacy revision9 remains pending after live revision10 and restart wi
 
 Unknown original envelope, changed payload/session/project и digest/JSON corruption остаются в accepted Task5 replay suite; этот новый test выполняет конкретный live-vs-frozen переход после подключения CPM. Production migration/архивные resolution rules не меняются.
 
-- [ ] **Step 4: Run RED.** `npm test -- tests/explicit-cpm-repository.test.ts tests/scheduling-api.test.ts tests/optional-migration.test.ts` — перед server union/wiring FAIL wrong status/frozen parse/rollback.
+- [ ] **Step 4: Run RED.** `npm test -- tests/explicit-cpm-repository.test.ts tests/scheduling-api.test.ts tests/optional-migration.test.ts tests/legacy-pending-projection.test.ts` — перед server union/wiring FAIL wrong status/frozen parse/rollback.
 - [ ] **Step 5: Wire server parse before commit.** Live getTree/getSchedule/current mutation используют calculate с liveScheduleResultV2Schema и safe live tree/schedule validators выше. `change` проверяет liveProjectTreeV2Schema до записи operation response/commit; ошибки остаются safe internal500. Replay branch читает response/digest, парсит union через validatedCachedTreeResponse и возвращает результат, без чтения current project schedule. Existing auth/session/revision/idempotency/undo bounds сохраняются.
 - [ ] **Step 6: Run GREEN и commit.** `npm run test:integration`; `npm run typecheck`; `npm run lint`; staged checks и normal commit `feat: preserve atomic critical path analysis and frozen retries`; два independent reviews.
 
@@ -1858,7 +2494,7 @@ Use same Vitest jsdom setup/cleanup conventions as existing client suites. Exact
 `partialCriticalEdge` = «Критическая связь датированной части»; на partial arrow и card используется эта подпись и class `partial-critical`, без class `critical`. Нетесное AC сохраняет обычную подпись A→C без partial indicator.
 `knownHorizonFloat` label = «Резерв до известного горизонта»;
 global critical label = «Критична для окончания проекта»;
-pending = «Расчёт критического пути ещё не подключён».
+Task7 frozen pending copy = «Сохранённый результат без расчёта критического пути». Task5 intermediate copy до Task7 остаётся «Расчёт критического пути ещё не подключён».
 Global/partial styles have separate accessible labels; do not rely on color alone. Ready projectFloat and constraintFloat remain separate lines.
 
 Добавить runnable literal rendering tests ниже; expected DTOs не вызывают calculator.
@@ -1934,7 +2570,7 @@ it('partial summary has a partial descendant label and frozen pending keeps its 
       [U]:{startDate:null,finishDate:null,calendarSpanDays:null}},summaries:{},display:{},
     criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[]}});
   render(<ScheduleStatus tree={frozen}/>);
-  expect(screen.getByText('Расчёт критического пути ещё не подключён')).toBeVisible();
+  expect(screen.getByText('Сохранённый результат без расчёта критического пути')).toBeVisible();
   expect(screen.queryByText(/Анализ датированной части/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Резерв проекта:/)).not.toBeInTheDocument();
 });
@@ -2236,6 +2872,63 @@ it('filtered rows and scale do not change the literal authoritative schedule or 
 });
 ```
 
+C17 client fixture также literal, provenance не добавляется в публичный DTO. Добавить после Gantt imports/test выше:
+
+```tsx
+const c17PublicTree=()=>projectTreeV2Schema.parse({
+  contractVersion:2,project,canUndo:true,
+  tasks:[
+    task('22222222-2222-4222-8222-222222222227','Этап C17',null,null),
+    {...task(A,'Работа A','2026-10-05','2026-10-07'),durationDays:3,status:'done',
+      parentId:'22222222-2222-4222-8222-222222222227'},
+    {...task(B,'Работа B','2026-10-09','2026-10-10'),parentId:'22222222-2222-4222-8222-222222222227'},
+    task(C,'Работа C','2026-10-05','2026-10-08'),
+    {...task(U,'Работа U',null,null),durationDays:3,parentId:'22222222-2222-4222-8222-222222222227'}],
+  dependencies:[{id:AB,projectId,predecessorId:A,successorId:B}],
+  schedule:{
+    analysisStatus:'incomplete',feasibility:'incomplete',coverage:{knownLeafCount:2,totalLeafCount:4},
+    tasks:{
+      [A]:{startDate:null,finishDate:null,calendarSpanDays:null,projectFloat:null,constraintFloat:null},
+      [B]:{startDate:'2026-10-09',finishDate:'2026-10-10',calendarSpanDays:2,projectFloat:null,constraintFloat:null},
+      [C]:{startDate:'2026-10-05',finishDate:'2026-10-08',calendarSpanDays:4,projectFloat:null,constraintFloat:null},
+      [U]:{startDate:null,finishDate:null,calendarSpanDays:null,projectFloat:null,constraintFloat:null}},
+    summaries:{['22222222-2222-4222-8222-222222222227']:{
+      startDate:null,finishDate:null,calendarSpanDays:null,knownLeafCount:1,totalLeafCount:3,containsCritical:null}},
+    display:{[U]:{kind:'conditional',startDate:'2026-10-05',finishDate:'2026-10-07',clipped:false}},
+    horizonFinishDate:null,criticalTaskIds:[],criticalDependencyIds:[],
+    diagnostics:[
+      {code:'LEGACY_INTERVAL_UNAVAILABLE',taskIds:[A],dependencyIds:[],messageKey:'scheduling.LEGACY_INTERVAL_UNAVAILABLE'},
+      {code:'UNKNOWN_INTERVAL',taskIds:[U],dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL'}],
+    partialAnalysis:{labelKey:'scheduling.PARTIAL_ANALYSIS',knownHorizonFinishDate:'2026-10-10',
+      coverage:{analyzedLeafCount:1,blockedLeafCount:3},tasks:{[C]:{knownHorizonFloat:2}},
+      partialCriticalTaskIds:[],partialCriticalDependencyIds:[],partialCriticalSummaryIds:[]},
+  }});
+it('C17 valid source remains visible as notes while real bar and ordinary criticality stay absent',()=>{
+  const tree=c17PublicTree(),before=structuredClone(tree);
+  render(<ScheduleStatus tree={tree} task={tree.tasks.find(t=>t.id===A)!}/>);
+  expect(screen.getByText('Прежний интервал недоступен; полный расчёт неизвестен.')).toBeVisible();
+  expect(screen.queryByText(/^Резерв проекта:/)).not.toBeInTheDocument();
+  expect(screen.queryByText('Критична для окончания проекта',{exact:true})).not.toBeInTheDocument();
+  cleanup();
+  const gantt=render(<Gantt tree={tree} rows={treeRows(tree.tasks,new Set())}
+    start="2026-10-05" today="2026-10-07" scale="days" selectedId={null}
+    disabled={false} onSelect={vi.fn()} onPlan={vi.fn()}/>);
+  expect(gantt.container.querySelector('[data-gantt-bar="'+A+'"]')).toBeNull();
+  expect(screen.getByRole('button',{name:'Работа A, Исходное начало: 2026-10-05'})).toBeVisible();
+  expect(screen.getByRole('button',{name:'Работа A, Исходное окончание: 2026-10-07'})).toBeVisible();
+  expect(screen.getByRole('button',{name:/Работа U.*Условное размещение; начало не задано/})).toBeVisible();
+  gantt.unmount();
+  const graph=render(<Dependencies tree={tree} task={tree.tasks.find(t=>t.id===B)!}
+    disabled={false} onCommand={vi.fn().mockResolvedValue(true)} onSelect={vi.fn()} onShow={vi.fn()}/>);
+  expect(graph.container.querySelector('[data-dependency-edge="'+AB+'"]')).toBeInTheDocument();
+  expect(graph.container.querySelector('[data-dependency-edge="'+AB+'"]')).not.toHaveClass('critical');
+  expect(graph.container.querySelector('[data-dependency-edge="'+AB+'"]')).not.toHaveClass('partial-critical');
+  expect(tree).toEqual(before);expect(tree).not.toHaveProperty('legacyIntervalUnavailable');
+});
+```
+
+Exact diagnostic copy `LEGACY_INTERVAL_UNAVAILABLE` = «Прежний интервал недоступен; полный расчёт неизвестен.». Client показывает server unknown outcome и retained source notes; не пытается восстановить интервал из valid pair или снять private marker.
+
 
 - [ ] **Step 5: Run GREEN и full acceptance.** `npm test -- tests/client/explicit-cpm.test.tsx`; `npm run verify`; `npm run format:check`; `npm run test:e2e -- tests/e2e/explicit-cpm.spec.ts tests/e2e/optional-scheduling.spec.ts`; `npm run check:package`; `npm run check:kit`; `git diff --check`. Expect no skipped/retried suites; run all E2E once for integrated Task7. Update affected explicit unit/integration lists. Do not use --if-present.
 - [ ] **Step 6: Commit/review/handoff.** Normal staged guard+Gitleaks/hooks, commit `feat: show verified explicit-date critical paths`, two independent reviewers on same SHA. STATUS reports exact passed/failed/not-run and unresolved release work. ADR008 links implementation/checks without changing C16 formula. C05/OS16 complete only with all domain/storage/API/browser acceptance GREEN; V1 remains unfinished pending S4–S6.
@@ -2244,19 +2937,19 @@ it('filtered rows and scale do not change the literal authoritative schedule or 
 
 | Требование | Независимый expected / проверка |
 |---|---|
-| Admission пары, без Auto/duration inference | P11, full pair nullable duration, invalid saved source, conditional deep U |
+| Admission пары, без Auto/duration inference | P11, full pair nullable duration, invalid saved source, C17 valid marked source exclusion/Hknown/rawFS/minima; conditional deep U |
 | Entered placement/global horizon/gaps | P01/P02/P03/N06 и done N06 |
 | Fork/join/equal paths/critical edge predicate | F01/F02/F03, P04, 60-task/116-edge layer case |
-| Done structural/local float separation | P06, N06-done, source editing/explicit return+undo |
+| Done structural/local float separation | P06/N06-done/C17-unmarked control; marked valid done excluded; explicit source acknowledgement+return/undo |
 | Incomplete/weak components/global known lower horizon | P07/P08/Hknown-blocked-late/all-blocked/no-known; F03+U positive partial AB/BC, AC noncritical |
 | Conflict priority plus unknown | P09 alone/P09+U, finish-only/start-only conflict |
 | Calendar adjacency and extremes | P10/P10-all-days independent floats; Repository+HTTP calendar command and undo; full 0001–9999 span |
 | Technical origin invariance | Every ready fixture with two origins; literal N06 negative LS/LF |
 | Hierarchy/summary/display separation | 40-level complete/incomplete/deep-change, 10000-level summary source ignored |
 | Pure/immutable/deterministic/finite output | Reversed input fixtures, source clone equality, no path enumeration; wide10000 unknown leaves with bounded callback work |
-| Strict live/frozen union and type consistency | Live-only current safe500 validators; pending-injection rollback; union only cache/client; Task2 suite adaptation and exact frozen parser |
-| Atomic revision/undo/restart/exact retry | P04→P05→undo, latest revision vs cached outcome, server rollback injection |
-| Frozen historical migration response | Task5 M08 durable restart repeated after CPM; pending parser/no solver |
+| Strict live/frozen union and type consistency | Live-only current safe500; private own-project/unique IDs and no public leakage; stable server-only initial frozen projection; Task2 adaptation |
+| Atomic revision/undo/restart/exact retry | P04→P05→undo; C17 equal explicit clear/validation/undo/reopen/preserveWork/private pass-through; frozen retries; rollback injection |
+| Frozen historical migration response | Initial pending validmissing/invalid/unavailable/FS controls, post-CPM adapter/migration; Task5 M08 durable replay/restart, no live solver |
 | Server-only UI/keyboard/empty/error/loading | Positive partial/global edge and partial-summary literal UI; filtered rows; deep browser collapse/scale/keyboard/undo; lost-response exact replay; Task5 UX regression |
 
 ## Gate и исполнение
@@ -2274,3 +2967,7 @@ it('filtered rows and scale do not change the literal authoritative schedule or 
 Substantive candidate `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` получил два независимых verdicts: Spec — **APPROVED**, Standards/executability — **APPROVED**. Scoped re-review проверил исправления шести findings относительно `697e2948c23b14ed58a726e3633242a63e5f32a9` вместе с исходными review reports; application implementation не одобрялось.
 
 Эта последующая запись меняет только review metadata. APPROVED относится к указанному substantive SHA, без переноса verdict на изменённый typed body или реализацию. CPM code ещё не реализован; Task7 требует Task5 GREEN. C17 unavailable-lock handoff остаётся pending Task4/5; любой изменённый scheduling input требует amendment этого annex и двух новых независимых reviews до подключения CPM.
+
+## C17 amendment review status — 2026-10-08
+
+Изменённый private/pure input, marked-leaf admission, stable initial frozen projection и новые runnable regressions требуют двух independent reviews на новый точный SHA. APPROVED29f193e и metadata889cb6a относятся к прежнему substantive body. Task4 source pin f5e92ab получил два APPROVED; его future Task5 integration остаётся обязательным вместе с Task5 GREEN. SQL registry/production execution не разрешены этим annex.
