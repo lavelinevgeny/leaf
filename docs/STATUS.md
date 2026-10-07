@@ -1,5 +1,31 @@
 # Статус разработки
 
+## Интеграция reviewed C17 CPM annex — 2026-10-08
+
+В основном checkout сохранён technical annex с двумя новыми независимыми APPROVED на substantive `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9`; metadata `8060ffc` сохраняет approved body/snippets. Разрешён единственный конфликт STATUS: сохранены оба набора исторических записей. Application source, schema registry и lockfile не менялись; CPM code ещё не начат. Task 5 integration проходит собственные application checks и требует двух независимых review перед исполнением annex.
+
+Документационная интеграция прошла `check:kit` (43 Markdown files, 159 local links), `format:check` и diff check; staged guard/Gitleaks и обычные hooks обязательны при commit. Полный application preflight выполнен на принятом Task 4; для documentation merge он не заменяет последующую проверку интеграции Task 5. Production migration и внешние действия не выполнялись.
+
+## Review metadata C17 CPM annex — 2026-10-08
+
+Current substantive candidate [technical annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил два новых независимых APPROVED: Spec и Standards/executability. Private unavailable input/admission и initial frozen projection проверены отдельно; прежние approvals29f193e остаются историческими. В annex footer и ADR008 записаны факты review/source boundary. Substantive body и все fenced snippets побайтово сохранены относительно approved bfa0f8e.
+
+На закреплённом Node24.21.0/npm11.19.0 прошли byte comparison substantive prefix/41 fenced blocks, `check:kit` (42 Markdown files, 154 local links), diff checks и staged privacy guard/Gitleaks на трёх scoped docs. Обычные hooks включены. Неизменённые oracle/snippet/application tests повторно не запускались.
+
+Это metadata-only revision, без application changes или CPM implementation. Actual Task5 integration/checks/review ещё завершаются; Task7 требует Task5 GREEN. Approval плана не переносится на иной изменённый body или будущую реализацию. Следующий шаг — Task5 GREEN и independent review его implementation, затем исполнение approved annex.
+
+## C17 input amendment technical CPM annex — 2026-10-08
+
+Обновлён [technical annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) под согласованный Task4 contract: server-private `PrivateSnapshotV2.legacyIntervalUnavailable` передаётся в `OptionalInput.unavailableTaskIds`. Marked leaf с валидной сохранённой парой остаётся unknown: не входит в real/coverage/full summary/CPM и Hknown, сохраняет source notes/minima и raw FS-проверку. Документ задаёт private→pure passage, public field picking, explicit validated acknowledgement, original-done guard, undo/reopen/preserveWork regressions и ordinary unmarked done control. Публичные source/status/duration и DTO не расширяются provenance.
+
+Initial migration/preview после подключения LIVE CPM используют описанную server-only frozen pending projection с закреплёнными Task4 source validation/calendar semantics. Сохранённые cached replies возвращаются без пересчёта; новый текущий результат проходит live-only boundary. Добавлены literal frozen validmissing/invalid/unavailable/FS outcomes, adapter/preview/actual SQL003 synthetic regression и current LIVE controls. Это compatibility archive contract; active scheduler остаётся один. SQL/archive/resolver implementation относится к Task4; source pin `f5e92abf7d2cb9655cfe11e6173f70ae375df857` получил два independent APPROVED (Spec/Standards), будущая runtime integration Task5 ими не одобрена.
+
+На Node 24.21.0/npm 11.19.0 прошли синтаксический разбор 39 TS/TSX blocks, независимый exhaustive delayed-placement oracle 14/14 и strict disposable future-target typecheck amended schemas/domain/private server fragments/Task2 adaptation/API/UI/browser/initial-frozen snippets. Изолированные domain C17 и frozen adapter/preview/SQL003 tests прошли 12/12, skipped 0; preview/migration не вызывают текущий solver. Pure snippets также сохранили positive F03+U partial AB/BC, live-only rejection frozen pending и ограниченные 20 000 Array.some callback checks для 10 000 unknown leaves. Future Repository/HTTP/UI/browser suites только разобраны и типизированы; application GREEN не заявлен.
+
+`check:kit` прошёл: 42 Markdown files, 153 local links, три approved references и неизменённые исторические CPM/calendar examples. Diff checks и staged privacy guard/Gitleaks прошли на двух scoped documents; обычные commit hooks включены. Неизменённые kit tests и application suites не повторялись.
+
+C17 amendment требует двух новых independent APPROVED на один точный SHA. Предыдущие verdicts для substantive `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` остаются историческими и не распространяются на изменённый typed/algorithm body. Reviewed Task4 private contract и Task5 GREEN остаются prerequisites для Task7. В этом изменении только annex и STATUS: application/runtime/schema/lockfile/ADR не менялись, production migration и внешние действия не выполнялись. Следующий шаг — два независимых review amended annex.
+
 ## Task 4: C17 resolver, preview и durable unavailable — 2026-10-08
 
 Реализованы неактивные helpers C17: frozen server-only S3 calculator/calendar/types, resolver по полному собственному active/operation/undo snapshot, readonly preview counts/digest и locked acknowledgement перед migration writes. Каждая resolution связана с original task и полным context SHA-256; изменение project/calendar/edges/другой задачи того же context отвергается до DDL. Frozen legacy envelope validators не ослаблены, raw payload/response/undo не нормализуются.

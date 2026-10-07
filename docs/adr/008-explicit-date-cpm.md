@@ -1,6 +1,6 @@
 # ADR 008 — критический путь введённого расписания
 
-Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md); technical annex прошёл два независимых review. O06/G-CPM закрыт как выбор политики; новый CPM ещё не реализован, Task7 требует Task5 GREEN.
+Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md); C17-amended technical annex `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` прошёл два независимых review 2026-10-08. O06/G-CPM закрыт как выбор политики; новый CPM ещё не реализован, Task7 требует actual Task5 GREEN.
 
 ## Контекст
 
@@ -24,8 +24,10 @@ Pure analysis остаётся серверным и детерминирова�
 
 ## Проверка
 
-Математические policy inputs и P01–P11 приняты владельцем. [Технический implementation annex Task 6](../superpowers/plans/2026-10-07-explicit-date-cpm.md) определяет полный typed DTO/strict schemas, pure function contracts, numerical fixture format, runnable RED/GREEN steps, fork/join, deep-summary, conflict+unknown и undo/restart cases. Substantive candidate `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` получил Spec **APPROVED** и Standards/executability **APPROVED**; последующая запись review metadata не меняет формулы, типы или snippets и не является review реализации.
+Математические policy inputs и P01–P11 приняты владельцем. [Технический implementation annex Task 6](../superpowers/plans/2026-10-07-explicit-date-cpm.md) определяет полный typed DTO/strict schemas, pure function contracts, numerical fixture format, runnable RED/GREEN steps, fork/join, deep-summary, conflict+unknown и undo/restart cases. Current substantive candidate `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил независимые Spec **APPROVED** и Standards/executability **APPROVED**. Прежние verdicts для `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` остаются историческими; новый input/body проверен отдельно. Последующая metadata запись сохраняет approved substantive body/snippets и не является review реализации.
+
+Reviewed C17 source boundary задаёт server-private `PrivateSnapshotV2.legacyIntervalUnavailable` → pure `OptionalInput.unavailableTaskIds`. Marked retained valid pair остаётся unknown для real/coverage/full summary/CPM и Hknown; raw known FS conflict, source minima/notes и original edges сохраняются. Public Task/DTO не получают provenance. Annex задаёт explicit validated clear с original-done return, private undo/reopen/preserveWork passage и server-only frozen pending projection для initial migration/preview, отдельно от единственного current LIVE scheduler. Это reviewed technical contract, actual runtime integration ещё относится к Task5.
 
 Task 7 реализует принятые формулы и проверяет точные task/edge IDs, gaps, независимые компоненты, done, partial/infeasible, calendar, глубокую дату и одну отмену. Документальные kit checks не заменяют application tests/OS16. Production release по-прежнему требует S4–S6.
 
-Новый CPM документом не реализован; Task5 GREEN остаётся условием Task7. Нормативная C16 классифицирует сохранённый invalid/mismatch source как unknown/incomplete без доказанного FS-конфликта; Task7 явно адаптирует промежуточную классификацию Task2 в этих границах. C17 unavailable-lock representation остаётся pending Task4/5; изменённый scheduling input требует amendment annex и двух новых независимых reviews до подключения CPM.
+Новый CPM документом не реализован; Task5 GREEN остаётся условием Task7. Нормативная C16 классифицирует сохранённый invalid/mismatch source как unknown/incomplete без доказанного FS-конфликта; Task7 явно адаптирует промежуточную классификацию Task2 в этих границах. Task4 private source pin `f5e92abf7d2cb9655cfe11e6173f70ae375df857` прошёл два review; actual transactional persistence/clear/undo/preserveWork и acknowledgement integration Task5 ещё должны пройти собственные checks/review. Любое последующее изменение scheduling input или substantive annex требует amendment и двух новых независимых reviews до подключения CPM.
