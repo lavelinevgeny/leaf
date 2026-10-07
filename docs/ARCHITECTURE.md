@@ -25,11 +25,11 @@ migrations/               # SQL schema changes, never database dumps
 
 Для адаптации C16/C17 приняты [ADR 007](adr/007-legacy-scheduling-migration.md) и [ADR 008](adr/008-explicit-date-cpm.md). Новый pure CPM использует введённые интервалы и отдельные partial results; он ещё не реализован. Frozen legacy calculator, archive и context-specific resolution остаются server-only compatibility code для однократной миграции/history, не вторым active scheduler. Existing legacy upgrade требует explicit preview/digest acknowledgement перед writes; обычный startup не конвертирует БД молча.
 
-Целевая адаптация исходных сроков и persisted history описана в [спецификации C11–C15](superpowers/specs/2026-10-07-optional-scheduling-design.md); технические предложения архива/adapter ещё не являются реализованной схемой.
+Целевая адаптация исходных сроков и persisted history описана в [спецификации C11–C15](superpowers/specs/2026-10-07-optional-scheduling-design.md); Task 5 подключает schema3, приватный exact archive, durable replay и undo, а также target DTO с необязательными source fields.
 
 ## Данные
 
-Таблица описывает реализованную модель S2–S3. По [C15](DECISIONS.md) отдельное поле `deadline` исключено из целевой модели; API и хранение ещё требуют совместимой адаптации. Наличие поля в таблице не означает требование сохранять дедлайн в продукте.
+Таблица ниже сохраняет историческую модель S2–S3 для понимания миграции. Активный Task 5 использует независимые `inputStart`, `inputFinish`, `durationDays` и настройки calendar/timezone; planMode, notBefore, deadline, project.startDate и completed indices исключены из target DTO/active tables. Original legacy values остаются server-only archive. Наличие поля в исторической таблице не означает требование сохранять его в продукте.
 
 | Сущность | Основные поля |
 |---|---|

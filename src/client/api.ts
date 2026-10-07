@@ -24,6 +24,7 @@ async function request<T>(
   schema: z.ZodType<T>,
   method = 'GET',
   body?: unknown,
+  replay = false,
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
@@ -32,10 +33,16 @@ async function request<T>(
       method,
       credentials: 'same-origin',
       signal: controller.signal,
+      headers: {
+        ...(path.startsWith('/projects')
+          ? { 'X-Leaf-Contract-Version': '2' }
+          : {}),
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(replay ? { 'X-Leaf-Legacy-Replay': '1' } : {}),
+      },
       ...(body === undefined
         ? {}
         : {
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
           }),
     });
@@ -75,6 +82,18 @@ async function request<T>(
   }
 }
 export const api = {
+  replayLegacy: (
+    id: string,
+    originalBody: unknown,
+    kind: 'command' | 'rename',
+  ) =>
+    request(
+      `/projects/${id}${kind === 'command' ? '/commands' : ''}`,
+      projectTreeSchema,
+      kind === 'command' ? 'POST' : 'PATCH',
+      originalBody,
+      true,
+    ),
   session: () => request('/auth/session', sessionSchema),
   login: (password: string) =>
     request('/auth/login', sessionSchema, 'POST', { password }),

@@ -32,81 +32,96 @@ export const timezoneSchema = z
       return false;
     }
   }, 'Invalid timezone');
-export const durationSchema = z.number().int().positive();
-const autoDurationSchema = durationSchema.max(1000000);
-export const projectSchema = z.strictObject({
+export type SourceFields = {
+  inputStart: string | null;
+  inputFinish: string | null;
+  durationDays: number | null;
+};
+export type SourcePatch = Partial<SourceFields>;
+
+export const sourceFieldsSchema = z.strictObject({
+  inputStart: calendarDateSchema.nullable(),
+  inputFinish: calendarDateSchema.nullable(),
+  durationDays: z.number().int().min(1).max(1000000).nullable(),
+});
+export const sourcePatchSchema = sourceFieldsSchema.partial();
+export const optionalEditSchema = z.strictObject({
+  type: z.literal('task.edit'),
+  taskId: uuidSchema,
+  changes: z
+    .strictObject({
+      title: taskTitleSchema.optional(),
+      description: z.string().max(10000).optional(),
+      status: z.enum(['todo', 'doing', 'done']).optional(),
+      inputStart: calendarDateSchema.nullable().optional(),
+      inputFinish: calendarDateSchema.nullable().optional(),
+      durationDays: z.number().int().min(1).max(1000000).nullable().optional(),
+    })
+    .refine((value) => Object.keys(value).length > 0, 'Empty changes'),
+});
+
+const statusV2Schema = z.enum(['todo', 'doing', 'done']);
+const timestampV2Schema = z.iso.datetime();
+export const projectV2Schema = z.strictObject({
   id: uuidSchema,
   title: projectTitleSchema,
   revision: z.number().int().nonnegative(),
-  startDate: calendarDateSchema.nullable(),
   calendarType: calendarTypeSchema,
   timezone: timezoneSchema,
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  createdAt: timestampV2Schema,
+  updatedAt: timestampV2Schema,
 });
-export const taskSchema = z.strictObject({
+export const taskV2Schema = z.strictObject({
   id: uuidSchema,
   projectId: uuidSchema,
   parentId: uuidSchema.nullable(),
   title: taskTitleSchema,
   description: z.string().max(10000),
   sortOrder: z.number().int().nonnegative(),
-  status: z.enum(['todo', 'doing', 'done']),
-  planMode: z.enum(['unscheduled', 'auto', 'fixed']),
-  durationDays: durationSchema.nullable(),
-  notBefore: calendarDateSchema.nullable(),
-  deadline: calendarDateSchema.nullable(),
-  completedStart: calendarDateSchema.nullable(),
-  completedFinish: calendarDateSchema.nullable(),
-  completedStartIndex: z.number().int().nullable(),
-  completedFinishIndex: z.number().int().nullable(),
+  status: statusV2Schema,
   inputStart: calendarDateSchema.nullable(),
   inputFinish: calendarDateSchema.nullable(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  durationDays: z.number().int().positive().nullable(),
+  createdAt: timestampV2Schema,
+  updatedAt: timestampV2Schema,
 });
-export const dependencySchema = z.strictObject({
+export const dependencyV2Schema = z.strictObject({
   id: uuidSchema,
   projectId: uuidSchema,
   predecessorId: uuidSchema,
   successorId: uuidSchema,
 });
-const nullableIndex = z.number().int().nullable();
-export const scheduleResultSchema = z.strictObject({
+const realTaskV2Schema = z.strictObject({
+  startDate: calendarDateSchema.nullable(),
+  finishDate: calendarDateSchema.nullable(),
+  calendarSpanDays: z.number().int().positive().nullable(),
+});
+export const scheduleResultV2Schema = z.strictObject({
+  analysisStatus: z.literal('pending-policy'),
   feasibility: z.enum(['feasible', 'incomplete', 'infeasible']),
-  originDate: calendarDateSchema.nullable(),
-  projectFinishIndex: nullableIndex,
   coverage: z.strictObject({
     knownLeafCount: z.number().int().nonnegative(),
     totalLeafCount: z.number().int().nonnegative(),
   }),
-  tasks: z.record(
-    uuidSchema,
-    z.strictObject({
-      ES: nullableIndex,
-      EF: nullableIndex,
-      LS: nullableIndex,
-      LF: nullableIndex,
-      projectFloat: nullableIndex,
-      constraintFloat: nullableIndex,
-      startDate: calendarDateSchema.nullable(),
-      finishDate: calendarDateSchema.nullable(),
-      blockedReason: z.string().nullable(),
-    }),
-  ),
+  tasks: z.record(uuidSchema, realTaskV2Schema),
   summaries: z.record(
     uuidSchema,
-    z.strictObject({
-      start: nullableIndex,
-      finish: nullableIndex,
-      startDate: calendarDateSchema.nullable(),
-      finishDate: calendarDateSchema.nullable(),
-      partial: z.boolean(),
-      containsCritical: z.boolean(),
+    realTaskV2Schema.extend({
+      knownLeafCount: z.number().int().nonnegative(),
+      totalLeafCount: z.number().int().nonnegative(),
     }),
   ),
-  criticalTaskIds: z.array(uuidSchema),
-  criticalDependencyIds: z.array(uuidSchema),
+  display: z.record(
+    uuidSchema,
+    z.strictObject({
+      kind: z.literal('conditional'),
+      startDate: calendarDateSchema,
+      finishDate: calendarDateSchema,
+      clipped: z.boolean(),
+    }),
+  ),
+  criticalTaskIds: z.array(uuidSchema).length(0),
+  criticalDependencyIds: z.array(uuidSchema).length(0),
   diagnostics: z.array(
     z.strictObject({
       code: z.string(),
@@ -116,86 +131,35 @@ export const scheduleResultSchema = z.strictObject({
     }),
   ),
 });
-export const scheduleResponseSchema = z.strictObject({
+export const snapshotV2Schema = z.strictObject({
+  project: projectV2Schema,
+  tasks: z.array(taskV2Schema),
+  dependencies: z.array(dependencyV2Schema),
+});
+export const projectTreeV2Schema = snapshotV2Schema.extend({
+  contractVersion: z.literal(2),
+  canUndo: z.boolean(),
+  schedule: scheduleResultV2Schema,
+});
+export const scheduleResponseV2Schema = z.strictObject({
+  contractVersion: z.literal(2),
   projectId: uuidSchema,
   revision: z.number().int().nonnegative(),
-  schedule: scheduleResultSchema,
+  schedule: scheduleResultV2Schema,
 });
-export const taskPlanSchema = z.discriminatedUnion('mode', [
-  z.strictObject({
-    mode: z.literal('unscheduled'),
-    inputStart: calendarDateSchema.nullable().optional(),
-    inputFinish: calendarDateSchema.nullable().optional(),
-    deadline: calendarDateSchema.nullable().optional(),
-  }),
-  z.strictObject({
-    mode: z.literal('auto'),
-    durationDays: autoDurationSchema,
-    notBefore: calendarDateSchema.nullable().optional(),
-    deadline: calendarDateSchema.nullable().optional(),
-  }),
-  z.strictObject({
-    mode: z.literal('fixed'),
-    inputStart: calendarDateSchema,
-    inputFinish: calendarDateSchema,
-    deadline: calendarDateSchema.nullable().optional(),
-  }),
-]);
-export const projectTreeSchema = z.strictObject({
-  project: projectSchema,
-  tasks: z.array(taskSchema),
-  canUndo: z.boolean(),
-  dependencies: z.array(dependencySchema),
-  schedule: scheduleResultSchema,
-});
-export const taskChangesSchema = z
+const detailsPatchV2Schema = z
   .strictObject({
     title: taskTitleSchema.optional(),
     description: z.string().max(10000).optional(),
-    status: z.enum(['todo', 'doing', 'done']).optional(),
-    inputStart: calendarDateSchema.nullable().optional(),
-    inputFinish: calendarDateSchema.nullable().optional(),
+    status: statusV2Schema.optional(),
   })
-  .refine((changes) => Object.keys(changes).length > 0, 'Empty changes');
-export const commandSchema = z.discriminatedUnion('type', [
-  z
-    .strictObject({
-      type: z.literal('task.edit'),
-      taskId: uuidSchema,
-      changes: z.strictObject({
-        title: taskTitleSchema.optional(),
-        description: z.string().max(10000).optional(),
-        status: z.enum(['todo', 'doing', 'done']).optional(),
-      }),
-      plan: taskPlanSchema.optional(),
-    })
-    .refine(
-      (edit) => edit.plan !== undefined || Object.keys(edit.changes).length > 0,
-      'Empty edit',
-    ),
+  .refine((value) => Object.keys(value).length > 0, 'Empty changes');
+export const commandV2Schema = z.discriminatedUnion('type', [
+  optionalEditSchema,
   z.strictObject({
-    type: z.literal('project.schedule'),
-    changes: z
-      .strictObject({
-        startDate: calendarDateSchema.nullable().optional(),
-        calendarType: calendarTypeSchema.optional(),
-        timezone: timezoneSchema.optional(),
-      })
-      .refine((changes) => Object.keys(changes).length > 0, 'Empty changes'),
-  }),
-  z.strictObject({
-    type: z.literal('task.plan'),
+    type: z.literal('task.update'),
     taskId: uuidSchema,
-    plan: taskPlanSchema,
-  }),
-  z.strictObject({
-    type: z.literal('dependency.create'),
-    predecessorId: uuidSchema,
-    successorId: uuidSchema,
-  }),
-  z.strictObject({
-    type: z.literal('dependency.delete'),
-    dependencyId: uuidSchema,
+    changes: detailsPatchV2Schema,
   }),
   z.strictObject({
     type: z.literal('task.create'),
@@ -205,11 +169,6 @@ export const commandSchema = z.discriminatedUnion('type', [
     preserveWork: z.boolean().optional(),
   }),
   z.strictObject({
-    type: z.literal('task.update'),
-    taskId: uuidSchema,
-    changes: taskChangesSchema,
-  }),
-  z.strictObject({
     type: z.literal('task.move'),
     taskId: uuidSchema,
     parentId: uuidSchema.nullable(),
@@ -217,21 +176,46 @@ export const commandSchema = z.discriminatedUnion('type', [
     preserveWork: z.boolean().optional(),
   }),
   z.strictObject({ type: z.literal('task.delete'), taskId: uuidSchema }),
+  z.strictObject({
+    type: z.literal('dependency.create'),
+    predecessorId: uuidSchema,
+    successorId: uuidSchema,
+  }),
+  z.strictObject({
+    type: z.literal('dependency.delete'),
+    dependencyId: uuidSchema,
+  }),
   z.strictObject({ type: z.literal('undo') }),
+  z.strictObject({
+    type: z.literal('project.schedule'),
+    changes: z
+      .strictObject({
+        calendarType: calendarTypeSchema.optional(),
+        timezone: timezoneSchema.optional(),
+      })
+      .refine((value) => Object.keys(value).length > 0, 'Empty changes'),
+  }),
 ]);
-export const commandEnvelopeSchema = z.strictObject({
+export const commandEnvelopeV2Schema = z.strictObject({
+  contractVersion: z.literal(2),
   expectedRevision: z.number().int().nonnegative(),
   operationId: uuidSchema,
-  command: commandSchema,
+  command: commandV2Schema,
 });
-export const createProjectSchema = z.strictObject({
-  title: projectTitleSchema,
-});
-export const renameProjectSchema = z.strictObject({
+export const renameV2Schema = z.strictObject({
+  contractVersion: z.literal(2),
   title: projectTitleSchema,
   expectedRevision: z.number().int().nonnegative(),
   operationId: uuidSchema,
 });
+export type ProjectV2 = z.infer<typeof projectV2Schema>;
+export type TaskV2 = z.infer<typeof taskV2Schema>;
+export type DependencyV2 = z.infer<typeof dependencyV2Schema>;
+export type SnapshotV2 = z.infer<typeof snapshotV2Schema>;
+export type ProjectTreeV2 = z.infer<typeof projectTreeV2Schema>;
+export type CommandV2 = z.infer<typeof commandV2Schema>;
+export type CommandEnvelopeV2 = z.infer<typeof commandEnvelopeV2Schema>;
+export type RenameV2 = z.infer<typeof renameV2Schema>;
 export const loginSchema = z.strictObject({
   password: z.string().min(1).max(1024),
 });
@@ -243,13 +227,23 @@ export const errorSchema = z.strictObject({
   code: z.string(),
   message: z.string(),
 });
-export type Project = z.infer<typeof projectSchema>;
-export type Task = z.infer<typeof taskSchema>;
-export type ProjectTree = z.infer<typeof projectTreeSchema>;
-export type Command = z.infer<typeof commandSchema>;
-export type CommandEnvelope = z.infer<typeof commandEnvelopeSchema>;
-export type RenameProject = z.infer<typeof renameProjectSchema>;
+export const projectSchema = projectV2Schema;
+export type Project = ProjectV2;
+export const taskSchema = taskV2Schema;
+export type Task = TaskV2;
+export const dependencySchema = dependencyV2Schema;
+export type Dependency = DependencyV2;
+export const projectTreeSchema = projectTreeV2Schema;
+export type ProjectTree = ProjectTreeV2;
+export const commandSchema = commandV2Schema;
+export type Command = CommandV2;
+export const commandEnvelopeSchema = commandEnvelopeV2Schema;
+export type CommandEnvelope = CommandEnvelopeV2;
+export const renameProjectSchema = renameV2Schema;
+export type RenameProject = RenameV2;
+export const scheduleResponseSchema = scheduleResponseV2Schema;
+export const scheduleResultSchema = scheduleResultV2Schema;
+export const createProjectSchema = z.strictObject({
+  title: projectTitleSchema,
+});
 export type AuthSession = z.infer<typeof sessionSchema>;
-
-export type Dependency = z.infer<typeof dependencySchema>;
-export type TaskPlan = z.infer<typeof taskPlanSchema>;

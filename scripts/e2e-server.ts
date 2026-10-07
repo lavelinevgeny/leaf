@@ -109,6 +109,7 @@ export async function syntheticRuntime() {
     await start();
     return {
       origin,
+      databasePath: join(directory, 'leaf.sqlite'),
       password,
       async restart() {
         await stop();

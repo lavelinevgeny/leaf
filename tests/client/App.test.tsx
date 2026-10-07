@@ -22,7 +22,7 @@ const project = {
   id: '11111111-1111-4111-8111-111111111111',
   title: 'Демо-проект',
   revision: 0,
-  startDate: null,
+
   calendarType: 'weekdays' as const,
   timezone: 'UTC',
   createdAt: '2026-10-07T00:00:00.000Z',
@@ -43,23 +43,19 @@ const task = (
   description: '',
   sortOrder,
   status: 'todo',
-  planMode: 'unscheduled',
+
   durationDays: null,
-  notBefore: null,
-  deadline: null,
-  completedStart: null,
-  completedFinish: null,
-  completedStartIndex: null,
-  completedFinishIndex: null,
+
   inputStart: null,
   inputFinish: null,
   createdAt: project.createdAt,
   updatedAt: project.updatedAt,
 });
 const emptySchedule: ProjectTree['schedule'] = {
+  analysisStatus: 'pending-policy',
+  display: {},
   feasibility: 'feasible',
-  originDate: null,
-  projectFinishIndex: null,
+
   coverage: { knownLeafCount: 0, totalLeafCount: 0 },
   tasks: {},
   summaries: {},
@@ -79,6 +75,7 @@ const json = (body: unknown, status = 200) =>
   );
 beforeEach(() => {
   tree = {
+    contractVersion: 2,
     project: { ...project },
     tasks: [],
     canUndo: false,
@@ -94,6 +91,7 @@ beforeEach(() => {
     if (url === '/api/projects') {
       if (init?.method === 'POST') {
         tree = {
+          contractVersion: 2,
           project: {
             ...project,
             id: '33333333-3333-4333-8333-333333333333',
@@ -133,7 +131,7 @@ beforeEach(() => {
             tree.tasks.length,
           ),
         );
-      if (command.type === 'task.update')
+      if (command.type === 'task.update' || command.type === 'task.edit')
         tree.tasks = tree.tasks.map((t) =>
           t.id === command.taskId
             ? ({
@@ -181,10 +179,6 @@ describe('client HTTP interactions', () => {
     await user.click(screen.getByRole('treeitem', { name: /Работа A,/ }));
     await user.clear(screen.getByLabelText('Название задачи'));
     await user.type(screen.getByLabelText('Название задачи'), 'Работа revised');
-    await user.selectOptions(
-      screen.getByLabelText('Режим планирования'),
-      'auto',
-    );
     await user.type(screen.getByLabelText('Длительность, рабочих дней'), '9');
     let first: CommandEnvelope | undefined;
     fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
@@ -197,7 +191,7 @@ describe('client HTTP interactions', () => {
       'Работа revised',
     );
     expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(9);
-    expect(screen.getByLabelText('Режим планирования')).toBeDisabled();
+    expect(screen.getByLabelText('Длительность, рабочих дней')).toBeDisabled();
     expect(
       screen.queryByText('Сохранено', { exact: true }),
     ).not.toBeInTheDocument();
@@ -206,9 +200,7 @@ describe('client HTTP interactions', () => {
       return json({
         ...tree,
         project: { ...project, revision: 1 },
-        tasks: [
-          { ...task(1, 'Работа revised'), planMode: 'auto', durationDays: 9 },
-        ],
+        tasks: [{ ...task(1, 'Работа revised'), durationDays: 9 }],
         canUndo: true,
       });
     });
@@ -218,10 +210,9 @@ describe('client HTTP interactions', () => {
     await screen.findByText('Сохранено', { exact: true });
     expect(first?.command).toMatchObject({
       type: 'task.edit',
-      changes: { title: 'Работа revised' },
-      plan: { mode: 'auto', durationDays: 9 },
+      changes: { title: 'Работа revised', durationDays: 9 },
     });
-    expect(screen.getByLabelText('Режим планирования')).toHaveValue('auto');
+    expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(9);
   });
   it('keeps quick intent on rejected stale reload and reconciles it only on a fresh conflict snapshot', async () => {
     tree = {
@@ -900,7 +891,7 @@ describe('client HTTP interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     await screen.findByText('Сохранено');
     expect(commands[0]?.command).toMatchObject({
-      type: 'task.update',
+      type: 'task.edit',
       taskId: id(1),
       changes: {
         title: 'Задача A1',
@@ -948,6 +939,7 @@ describe('client HTTP interactions', () => {
     );
     fetchMock.mockImplementationOnce(() =>
       json({
+        contractVersion: 2,
         project: other,
         tasks: [],
         canUndo: false,
@@ -1000,6 +992,7 @@ describe('client HTTP interactions', () => {
     expect(unload.defaultPrevented).toBe(true);
     fetchMock.mockImplementationOnce(() =>
       json({
+        contractVersion: 2,
         project: other,
         tasks: [],
         canUndo: false,
@@ -1167,15 +1160,14 @@ describe('client HTTP interactions', () => {
         }
       }
       function fixture(
-        kind: 'done' | 'auto' | 'deadline' | 'linked' | 'empty' | 'summary',
+        kind: 'done' | 'duration' | 'finish' | 'linked' | 'empty' | 'summary',
       ) {
         const parent = task(1, 'Собственная работа');
         if (kind === 'done') parent.status = 'done';
-        if (kind === 'auto') {
-          parent.planMode = 'auto';
+        if (kind === 'duration') {
           parent.durationDays = 3;
         }
-        if (kind === 'deadline') parent.deadline = '2026-10-20';
+        if (kind === 'finish') parent.inputFinish = '2026-10-20';
         tree.tasks = [parent, task(2, 'Переносимая задача', null, 1)];
         if (kind === 'linked')
           tree.dependencies = [
@@ -1187,11 +1179,11 @@ describe('client HTTP interactions', () => {
             },
           ];
         if (kind === 'summary') {
-          parent.deadline = '2026-10-20';
+          parent.inputFinish = '2026-10-20';
           tree.tasks.push(task(3, 'Существующий ребёнок', id(1)));
         }
       }
-      it.each(['done', 'auto', 'deadline', 'linked'] as const)(
+      it.each(['done', 'duration', 'finish', 'linked'] as const)(
         'confirms undated %s work and sends preserveWork',
         async (kind) => {
           fixture(kind);

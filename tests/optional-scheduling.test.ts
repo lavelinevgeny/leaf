@@ -1,19 +1,19 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { z } from 'zod';
 import {
-  calculateOptionalSchedule,
+  calculateSchedule,
   conditionalFinish,
   validateOptionalDependency,
-} from '../src/domain/optional-scheduling.js';
+} from '../src/domain/scheduling.js';
 import type {
   OptionalResult,
   OptionalTask,
-} from '../src/domain/optional-scheduling-types.js';
+} from '../src/domain/scheduling-types.js';
 import type {
   CalendarType,
   SchedulingDependency,
 } from '../src/domain/scheduling-types.js';
-import { scheduleResultV2Schema } from '../src/shared/optional-contracts.js';
+import { scheduleResultV2Schema } from '../src/shared/contracts.js';
 
 const t = (
   id: string,
@@ -38,8 +38,7 @@ const schedule = (
   tasks: readonly OptionalTask[],
   dependencies: readonly SchedulingDependency[] = [],
   calendarType: CalendarType = 'weekdays',
-): OptionalResult =>
-  calculateOptionalSchedule({ calendarType, tasks, dependencies });
+): OptionalResult => calculateSchedule({ calendarType, tasks, dependencies });
 const unknown = {
   startDate: null,
   finishDate: null,

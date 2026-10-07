@@ -170,7 +170,11 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
   });
   expect(missing.status()).toBe(403);
   expect(
-    await (await page.request.get(`${runtime.origin}/api/projects`)).json(),
+    await (
+      await page.request.get(`${runtime.origin}/api/projects`, {
+        headers: { 'X-Leaf-Contract-Version': '2' },
+      })
+    ).json(),
   ).toEqual([]);
   await project(page);
   await add(page, 'Задача A');
@@ -209,11 +213,14 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
     page.getByRole('textbox', { name: 'Описание', exact: true }),
   ).toHaveValue('Черновик при сбое');
   const projects = (await (
-    await page.request.get(`${runtime.origin}/api/projects`)
+    await page.request.get(`${runtime.origin}/api/projects`, {
+      headers: { 'X-Leaf-Contract-Version': '2' },
+    })
   ).json()) as { id: string }[];
   const tree = (await (
     await page.request.get(
       `${runtime.origin}/api/projects/${projects[0]!.id}/tree`,
+      { headers: { 'X-Leaf-Contract-Version': '2' } },
     )
   ).json()) as { project: { revision: number } };
   expect(tree.project.revision).toBe(2);

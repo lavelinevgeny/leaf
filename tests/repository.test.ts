@@ -28,7 +28,12 @@ function command(
 ) {
   return repository.applyCommand(
     tree.project.id,
-    { expectedRevision: tree.project.revision, operationId, command: cmd },
+    {
+      contractVersion: 2 as const,
+      expectedRevision: tree.project.revision,
+      operationId,
+      command: cmd,
+    },
     sessionId,
   );
 }
@@ -53,7 +58,7 @@ describe('transactional storage', () => {
     const b = tree.tasks.find((t) => t.title === 'B')!.id;
     tree = create(tree, 'C', a);
     tree = command(tree, {
-      type: 'task.update',
+      type: 'task.edit',
       taskId: b,
       changes: { inputStart: '2026-10-07', inputFinish: null, status: 'doing' },
     });
@@ -67,6 +72,7 @@ describe('transactional storage', () => {
   it('deduplicates the operation before revision validation and rejects payload reuse', () => {
     const tree = createProject();
     const envelope = {
+      contractVersion: 2 as const,
       expectedRevision: 0,
       operationId: randomUUID(),
       command: { type: 'task.create' as const, title: 'A', parentId: null },
@@ -143,7 +149,7 @@ describe('transactional storage', () => {
     expect(() => create(tree, 'Invalid', foreign)).toThrow();
     expect(() =>
       command(tree, {
-        type: 'task.update',
+        type: 'task.edit',
         taskId: c,
         changes: { inputStart: '2026-02-30' },
       }),
@@ -158,7 +164,7 @@ describe('transactional storage', () => {
     let tree = create(createProject(), 'Parent');
     const id = tree.tasks[0]!.id;
     tree = command(tree, {
-      type: 'task.update',
+      type: 'task.edit',
       taskId: id,
       changes: {
         inputStart: '2026-10-07',
@@ -192,7 +198,7 @@ describe('transactional storage', () => {
     });
     expect(() =>
       command(tree, {
-        type: 'task.update',
+        type: 'task.edit',
         taskId: id,
         changes: { inputStart: '2026-10-09' },
       }),
@@ -208,7 +214,7 @@ describe('transactional storage', () => {
     tree = create(tree, 'C');
     const c = tree.tasks.find((t) => t.title === 'C')!.id;
     tree = command(tree, {
-      type: 'task.update',
+      type: 'task.edit',
       taskId: b,
       changes: { inputFinish: '2026-10-08' },
     });
@@ -250,6 +256,7 @@ describe('transactional storage', () => {
     expect(tree.tasks.map((t) => t.title)).toEqual(['A', 'C', 'B']);
     const rename = {
       title: 'Renamed',
+      contractVersion: 2 as const,
       expectedRevision: tree.project.revision,
       operationId: randomUUID(),
     };

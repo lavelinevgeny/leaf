@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Command, Project } from '../shared/contracts.js';
 import { calendarLabels, strings } from './strings.js';
-type Settings = Pick<Project, 'startDate' | 'calendarType' | 'timezone'>;
+type Settings = Pick<Project, 'calendarType' | 'timezone'>;
 const settingsOf = (project: Project): Settings => ({
-  startDate: project.startDate,
   calendarType: project.calendarType,
   timezone: project.timezone,
 });
@@ -46,16 +45,6 @@ export function ProjectPlan({ project, disabled, onSave, onDirty }: Props) {
         }}
       >
         <fieldset disabled={disabled}>
-          <label>
-            {strings.projectStart}
-            <input
-              type="date"
-              value={draft.startDate ?? ''}
-              onChange={(event) =>
-                setDraft({ ...draft, startDate: event.target.value || null })
-              }
-            />
-          </label>
           <label>
             {strings.calendar}
             <select

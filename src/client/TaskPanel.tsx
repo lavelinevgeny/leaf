@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  taskPlanSchema,
+  sourceFieldsSchema,
   type Task,
-  type TaskPlan,
+  type SourceFields,
   type ProjectTree,
 } from '../shared/contracts.js';
 import { PlanFields } from './PlanFields.js';
-import { planOf } from './planning-view.js';
+import { sourceOf } from './planning-view.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
 import { Dependencies } from './Dependencies.js';
 import type { Command } from '../shared/contracts.js';
@@ -14,16 +14,11 @@ import { TaskTree, type TreeAction } from './TaskTree.js';
 import { subtreeIds } from './tree-view.js';
 import { statusLabels, strings } from './strings.js';
 
-type Draft = Pick<
-  Task,
-  'title' | 'description' | 'status' | 'inputStart' | 'inputFinish'
->;
+type Draft = Pick<Task, 'title' | 'description' | 'status'>;
 const draftOf = (task: Task): Draft => ({
   title: task.title,
   description: task.description,
   status: task.status,
-  inputStart: task.inputStart,
-  inputFinish: task.inputFinish,
 });
 export type PanelTab = 'details' | 'subtasks' | 'dependencies';
 interface Props {
@@ -43,7 +38,9 @@ interface Props {
   onSelect: (task: Task) => void;
   onAction: (action: TreeAction, task: Task) => void;
   onMove: (task: Task, parentId: string | null) => void;
-  onSave: (changes: Draft, plan?: TaskPlan) => Promise<boolean>;
+  onSave: (
+    changes: Partial<Draft> & import('../shared/contracts.js').SourcePatch,
+  ) => Promise<boolean>;
   onDirty: (dirty: boolean) => void;
   onClose: () => void;
   busy: boolean;
@@ -80,13 +77,26 @@ export function TaskPanel({
 }: Props) {
   const [draft, setDraft] = useState<Draft>(() => draftOf(task));
   const [baseline, setBaseline] = useState<Draft>(() => draftOf(task));
-  const [plan, setPlan] = useState<TaskPlan>(() => planOf(task));
-  const [baselinePlan, setBaselinePlan] = useState<TaskPlan>(() =>
-    planOf(task),
+  const [plan, setPlan] = useState<SourceFields>(() => sourceOf(task));
+  const [baselinePlan, setBaselinePlan] = useState<SourceFields>(() =>
+    sourceOf(task),
   );
   const [saved, setSaved] = useState(false);
   const [moveParent, setMoveParent] = useState(task.parentId ?? '');
   const previousParent = useRef(task.parentId);
+  const unavailable = tree.schedule.diagnostics.some(
+    (item) =>
+      item.code === 'LEGACY_INTERVAL_UNAVAILABLE' &&
+      item.taskIds.includes(task.id),
+  );
+  const canAdopt =
+    unavailable &&
+    task.status !== 'done' &&
+    draft.status !== 'done' &&
+    !summaryOfTask();
+  function summaryOfTask() {
+    return tasks.some((child) => child.parentId === task.id);
+  }
   const planDirty = JSON.stringify(plan) !== JSON.stringify(baselinePlan);
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || planDirty;
   const summary = tasks.some((child) => child.parentId === task.id);
@@ -112,8 +122,8 @@ export function TaskPanel({
       const fresh = draftOf(task);
       setDraft(fresh);
       setBaseline(fresh);
-      setPlan(planOf(task));
-      setBaselinePlan(planOf(task));
+      setPlan(sourceOf(task));
+      setBaselinePlan(sourceOf(task));
     }
   }, [task, dirty, busy]);
   function update<K extends keyof Draft>(field: K, value: Draft[K]) {
@@ -123,9 +133,18 @@ export function TaskPanel({
   async function save() {
     if (busy || removed || conflict || !draft.title.trim()) return;
     const fields = { ...draft, title: draft.title.trim() };
-    if (!summary && planDirty && !taskPlanSchema.safeParse(plan).success)
+    if (!summary && planDirty && !sourceFieldsSchema.safeParse(plan).success)
       return;
-    if (await onSave(fields, summary || !planDirty ? undefined : plan)) {
+    const changes: Partial<Draft> &
+      import('../shared/contracts.js').SourcePatch = {};
+    for (const key of ['title', 'description', 'status'] as const)
+      if (fields[key] !== baseline[key])
+        Object.assign(changes, { [key]: fields[key] });
+    if (!summary)
+      for (const key of ['inputStart', 'inputFinish', 'durationDays'] as const)
+        if (plan[key] !== baselinePlan[key] || (canAdopt && !dirty))
+          Object.assign(changes, { [key]: plan[key] });
+    if (await onSave(changes)) {
       setDraft(fields);
       setBaseline(fields);
       setBaselinePlan(plan);
@@ -220,6 +239,7 @@ export function TaskPanel({
                 <label>
                   {strings.status}
                   <select
+                    aria-label={strings.status}
                     value={draft.status}
                     onChange={(event) =>
                       update('status', event.target.value as Task['status'])
@@ -250,12 +270,6 @@ export function TaskPanel({
                   disabled={removed}
                   onChange={(next) => {
                     setPlan(next);
-                    if (next.mode !== 'auto')
-                      setDraft((previous) => ({
-                        ...previous,
-                        inputStart: next.inputStart || null,
-                        inputFinish: next.inputFinish || null,
-                      }));
                     setSaved(false);
                   }}
                 />
@@ -263,6 +277,7 @@ export function TaskPanel({
                 <label>
                   {strings.description}
                   <textarea
+                    aria-label={strings.description}
                     value={draft.description}
                     maxLength={10000}
                     rows={6}
@@ -281,11 +296,11 @@ export function TaskPanel({
                     removed ||
                     conflict ||
                     (locked && !retry) ||
-                    (!dirty && !retry) ||
+                    (!dirty && !retry && !canAdopt) ||
                     !draft.title.trim() ||
                     (!summary &&
                       planDirty &&
-                      !taskPlanSchema.safeParse(plan).success)
+                      !sourceFieldsSchema.safeParse(plan).success)
                   }
                 >
                   {busy
@@ -313,8 +328,8 @@ export function TaskPanel({
                     const fresh = draftOf(task);
                     setDraft(fresh);
                     setBaseline(fresh);
-                    setPlan(planOf(task));
-                    setBaselinePlan(planOf(task));
+                    setPlan(sourceOf(task));
+                    setBaselinePlan(sourceOf(task));
                     setSaved(false);
                     onDirty(false);
                   }}

@@ -1,12 +1,16 @@
+import { buildApp } from '../src/server/app.js';
+import { previewOptionalUpgrade } from '../src/server/optional-upgrade.js';
+import { Repository } from '../src/server/repository.js';
+import { rawSyntheticCountsAndRevision } from './helpers/optional-api-fixtures.js';
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { privateSnapshotV2Schema as snapshotV2Schema } from '../src/server/optional-snapshot.js';
 import { canonical } from '../src/shared/canonical.js';
-import { projectTreeV2Schema } from '../src/shared/optional-contracts.js';
+import { projectTreeV2Schema } from '../src/shared/contracts.js';
 import {
   replayLegacyOperation,
   resolutionKey,
@@ -462,7 +466,70 @@ describe('synthetic optional scheduling preparation', () => {
       } finally {
         reopened.close();
       }
-      expect(() => openDatabase(path)).toThrowError(/schema/);
+      const active = openDatabase(path);
+      active.close();
+    }));
+  it('durably replays literal revision9 through actual Repository after target revision10', () =>
+    fixture((db, path) => {
+      db.prepare('UPDATE projects SET revision=9').run();
+      migrate(db);
+      const frozen = (
+        db
+          .prepare('SELECT response FROM operations WHERE operationId=?')
+          .get(operationId) as { response: string }
+      ).response;
+      db.close();
+      const reopened = openDatabase(path);
+      try {
+        const repository = new Repository(reopened);
+        const after = repository.applyCommand(
+          projectId,
+          {
+            contractVersion: 2,
+            expectedRevision: 9,
+            operationId: '55555555-5555-4555-8555-555555555555',
+            command: {
+              type: 'task.edit',
+              taskId: aId,
+              changes: { title: 'Synthetic Y' },
+            },
+          },
+          sessionId,
+        );
+        expect(after.project.revision).toBe(10);
+        const before = rawSyntheticCountsAndRevision(reopened, projectId);
+        const replay = repository.replayLegacy(
+          projectId,
+          legacyBody,
+          sessionId,
+        );
+        expect(replay).toEqual(JSON.parse(frozen));
+        expect(replay.project.revision).toBe(9);
+        expect(replay.tasks[0]!.inputFinish).toBe('2026-10-06');
+        expect(replay.tasks[0]!.title).toBe('Synthetic A');
+        expect(rawSyntheticCountsAndRevision(reopened, projectId)).toEqual(
+          before,
+        );
+        expect(JSON.stringify(replay)).not.toContain('deadline');
+        expect(
+          (
+            reopened
+              .prepare('SELECT payload FROM operations WHERE operationId=?')
+              .get(operationId) as { payload: string }
+          ).payload,
+        ).toBe(originalPayload);
+        expect(
+          (
+            reopened
+              .prepare(
+                "SELECT originalText FROM scheduling_migration_archive WHERE kind='operation-payload' AND recordKey=?",
+              )
+              .get(operationId) as { originalText: string }
+          ).originalText,
+        ).toBe(originalPayload);
+      } finally {
+        reopened.close();
+      }
     }));
   it('lookup-only replay rejects changed payload/project/session/version and unknown operations', () =>
     fixture((db) => {
@@ -903,3 +970,180 @@ function insertTaskTarget(db: Database.Database, value: object) {
     'INSERT INTO tasks(id,projectId,parentId,title,description,sortOrder,status,inputStart,inputFinish,durationDays,createdAt,updatedAt) VALUES (@id,@projectId,@parentId,@title,@description,@sortOrder,@status,@inputStart,@inputFinish,@durationDays,@createdAt,@updatedAt)',
   ).run(value);
 }
+
+it('HTTP legacy command and rename replay are lookup-only, session/project scoped, durable and corruption-safe', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'leaf-legacy-http-'));
+  const path = join(directory, 'synthetic.sqlite');
+  fixture((db, source) => {
+    db.close();
+    copyFileSync(source, path);
+  });
+  const token = 's'.repeat(43);
+  const authenticated = sha(token);
+  let db = new Database(path);
+  db.prepare('UPDATE projects SET revision=9').run();
+  db.prepare('UPDATE operations SET sessionId=?').run(authenticated);
+  db.prepare('UPDATE undo_snapshots SET sessionId=?').run(authenticated);
+  db.prepare('UPDATE sessions SET id=?').run(authenticated);
+  const renameId = '88888888-8888-4888-8888-888888888888';
+  const renameBody = {
+    title: 'Synthetic rename',
+    expectedRevision: 8,
+    operationId: renameId,
+  };
+  db.prepare('INSERT INTO operations VALUES (?,?,?,?,?)').run(
+    renameId,
+    projectId,
+    authenticated,
+    canonical(renameBody),
+    originalResponse,
+  );
+  const approval = previewOptionalUpgrade(db);
+  db.close();
+  openDatabase(path, approval).close();
+  const origin = 'http://127.0.0.1:3000';
+  const app = await buildApp({ databasePath: path, publicOrigin: origin });
+  db = new Database(path);
+  const headers = {
+    origin,
+    cookie: `leaf_session=${token}`,
+    'x-leaf-contract-version': '2',
+  };
+  try {
+    const after = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/commands`,
+      headers,
+      payload: {
+        contractVersion: 2,
+        expectedRevision: 9,
+        operationId: '99999999-9999-4999-8999-999999999999',
+        command: {
+          type: 'task.edit',
+          taskId: aId,
+          changes: { title: 'Synthetic Y' },
+        },
+      },
+    });
+    expect(after.statusCode).toBe(200);
+    expect(after.json().project.revision).toBe(10);
+    const before = state(db);
+    const frozen = (
+      db
+        .prepare('SELECT response FROM operations WHERE operationId=?')
+        .get(operationId) as { response: string }
+    ).response;
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/commands`,
+      headers: { ...headers, 'x-leaf-legacy-replay': '1' },
+      payload: legacyBody,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(JSON.parse(frozen));
+    expect(replay.json().project.revision).toBe(9);
+    expect(state(db)).toEqual(before);
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}`,
+      headers: { ...headers, 'x-leaf-legacy-replay': '1' },
+      payload: renameBody,
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().project.revision).toBe(9);
+    expect(state(db)).toEqual(before);
+    for (const payload of [
+      { ...legacyBody, operationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      { ...legacyBody, contractVersion: 2 },
+    ]) {
+      const result = await app.inject({
+        method: 'POST',
+        url: `/api/projects/${projectId}/commands`,
+        headers: { ...headers, 'x-leaf-legacy-replay': '1' },
+        payload,
+      });
+      expect(result.statusCode).toBe(409);
+      expect(state(db)).toEqual(before);
+    }
+    const foreign = await app.inject({
+      method: 'POST',
+      url: '/api/projects/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/commands',
+      headers: { ...headers, 'x-leaf-legacy-replay': '1' },
+      payload: legacyBody,
+    });
+    expect(foreign.statusCode).toBe(409);
+    db.prepare('INSERT INTO sessions VALUES (?,?)').run(
+      sha('o'.repeat(43)),
+      2000000000000,
+    );
+    const wrongSession = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/commands`,
+      headers: {
+        ...headers,
+        cookie: `leaf_session=${'o'.repeat(43)}`,
+        'x-leaf-legacy-replay': '1',
+      },
+      payload: legacyBody,
+    });
+    expect(wrongSession.statusCode).toBe(409);
+    db.prepare(
+      "UPDATE operations SET responseSha256='synthetic-corrupt' WHERE operationId=?",
+    ).run(operationId);
+    const corrupted = state(db);
+    const failure = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/commands`,
+      headers: { ...headers, 'x-leaf-legacy-replay': '1' },
+      payload: legacyBody,
+    });
+    expect(failure.statusCode).toBe(500);
+    expect(failure.json()).toEqual({
+      code: 'INTERNAL_ERROR',
+      message: 'Не удалось выполнить запрос.',
+    });
+    expect(state(db)).toEqual(corrupted);
+  } finally {
+    db.close();
+    await app.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it('actual Repository undo restores a migrated deleted task and its complete private snapshot', () =>
+  fixture((db) => {
+    migrate(db);
+    const repository = new Repository(db);
+    const expected = snapshotV2Schema.parse(
+      JSON.parse(
+        (
+          db.prepare('SELECT beforeSnapshot FROM undo_snapshots').get() as {
+            beforeSnapshot: string;
+          }
+        ).beforeSnapshot,
+      ),
+    );
+    const undone = repository.applyCommand(
+      projectId,
+      {
+        contractVersion: 2,
+        expectedRevision: 10,
+        operationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        command: { type: 'undo' },
+      },
+      sessionId,
+    );
+    expect(undone.tasks).toEqual(expected.tasks);
+    expect(undone.tasks[0]!.id).toBe(dId);
+    expect(undone.dependencies).toEqual(expected.dependencies);
+    expect(undone.project.revision).toBe(11);
+    expect(
+      (
+        db
+          .prepare(
+            'SELECT taskId FROM task_schedule_provenance ORDER BY taskId',
+          )
+          .all() as { taskId: string }[]
+      ).map((row) => row.taskId),
+    ).toEqual(expected.legacyIntervalUnavailable.toSorted());
+  }));

@@ -1,5 +1,22 @@
 # Статус разработки
 
+## Task 5: атомарная адаптация storage/API/UI — 2026-10-08
+
+Активированы target contracts V2, независимые необязательные source dates/duration, серверная pending-проекция и migration003. C16 policy CLOSED; настоящий CPM implementation pending. Публичные DTO явно перечисляют project/tasks/dependencies и не раскрывают archive/provenance. Операции/undo сохраняются; C17 markers переживают details/status/calendar/edges, restart, preserveWork и undo. Явный validated source patch, включая равные значения, подтверждает интервал; status-only возврат в работу marker сохраняет.
+
+Каждый project route требует transport version2 до repository access; unversioned/unsupported получает426. Target command/rename body содержит contractVersion2. Legacy replay использует original body с transport-only replay header, возвращает frozen revision9 после latest10, ничего не выполняет при неизвестном запросе и проверяет digest/schema. Schema2 startup без approval и schema1 отклоняются до изменяющих PRAGMA/DDL; CLI readonly preview/digest confirmation и повторная проверка внутри IMMEDIATE-транзакции подключены. Deadline не переносится в finish, display не сохраняется как source.
+
+UI сохраняет светлое дерево/Гант и компактную панель. Три optional поля, отдельные source markers, условные полосы, source-only labels при неизвестном прежнем интервале, explicit duration choice для resize, dirty drafts и удалённая выбранная задача покрыты тестами. Статус pending объясняется «Расчёт критического пути ещё не подключён». README/BOOTSTRAP/DEPLOYMENT описывают backup/preview/explicit apply и границы промежуточного checkpoint.
+
+Проверено на закреплённых Node24.21.0/npm11.19.0: verify — typecheck, lint, 394 application tests без skips и build; format:check, check:package и check:kit — прошли. Browser suites проверены на1440×900 и1280×800: 24 target E2E и2 actual pinned unchanged S3 tests. Original S3 SHA/API source hashes, offline build, настоящий old ApiError и browser assets подтверждают426/uncertain=false/no writes. Отдельно actual pinned S3 registry отклоняет schema3. Synthetic CLI, migrated HTTP replay/rename, corruption safe500, premigration deleted-task undo и provenance durability проверены. Local Docker synthetic smoke прошёл: точная migration003, native DROP, explicit upgrade, fresh chain, non-root/read-only, loopback, restart и native backup; только собственные новые ресурсы, удалённые после проверки. Все шесть synthetic screenshots просмотрены относительно трёх approved references.
+
+Suite traceability: прежние Auto/Fixed/deadline target assertions заменены на nullable source, N01–N05/pending, FS/summary/display, done reopen, version/replay, private marker и rollback scenarios. Исторические численные CPM fixtures сохранены целиком в tests/scheduling.test.ts на frozen server-only solver; compatibility/migration/upgrade suites сохранены и расширены. Список application suites не сокращён и skipped tests не добавлены; изменение числа403→394 отражает замену поведения C11–C15 и объединение связанных assertions. Kit исторические CPM примеры остаются отдельным evidence, не новым расчётом.
+
+Publication guard в linked worktree: security:workspace остановлен на категории PERSONAL_HOME_PATH для служебного `.git` pointer; preflight здесь не завершён. Это известная граница workspace guard, политика не менялась. Scoped security:staged и обычные commit hooks обязательны; integrator повторяет workspace/history/preflight в основном checkout после принятия.
+
+Не запускались: production migration/deployment, remote actions, push/release, restore/import/export и полный релизный acceptance. Первый релиз не готов. Следующий шаг: независимый Spec/Standards review точного интеграционного SHA, затем Task7 CPM после завершения review его нормативного приложения. Исторические записи ниже описывают состояние своих checkpoint.
+
+
 ## Task 4: C17 resolver, preview и durable unavailable — 2026-10-08
 
 Реализованы неактивные helpers C17: frozen server-only S3 calculator/calendar/types, resolver по полному собственному active/operation/undo snapshot, readonly preview counts/digest и locked acknowledgement перед migration writes. Каждая resolution связана с original task и полным context SHA-256; изменение project/calendar/edges/другой задачи того же context отвергается до DDL. Frozen legacy envelope validators не ослаблены, raw payload/response/undo не нормализуются.

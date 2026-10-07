@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import fixtures from '../fixtures/scheduling/cpm-cases.json';
-import { calculateSchedule } from '../src/domain/scheduling.js';
+import { calculateSchedule } from '../src/server/legacy-scheduling.js';
 import { indexToDate } from '../src/domain/calendar.js';
 import type {
   ScheduleInput,
   SchedulingTask,
-} from '../src/domain/scheduling-types.js';
+} from '../src/server/legacy-scheduling-types.js';
 
 const origin = '2026-10-07';
 const task = (
@@ -44,7 +44,7 @@ const input = (
 });
 const date = (index: number) => indexToDate(index, origin, 'all-days');
 
-describe('pure scheduling', () => {
+describe('frozen legacy pure scheduling', () => {
   for (const fixture of fixtures.cases)
     it(`numerical fixture: ${fixture.id}`, () => {
       const tasks = fixture.tasks.map((t) =>

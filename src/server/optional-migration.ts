@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { canonical } from '../shared/canonical.js';
 import { DomainError } from '../domain/tree.js';
-import { validateSourceInput } from '../domain/optional-planning.js';
+import { validateSourceInput } from '../domain/planning.js';
 import {
   LegacyProjectSchema,
   LegacyTaskSchema,

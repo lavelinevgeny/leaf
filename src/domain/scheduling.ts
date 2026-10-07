@@ -5,49 +5,117 @@ import {
   nextWorkingDay,
   workingDaysInclusive,
 } from './calendar.js';
+import { realInterval, validateSourceInput } from './planning.js';
 import type {
-  ScheduleInput,
-  ScheduleResult,
-  ScheduledTask,
-  ScheduleSummary,
-  SchedulingDependency,
-  SchedulingTask,
+  ConditionalDisplay,
+  OptionalInput,
+  OptionalResult,
+  OptionalTask,
+  RealTask,
 } from './scheduling-types.js';
+import type { CalendarType, SchedulingDependency } from './scheduling-types.js';
+import { DomainError } from './tree.js';
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const sorted = (ids: Iterable<string>): string[] =>
   [...new Set(ids)].sort(compare);
-function blankTask(): ScheduledTask {
-  return {
-    ES: null,
-    EF: null,
-    LS: null,
-    LF: null,
-    projectFloat: null,
-    constraintFloat: null,
-    startDate: null,
-    finishDate: null,
-    blockedReason: null,
-  };
-}
-function blankSummary(): ScheduleSummary {
-  return {
-    start: null,
-    finish: null,
-    startDate: null,
-    finishDate: null,
-    partial: false,
-    containsCritical: false,
-  };
-}
-interface Work {
-  duration: number;
-  release: number;
-  lockedStart: number | null;
+const blankReal = (): RealTask => ({
+  startDate: null,
+  finishDate: null,
+  calendarSpanDays: null,
+});
+
+// This inactive validator replaces the legacy one at the Task 5 checkpoint.
+// Its narrow inputs keep optional tasks independent of legacy planning fields.
+export function validateOptionalDependency(
+  tasks: readonly Pick<OptionalTask, 'id' | 'parentId'>[],
+  dependencies: readonly SchedulingDependency[],
+  predecessorId: string,
+  successorId: string,
+): void {
+  const ids = new Set(tasks.map((task) => task.id));
+  if (!ids.has(predecessorId) || !ids.has(successorId))
+    throw new DomainError(
+      'INVALID_DEPENDENCY_ENDPOINT',
+      'Обе работы должны принадлежать проекту.',
+    );
+  if (predecessorId === successorId)
+    throw new DomainError(
+      'DEPENDENCY_SELF',
+      'Работа не может зависеть от самой себя.',
+    );
+  if (
+    tasks.some(
+      (task) =>
+        task.parentId === predecessorId || task.parentId === successorId,
+    )
+  )
+    throw new DomainError(
+      'DEPENDENCY_SUMMARY',
+      'Связи разрешены только между конечными работами.',
+    );
+  if (
+    dependencies.some(
+      (edge) =>
+        edge.predecessorId === predecessorId &&
+        edge.successorId === successorId,
+    )
+  )
+    throw new DomainError('DEPENDENCY_DUPLICATE', 'Связь уже существует.');
+  const outgoing = new Map<string, string[]>();
+  for (const edge of dependencies) {
+    const next = outgoing.get(edge.predecessorId) ?? [];
+    next.push(edge.successorId);
+    outgoing.set(edge.predecessorId, next);
+  }
+  const previous = new Map<string, string | null>([[successorId, null]]);
+  const queue = [successorId];
+  for (let index = 0; index < queue.length; index++) {
+    const current = queue[index]!;
+    if (current === predecessorId) {
+      const path = [current];
+      let cursor = previous.get(current);
+      while (cursor != null) {
+        path.push(cursor);
+        cursor = previous.get(cursor);
+      }
+      path.reverse();
+      throw new DomainError(
+        'DEPENDENCY_CYCLE',
+        `Цикл зависимостей: ${[predecessorId, ...path].join(' → ')}`,
+      );
+    }
+    for (const next of outgoing.get(current) ?? [])
+      if (!previous.has(next)) {
+        previous.set(next, current);
+        queue.push(next);
+      }
+  }
 }
 
-// Iterative Kosaraju traversal reports the actual cyclic components, excluding
-// downstream tasks that a failed topological traversal would also leave behind.
+export function conditionalFinish(
+  anchor: string,
+  duration: number | null,
+  calendar: CalendarType,
+): { finishDate: string; clipped: boolean } {
+  const count = duration ?? 1;
+  if (count === 1) return { finishDate: anchor, clipped: false };
+  try {
+    const base = nextWorkingDay(anchor, calendar);
+    const offset = isWorkingDay(anchor, calendar) ? count - 1 : count - 2;
+    return { finishDate: indexToDate(offset, base, calendar), clipped: false };
+  } catch (error) {
+    if (
+      !(error instanceof RangeError) ||
+      error.message !== 'CALENDAR_RANGE_EXCEEDED'
+    )
+      throw error;
+    return { finishDate: '9999-12-31', clipped: true };
+  }
+}
+
+// Iterative Kosaraju traversal identifies actual cycles, excluding downstream
+// leaves that would remain after an unsuccessful topological traversal.
 function cyclicComponents(
   ids: string[],
   outgoing: Map<string, SchedulingDependency[]>,
@@ -61,8 +129,7 @@ function cyclicComponents(
     const stack = [{ id, next: 0 }];
     while (stack.length) {
       const frame = stack[stack.length - 1]!;
-      const edges = outgoing.get(frame.id)!;
-      const edge = edges[frame.next++];
+      const edge = outgoing.get(frame.id)![frame.next++];
       if (!edge) {
         finish.push(frame.id);
         stack.pop();
@@ -94,7 +161,24 @@ function cyclicComponents(
   return components.sort((a, b) => compare(a[0]!, b[0]!));
 }
 
-export function calculateSchedule(input: ScheduleInput): ScheduleResult {
+interface Aggregate {
+  knownLeafCount: number;
+  totalLeafCount: number;
+  realStartMin: string | null;
+  realFinishMax: string | null;
+}
+const blankAggregate = (): Aggregate => ({
+  knownLeafCount: 0,
+  totalLeafCount: 0,
+  realStartMin: null,
+  realFinishMax: null,
+});
+const minimum = (a: string | null, b: string | null): string | null =>
+  a === null ? b : b === null ? a : compare(a, b) < 0 ? a : b;
+const maximum = (a: string | null, b: string | null): string | null =>
+  a === null ? b : b === null ? a : compare(a, b) > 0 ? a : b;
+
+export function calculateSchedule(input: OptionalInput): OptionalResult {
   const tasks = [...input.tasks].sort((a, b) => compare(a.id, b.id));
   const dependencies = [...input.dependencies].sort(
     (a, b) =>
@@ -102,13 +186,13 @@ export function calculateSchedule(input: ScheduleInput): ScheduleResult {
       compare(a.predecessorId, b.predecessorId) ||
       compare(a.successorId, b.successorId),
   );
-  const result: ScheduleResult = {
+  const result: OptionalResult = {
+    analysisStatus: 'pending-policy',
     feasibility: 'feasible',
-    originDate: null,
-    projectFinishIndex: null,
     coverage: { knownLeafCount: 0, totalLeafCount: 0 },
     tasks: {},
     summaries: {},
+    display: {},
     criticalTaskIds: [],
     criticalDependencyIds: [],
     diagnostics: [],
@@ -119,7 +203,7 @@ export function calculateSchedule(input: ScheduleInput): ScheduleResult {
     code: string,
     taskIds: Iterable<string> = [],
     dependencyIds: Iterable<string> = [],
-    severity: 'error' | 'incomplete' | 'warning' = 'error',
+    severity: 'error' | 'incomplete' = 'error',
   ): void => {
     result.diagnostics.push({
       code,
@@ -128,31 +212,60 @@ export function calculateSchedule(input: ScheduleInput): ScheduleResult {
       messageKey: `scheduling.${code}`,
     });
     if (severity === 'error') infeasible = true;
-    if (severity === 'incomplete') incomplete = true;
+    else incomplete = true;
   };
-  const taskMap = new Map<string, SchedulingTask>();
+  const finishResult = (): OptionalResult => {
+    // Pending feasibility checks source/FS only; Task 7 supplies C16 analysis.
+    result.feasibility = infeasible
+      ? 'infeasible'
+      : incomplete
+        ? 'incomplete'
+        : 'feasible';
+    result.diagnostics.sort(
+      (a, b) =>
+        compare(a.code, b.code) ||
+        compare(JSON.stringify(a.taskIds), JSON.stringify(b.taskIds)) ||
+        compare(
+          JSON.stringify(a.dependencyIds),
+          JSON.stringify(b.dependencyIds),
+        ),
+    );
+    return result;
+  };
+
+  const taskMap = new Map<string, OptionalTask>();
   for (const task of tasks) {
-    if (taskMap.has(task.id)) diagnostic('DUPLICATE_TASK_ID', [task.id]);
+    if (taskMap.has(task.id)) {
+      diagnostic('DUPLICATE_TASK_ID', [task.id]);
+      continue;
+    }
     taskMap.set(task.id, task);
   }
-  const children = new Map<string, string[]>();
-  for (const id of taskMap.keys()) children.set(id, []);
+  // Duplicate identities make hierarchy and leaf coverage ambiguous; fail
+  // before any projection can depend on which duplicate appeared first.
+  if (infeasible) return finishResult();
+  const ids = [...taskMap.keys()];
+  const children = new Map(ids.map((id) => [id, [] as string[]]));
   for (const task of taskMap.values())
     if (task.parentId !== null) {
       if (!taskMap.has(task.parentId))
         diagnostic('INVALID_PARENT', [task.id, task.parentId]);
       else children.get(task.parentId)!.push(task.id);
     }
-  const ids = [...taskMap.keys()];
   const leaves = ids.filter((id) => children.get(id)!.length === 0);
   const leafSet = new Set(leaves);
   result.coverage.totalLeafCount = leaves.length;
-  result.tasks = Object.fromEntries(leaves.map((id) => [id, blankTask()]));
+  result.tasks = Object.fromEntries(leaves.map((id) => [id, blankReal()]));
   result.summaries = Object.fromEntries(
-    ids.filter((id) => !leafSet.has(id)).map((id) => [id, blankSummary()]),
+    ids
+      .filter((id) => !leafSet.has(id))
+      .map((id) => [
+        id,
+        { ...blankReal(), knownLeafCount: 0, totalLeafCount: 0 },
+      ]),
   );
 
-  // Leaf-to-root ordering validates the hierarchy and also drives aggregation.
+  // A leaf-to-root queue validates and aggregates arbitrary-depth hierarchies.
   const pendingChildren = new Map(
     ids.map((id) => [id, children.get(id)!.length]),
   );
@@ -230,323 +343,165 @@ export function calculateSchedule(input: ScheduleInput): ScheduleResult {
     );
     diagnostic('DEPENDENCY_CYCLE', component, edges);
   }
-
-  const finishResult = (): ScheduleResult => {
-    result.feasibility = infeasible
-      ? 'infeasible'
-      : incomplete
-        ? 'incomplete'
-        : 'feasible';
-    result.diagnostics.sort(
-      (a, b) =>
-        compare(a.code, b.code) ||
-        compare(JSON.stringify(a.taskIds), JSON.stringify(b.taskIds)) ||
-        compare(
-          JSON.stringify(a.dependencyIds),
-          JSON.stringify(b.dependencyIds),
-        ),
-    );
-    return result;
-  };
-  if (infeasible) {
-    for (const scheduled of Object.values(result.tasks))
-      scheduled.blockedReason = 'INVALID_GRAPH';
-    for (const summary of Object.values(result.summaries))
-      summary.partial = true;
-    return finishResult();
-  }
+  if (infeasible) return finishResult();
 
   try {
-    if (input.startDate !== null)
-      result.originDate = nextWorkingDay(input.startDate, input.calendarType);
-    else isWorkingDay('0001-01-01', input.calendarType);
+    isWorkingDay('0001-01-01', input.calendarType);
   } catch {
     diagnostic('INVALID_PROJECT_CALENDAR');
-    for (const scheduled of Object.values(result.tasks))
-      scheduled.blockedReason = 'INVALID_PROJECT_CALENDAR';
-    for (const summary of Object.values(result.summaries))
-      summary.partial = true;
     return finishResult();
   }
-  const origin = result.originDate;
-  const work = new Map<string, Work>();
-  const unknown = new Set<string>();
-  const missingOrigin = new Set<string>();
-  for (const id of leaves) {
-    const task = taskMap.get(id)!;
-    try {
-      if (task.deadline !== null)
-        isWorkingDay(task.deadline, input.calendarType);
-      if (task.planMode === 'unscheduled') {
-        unknown.add(id);
-        if (origin === null && task.deadline !== null) {
-          missingOrigin.add(id);
-          result.tasks[id]!.blockedReason = 'MISSING_PROJECT_START';
-        }
-        continue;
-      }
-      const completedDates =
-        task.status === 'done' &&
-        (task.completedStart !== null || task.completedFinish !== null);
-      const completedIndexes =
-        task.status === 'done' &&
-        (task.completedStartIndex !== null ||
-          task.completedFinishIndex !== null);
-      const absolute =
-        task.planMode === 'fixed' ||
-        task.notBefore !== null ||
-        task.deadline !== null ||
-        completedDates;
-      if (origin === null && absolute) {
-        missingOrigin.add(id);
-        result.tasks[id]!.blockedReason = 'MISSING_PROJECT_START';
-        continue;
-      }
-      let duration: number;
-      let lockedStart: number | null = null;
-      let release = 0;
-      if (task.notBefore !== null)
-        release = dateToIndex(
-          nextWorkingDay(task.notBefore, input.calendarType),
-          origin!,
-          input.calendarType,
-        );
-      if (completedDates || task.planMode === 'fixed') {
-        const start = completedDates ? task.completedStart : task.inputStart;
-        const finish = completedDates ? task.completedFinish : task.inputFinish;
-        if (start === null || finish === null)
-          throw new RangeError(
-            completedDates
-              ? 'INVALID_COMPLETED_INTERVAL'
-              : 'INVALID_FIXED_INTERVAL',
-          );
-        lockedStart = dateToIndex(start, origin!, input.calendarType);
-        duration = workingDaysInclusive(start, finish, input.calendarType);
-      } else if (completedIndexes) {
-        const start = task.completedStartIndex;
-        const finish = task.completedFinishIndex;
-        if (
-          start === null ||
-          finish === null ||
-          !Number.isSafeInteger(start) ||
-          !Number.isSafeInteger(finish) ||
-          finish <= start
-        )
-          throw new RangeError('INVALID_COMPLETED_INTERVAL');
-        lockedStart = start;
-        duration = finish - start;
-      } else {
-        if (task.status === 'done')
-          throw new RangeError('INVALID_COMPLETED_INTERVAL');
-        duration = task.durationDays!;
-        if (!Number.isSafeInteger(duration) || duration < 1)
-          throw new RangeError('INVALID_DURATION');
-      }
-      if (lockedStart !== null && lockedStart < 0)
-        throw new RangeError('FIXED_BEFORE_PROJECT_START');
-      if (lockedStart !== null && lockedStart < release)
-        diagnostic('FIXED_RELEASE_CONFLICT', [id]);
-      work.set(id, { duration, release, lockedStart });
-    } catch (error) {
-      const code =
-        error instanceof RangeError ? error.message : 'INVALID_TASK_SCHEDULE';
-      diagnostic(code, [id]);
-      result.tasks[id]!.blockedReason = code;
-    }
-  }
-  if (missingOrigin.size)
-    diagnostic('MISSING_PROJECT_START', missingOrigin, [], 'incomplete');
 
-  // Unknown work blocks its entire downstream graph. Include incoming context
-  // in the diagnostic, so an unknown terminal work is never silently ignored.
-  const unknownLinked = [...unknown].filter(
-    (id) => incoming.get(id)!.length || outgoing.get(id)!.length,
-  );
-  const downstream = (roots: Iterable<string>): Set<string> => {
-    const reached = new Set(roots);
-    const queue = [...reached];
-    for (let i = 0; i < queue.length; i++)
-      for (const edge of outgoing.get(queue[i]!)!)
-        if (!reached.has(edge.successorId)) {
-          reached.add(edge.successorId);
-          queue.push(edge.successorId);
-        }
-    return reached;
-  };
-  const unknownBlocked = downstream(unknownLinked);
-  const originBlocked = downstream(missingOrigin);
-  const blocked = new Set([...unknownBlocked, ...originBlocked]);
-  if (unknownLinked.length) {
-    const context = new Set<string>(unknownLinked);
-    const contextQueue = [...unknownLinked];
-    for (let i = 0; i < contextQueue.length; i++) {
-      const id = contextQueue[i]!;
-      for (const edge of [...incoming.get(id)!, ...outgoing.get(id)!]) {
-        const other =
-          edge.predecessorId === id ? edge.successorId : edge.predecessorId;
-        if (!context.has(other)) {
-          context.add(other);
-          contextQueue.push(other);
-        }
-      }
-    }
-    const edges = dependencies.filter(
-      (edge) =>
-        context.has(edge.predecessorId) && context.has(edge.successorId),
-    );
+  const unavailable = new Set(input.unavailableTaskIds ?? []);
+  for (const id of unavailable)
+    if (!taskMap.has(id)) diagnostic('INVALID_UNAVAILABLE_TASK', [id]);
+  const unavailableLeaves = leaves.filter((id) => unavailable.has(id));
+  if (unavailableLeaves.length)
     diagnostic(
-      'BLOCKED_BY_UNKNOWN',
-      context,
-      edges.map((edge) => edge.id),
+      'LEGACY_INTERVAL_UNAVAILABLE',
+      unavailableLeaves,
+      [],
       'incomplete',
     );
-  }
-  for (const id of originBlocked)
-    if (!missingOrigin.has(id))
-      result.tasks[id]!.blockedReason = 'BLOCKED_BY_MISSING_PROJECT_START';
-  for (const id of unknownBlocked)
-    result.tasks[id]!.blockedReason = 'BLOCKED_BY_UNKNOWN';
-
-  const pending = new Map(leaves.map((id) => [id, incoming.get(id)!.length]));
-  const order = leaves.filter((id) => pending.get(id) === 0);
-  for (let i = 0; i < order.length; i++)
-    for (const edge of outgoing.get(order[i]!)!) {
-      const count = pending.get(edge.successorId)! - 1;
-      pending.set(edge.successorId, count);
-      if (count === 0) order.push(edge.successorId);
+  const aggregates = new Map(ids.map((id) => [id, blankAggregate()]));
+  const knownStartMin = new Map<string, string | null>(
+    ids.map((id) => [id, null]),
+  );
+  const invalidDisplay = new Set<string>();
+  for (const id of leaves) {
+    const task = taskMap.get(id)!;
+    const aggregate = aggregates.get(id)!;
+    aggregate.totalLeafCount = 1;
+    try {
+      // Source minima are independent of real intervals and other source fields.
+      // Lone weekend dates remain source notes and valid display anchors.
+      if (task.inputStart !== null) {
+        isWorkingDay(task.inputStart, input.calendarType);
+        knownStartMin.set(id, task.inputStart);
+      }
+    } catch {
+      diagnostic('INVALID_INTERVAL', [id]);
+      invalidDisplay.add(id);
+      continue;
     }
-  for (const id of order) {
-    const definition = work.get(id);
-    const scheduled = result.tasks[id]!;
-    if (!definition || blocked.has(id)) continue;
-    let earliest = Math.max(0, definition.release);
-    let predecessorMissing = false;
-    const conflictingEdges: SchedulingDependency[] = [];
-    for (const edge of incoming.get(id)!) {
-      const predecessor = result.tasks[edge.predecessorId]!;
-      if (predecessor.EF === null) predecessorMissing = true;
-      else {
-        earliest = Math.max(earliest, predecessor.EF);
-        if (
-          definition.lockedStart !== null &&
-          predecessor.EF > definition.lockedStart
-        )
-          conflictingEdges.push(edge);
+    if (
+      task.durationDays !== null &&
+      (!Number.isSafeInteger(task.durationDays) || task.durationDays < 1)
+    ) {
+      diagnostic('INVALID_DURATION', [id]);
+      invalidDisplay.add(id);
+      continue;
+    }
+    try {
+      if (task.inputFinish !== null)
+        isWorkingDay(task.inputFinish, input.calendarType);
+    } catch {
+      diagnostic('INVALID_INTERVAL', [id]);
+      invalidDisplay.add(id);
+      continue;
+    }
+    const real = realInterval(task, input.calendarType);
+    if (real !== null && !unavailable.has(id)) {
+      result.tasks[id] = real;
+      aggregate.realStartMin = real.startDate;
+      aggregate.realFinishMax = real.finishDate;
+      aggregate.knownLeafCount = 1;
+      result.coverage.knownLeafCount++;
+    } else if (task.inputStart !== null && task.inputFinish !== null) {
+      try {
+        validateSourceInput(task, input.calendarType);
+      } catch (error) {
+        if (!(error instanceof DomainError)) throw error;
+        diagnostic(error.code, [id]);
       }
     }
-    if (predecessorMissing) {
-      scheduled.blockedReason = 'BLOCKED_BY_INVALID_PREDECESSOR';
-      continue;
-    }
-    if (conflictingEdges.length)
-      diagnostic(
-        'FIXED_PRECEDENCE_CONFLICT',
-        [id, ...conflictingEdges.map((edge) => edge.predecessorId)],
-        conflictingEdges.map((edge) => edge.id),
-      );
-    const start = definition.lockedStart ?? earliest;
-    const finish = start + definition.duration;
-    if (!Number.isSafeInteger(finish)) {
-      scheduled.blockedReason = 'CALENDAR_RANGE_EXCEEDED';
-      diagnostic('CALENDAR_RANGE_EXCEEDED', [id]);
-      continue;
-    }
-    scheduled.ES = start;
-    scheduled.EF = finish;
-    if (origin !== null) {
-      try {
-        scheduled.startDate = indexToDate(start, origin, input.calendarType);
-        scheduled.finishDate = indexToDate(
-          finish - 1,
-          origin,
+  }
+
+  for (const id of hierarchyOrder) {
+    const aggregate = aggregates.get(id)!;
+    if (!leafSet.has(id)) {
+      const summary = result.summaries[id]!;
+      summary.knownLeafCount = aggregate.knownLeafCount;
+      summary.totalLeafCount = aggregate.totalLeafCount;
+      if (
+        aggregate.knownLeafCount === aggregate.totalLeafCount &&
+        aggregate.realStartMin !== null &&
+        aggregate.realFinishMax !== null
+      ) {
+        summary.startDate = aggregate.realStartMin;
+        summary.finishDate = aggregate.realFinishMax;
+        summary.calendarSpanDays = workingDaysInclusive(
+          summary.startDate,
+          summary.finishDate,
           input.calendarType,
         );
-      } catch {
-        scheduled.startDate = null;
-        scheduled.finishDate = null;
-        scheduled.blockedReason = 'CALENDAR_RANGE_EXCEEDED';
-        diagnostic('CALENDAR_RANGE_EXCEEDED', [id]);
       }
     }
-    result.coverage.knownLeafCount++;
-    result.projectFinishIndex = Math.max(
-      result.projectFinishIndex ?? finish,
-      finish,
-    );
-    const deadline = taskMap.get(id)!.deadline;
-    if (
-      deadline !== null &&
-      scheduled.finishDate !== null &&
-      scheduled.finishDate > deadline
-    )
-      diagnostic('DEADLINE_EXCEEDED', [id], [], 'warning');
-  }
-
-  const constrainedStarts = new Map<string, number>();
-  const finish = result.projectFinishIndex;
-  if (finish !== null)
-    for (let i = order.length - 1; i >= 0; i--) {
-      const id = order[i]!;
-      const scheduled = result.tasks[id]!;
-      if (scheduled.ES === null || scheduled.EF === null) continue;
-      const definition = work.get(id)!;
-      let latestFinish = finish;
-      let constrainedFinish = finish;
-      for (const edge of outgoing.get(id)!) {
-        const successor = result.tasks[edge.successorId]!;
-        if (successor.LS !== null)
-          latestFinish = Math.min(latestFinish, successor.LS);
-        const constrainedStart = constrainedStarts.get(edge.successorId);
-        if (constrainedStart !== undefined)
-          constrainedFinish = Math.min(constrainedFinish, constrainedStart);
-      }
-      scheduled.LF = latestFinish;
-      scheduled.LS = latestFinish - definition.duration;
-      scheduled.projectFloat = scheduled.LS - scheduled.ES;
-      const constrainedStart =
-        definition.lockedStart ?? constrainedFinish - definition.duration;
-      constrainedStarts.set(id, constrainedStart);
-      scheduled.constraintFloat = constrainedStart - scheduled.ES;
-    }
-  if (!infeasible) {
-    result.criticalTaskIds = leaves.filter(
-      (id) => result.tasks[id]!.projectFloat === 0,
-    );
-    const critical = new Set(result.criticalTaskIds);
-    result.criticalDependencyIds = dependencies
-      .filter(
-        (edge) =>
-          critical.has(edge.predecessorId) &&
-          critical.has(edge.successorId) &&
-          result.tasks[edge.predecessorId]!.EF ===
-            result.tasks[edge.successorId]!.ES,
-      )
-      .map((edge) => edge.id);
-  }
-  const critical = new Set(result.criticalTaskIds);
-  for (const id of hierarchyOrder) {
     const parentId = taskMap.get(id)!.parentId;
     if (parentId === null) continue;
-    const parent = result.summaries[parentId]!;
-    const leaf = leafSet.has(id) ? result.tasks[id] : undefined;
-    const summary = leafSet.has(id) ? undefined : result.summaries[id];
-    const start = leaf ? leaf.ES : summary!.start;
-    const finish = leaf ? leaf.EF : summary!.finish;
-    const startDate = leaf ? leaf.startDate : summary!.startDate;
-    const finishDate = leaf ? leaf.finishDate : summary!.finishDate;
-    parent.partial ||= leaf
-      ? start === null || leaf.blockedReason !== null
-      : summary!.partial;
-    parent.containsCritical ||= leaf
-      ? critical.has(id)
-      : summary!.containsCritical;
-    if (start !== null && (parent.start === null || start < parent.start)) {
-      parent.start = start;
-      parent.startDate = startDate;
+    const parent = aggregates.get(parentId)!;
+    parent.knownLeafCount += aggregate.knownLeafCount;
+    parent.totalLeafCount += aggregate.totalLeafCount;
+    parent.realStartMin = minimum(parent.realStartMin, aggregate.realStartMin);
+    parent.realFinishMax = maximum(
+      parent.realFinishMax,
+      aggregate.realFinishMax,
+    );
+    knownStartMin.set(
+      parentId,
+      minimum(knownStartMin.get(parentId)!, knownStartMin.get(id)!),
+    );
+  }
+
+  const displays = new Map<string, ConditionalDisplay>();
+  for (const id of leaves) {
+    const task = taskMap.get(id)!;
+    if (
+      task.inputStart !== null ||
+      task.parentId === null ||
+      invalidDisplay.has(id)
+    )
+      continue;
+    const anchor = knownStartMin.get(task.parentId)!;
+    if (anchor === null) continue;
+    displays.set(id, {
+      kind: 'conditional',
+      startDate: anchor,
+      ...conditionalFinish(anchor, task.durationDays, input.calendarType),
+    });
+  }
+  result.display = Object.fromEntries(displays);
+
+  for (const edge of dependencies) {
+    const predecessor = taskMap.get(edge.predecessorId)!;
+    const successor = taskMap.get(edge.successorId)!;
+    const taskIds = [predecessor.id, successor.id];
+    if (predecessor.inputFinish === null || successor.inputStart === null) {
+      diagnostic('UNKNOWN_PRECEDENCE', taskIds, [edge.id], 'incomplete');
+      continue;
     }
-    if (finish !== null && (parent.finish === null || finish > parent.finish)) {
-      parent.finish = finish;
-      parent.finishDate = finishDate;
+    try {
+      if (
+        !isWorkingDay(predecessor.inputFinish, input.calendarType) ||
+        !isWorkingDay(successor.inputStart, input.calendarType)
+      ) {
+        diagnostic('NON_WORKING_DATE', taskIds, [edge.id]);
+        continue;
+      }
+      // The technical origin is never a project input or a display anchor.
+      const finishExclusive =
+        dateToIndex(predecessor.inputFinish, '0001-01-01', input.calendarType) +
+        1;
+      const successorStart = dateToIndex(
+        successor.inputStart,
+        '0001-01-01',
+        input.calendarType,
+      );
+      if (successorStart < finishExclusive)
+        diagnostic('EXPLICIT_PRECEDENCE_CONFLICT', taskIds, [edge.id]);
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      diagnostic('INVALID_INTERVAL', taskIds, [edge.id]);
     }
   }
   return finishResult();

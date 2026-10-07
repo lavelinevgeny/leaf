@@ -23,14 +23,9 @@ function task(id: string, parentId: string | null, sortOrder = 0): Task {
     title: 'Synthetic task',
     description: '',
     status: 'todo',
-    planMode: 'unscheduled',
+
     durationDays: null,
-    notBefore: null,
-    deadline: null,
-    completedStart: null,
-    completedFinish: null,
-    completedStartIndex: null,
-    completedFinishIndex: null,
+
     inputStart: null,
     inputFinish: null,
     createdAt: '2026-10-07T00:00:00.000Z',
@@ -62,6 +57,7 @@ describe('calendar input boundary', () => {
   it('rejects unknown command properties and invalid task dates', () => {
     expect(
       commandEnvelopeSchema.safeParse({
+        contractVersion: 2 as const,
         expectedRevision: 0,
         operationId: randomUUID(),
         command: {

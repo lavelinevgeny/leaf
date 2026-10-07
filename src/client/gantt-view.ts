@@ -32,10 +32,11 @@ export function windowFor(start: string, scale: Scale) {
 }
 export type TimelineInterval = {
   start: string;
-  finish: string | null;
-  kind: 'work' | 'summary' | 'note';
+  finish: string;
+  kind: 'work' | 'summary' | 'conditional';
+  clipped: boolean;
 };
-export function intervalOf(
+export function ganttInterval(
   task: Task,
   schedule: ProjectTree['schedule'],
 ): TimelineInterval | null {
@@ -46,45 +47,101 @@ export function intervalOf(
           start: summary.startDate,
           finish: summary.finishDate,
           kind: 'summary',
+          clipped: false,
         }
       : null;
-  const computed = schedule.tasks[task.id];
-  if (task.planMode !== 'unscheduled')
-    return computed?.startDate && computed.finishDate
-      ? { start: computed.startDate, finish: computed.finishDate, kind: 'work' }
-      : null;
-  const note = task.inputStart ?? task.inputFinish;
-  return note
+  const real = schedule.tasks[task.id];
+  if (real?.startDate && real.finishDate)
+    return {
+      start: real.startDate,
+      finish: real.finishDate,
+      kind: 'work',
+      clipped: false,
+    };
+  const display = schedule.display[task.id];
+  return display
     ? {
-        start: note,
-        finish: task.inputStart && task.inputFinish ? task.inputFinish : null,
-        kind: 'note',
+        start: display.startDate,
+        finish: display.finishDate,
+        kind: 'conditional',
+        clipped: display.clipped,
       }
     : null;
+}
+export type SourceMarker = {
+  taskId: string;
+  kind: 'source-start' | 'source-finish';
+  date: string;
+};
+export function sourceMarkers(
+  task: Task,
+  schedule: ProjectTree['schedule'],
+): SourceMarker[] {
+  if (schedule.summaries[task.id]) return [];
+  const real = schedule.tasks[task.id];
+  if (real?.startDate && real.finishDate) return [];
+  const markers: SourceMarker[] = [];
+  if (task.inputStart !== null)
+    markers.push({
+      taskId: task.id,
+      kind: 'source-start',
+      date: task.inputStart,
+    });
+  if (task.inputFinish !== null)
+    markers.push({
+      taskId: task.id,
+      kind: 'source-finish',
+      date: task.inputFinish,
+    });
+  return markers;
+}
+function realDates(task: Task, schedule?: ProjectTree['schedule']) {
+  const summary = schedule?.summaries[task.id];
+  if (summary) return [summary.startDate, summary.finishDate];
+  const real = schedule?.tasks[task.id];
+  if (real?.startDate && real.finishDate)
+    return [real.startDate, real.finishDate];
+  return [task.inputStart, task.inputFinish];
+}
+export function realLabel(
+  task: Task,
+  schedule: ProjectTree['schedule'],
+): string {
+  return computedDateLabel(task, schedule);
 }
 export function computedDateLabel(
   task: Task,
   schedule?: ProjectTree['schedule'],
 ) {
-  const interval = schedule ? intervalOf(task, schedule) : null;
-  if (interval)
-    return interval.finish && interval.finish !== interval.start
-      ? `${interval.start} – ${interval.finish}`
-      : interval.start;
-  return [task.inputStart, task.inputFinish].filter(Boolean).join(' – ');
+  const [start, finish] = realDates(task, schedule);
+  if (start && finish) {
+    if (
+      schedule &&
+      !schedule.summaries[task.id] &&
+      !schedule.tasks[task.id]?.startDate
+    )
+      return `Исходное начало: ${start}; исходное окончание: ${finish}`;
+    return start === finish ? start : `${start} – ${finish}`;
+  }
+  return start ? `Начало: ${start}` : finish ? `Окончание: ${finish}` : '';
 }
 export function compactDateLabel(
   task: Task,
   schedule?: ProjectTree['schedule'],
 ) {
-  const interval = schedule ? intervalOf(task, schedule) : null;
-  const start = interval?.start ?? task.inputStart ?? task.inputFinish;
-  const finish =
-    interval?.finish ??
-    (task.inputStart && task.inputFinish ? task.inputFinish : null);
+  const [sourceStart, sourceFinish] = realDates(task, schedule);
+  const start = sourceStart ?? sourceFinish;
+  const finish = sourceStart && sourceFinish ? sourceFinish : null;
   if (!start) return '';
   const day = (date: string) => Number(date.slice(8));
   const month = (date: string) => monthLabels[Number(date.slice(5, 7)) - 1];
+  if (
+    schedule &&
+    finish &&
+    !schedule.summaries[task.id] &&
+    !schedule.tasks[task.id]?.startDate
+  )
+    return `${day(start)} ${month(start)} / ${day(finish)} ${month(finish)}`;
   if (!finish || finish === start) return `${day(start)} ${month(start)}`;
   if (start.slice(0, 7) === finish.slice(0, 7))
     return `${day(start)}–${day(finish)} ${month(finish)}`;

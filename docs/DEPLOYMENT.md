@@ -1,8 +1,8 @@
-# Локальная упаковка S0–S2
+# Локальная упаковка optional scheduling
 
 Один production-контейнер запускает один Fastify-процесс: API и собранную React SPA. SQLite хранится на постоянном томе `/data`. Node 24.21.0 bookworm-slim закреплён по official digest в Dockerfile; пакеты устанавливаются при сборке по lockfile, а не во время запуска.
 
-Это проверенная упаковка промежуточного S0–S2, не завершение S5 или релизной приёмки. S3 использует те же build inputs и контейнерную конфигурацию; новый container smoke для S3 ещё не выполнялся. Контейнер собран и запущен на Linux ARM64. AMD64, HTTPS reverse proxy, полноценная процедура upgrade/restore и import/export пока не проверены. Миграция схемы 001 → 002 проверена на синтетических данных.
+Упаковка проверяется только на новых синтетических локальных ресурсах; это не production deployment и не завершение S5/S6. C16 принята, реализация нового CPM остаётся следующей задачей. HTTPS reverse proxy, restore/import/export и релизная приёмка ещё не завершены.
 
 ## Сборка и вход
 
@@ -33,7 +33,16 @@ docker compose exec leaf npm run db:migrate
 docker compose exec leaf npm run db:backup -- /data/backups/snapshot-001.sqlite
 ```
 
-Миграции 001 и 002 последовательно применяются при запуске; schema 001 → 002 проверена на синтетической базе. Перед обновлением рабочей установки остановить сервер и сохранить backup: старый формат undo/operations очищается, исходные задачи и аккаунт сохраняются. Backup использует SQLite native backup API, работает с открытой WAL-базой и выдаёт snapshot с правами 0600; новый каталог создаётся с 0700. Destination должен быть абсолютным, вне application tree, новым regular file; существующие файлы и symlinks отклоняются. Не копируйте один живой `.sqlite` без WAL как backup.
+Свежий экземпляр применяет 001→002→003. Existing schema2 не изменяется обычным startup без preview acknowledgement; schema1 отклоняется до промежуточной миграции. Перед обновлением владелец останавливает сервер и сохраняет native backup. Для stopped service используйте одноразовый контейнер с тем же томом:
+
+```sh
+docker compose run --rm leaf npm run db:migrate -- --preview
+docker compose run --rm leaf npm run db:migrate -- --confirm-preview=<previewDigest>
+```
+
+Preview readonly; вывод ограничен policy/counts/digest. Подтверждение использует digest именно этого preview, который перепроверяется первым шагом IMMEDIATE-транзакции до записей. Изменившиеся данные блокируют apply. Миграция003 сохраняет operations/undo/account и приватный exact archive legacy fields. Уже применённая003 повторного подтверждения не требует. Production upgrade требует отдельного разрешения владельца; здесь выполняются только synthetic smoke.
+
+Backup использует SQLite native backup API, работает с открытой WAL-базой и выдаёт snapshot с правами0600; новый каталог создаётся с0700. Destination должен быть абсолютным, вне application tree, новым regular file; существующие файлы и symlinks отклоняются. Не копируйте один живой `.sqlite` без WAL как backup.
 
 Backup содержит задачи, аккаунт и сессии, остаётся приватным и не заменяется будущим проектным JSON export. Команда restore, полноценная процедура upgrade/restore и export/import остаются S5. Автоматического destructive restore или фиктивных down migrations нет. Перед будущим обновлением нужно сохранить backup; процедуру восстановления ещё предстоит реализовать и проверить.
 

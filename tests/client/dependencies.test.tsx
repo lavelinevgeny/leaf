@@ -37,6 +37,7 @@ describe('direct dependency graph', () => {
     },
   ];
   const tree = {
+    contractVersion: 2 as const,
     project,
     tasks: [a, b, current, d],
     dependencies: edges,

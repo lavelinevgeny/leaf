@@ -29,6 +29,20 @@ declare module 'fastify' {
 }
 export type LeafApp = FastifyInstance;
 const projectParamsSchema = z.strictObject({ id: uuidSchema });
+function requireContractVersion(
+  request: FastifyRequest,
+  replayAllowed = false,
+): void {
+  if (request.headers['x-leaf-contract-version'] !== '2')
+    throw new DomainError(
+      'CONTRACT_VERSION_CONFLICT',
+      'Версия приложения устарела. Обновите страницу для продолжения. Этот запрос не изменил данные.',
+      426,
+    );
+  const replay = request.headers['x-leaf-legacy-replay'];
+  if (replay !== undefined && (!replayAllowed || replay !== '1'))
+    throw new DomainError('INVALID_REQUEST', 'Проверьте поля запроса.');
+}
 export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
   const parsedOrigin = new URL(options.publicOrigin);
   if (
@@ -145,16 +159,21 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     });
     app.get('/api/projects', (request) => {
       requireSession(request);
+      requireContractVersion(request);
       return app.repository.listProjects();
     });
     app.post('/api/projects', (request, reply) => {
       requireSession(request);
+      requireContractVersion(request);
       const input = createProjectSchema.parse(request.body);
       return reply.code(201).send(app.repository.createProject(input.title));
     });
     app.patch('/api/projects/:id', (request) => {
       const session = requireSession(request);
+      requireContractVersion(request, true);
       const { id } = projectParamsSchema.parse(request.params);
+      if (request.headers['x-leaf-legacy-replay'] === '1')
+        return app.repository.replayLegacy(id, request.body, session);
       return app.repository.renameProject(
         id,
         renameProjectSchema.parse(request.body),
@@ -163,11 +182,13 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     });
     app.get('/api/projects/:id/tree', (request) => {
       const session = requireSession(request);
+      requireContractVersion(request);
       const { id } = projectParamsSchema.parse(request.params);
       return app.repository.getTree(id, session);
     });
     app.get('/api/projects/:id/schedule', (request) => {
       requireSession(request);
+      requireContractVersion(request);
       const { id } = projectParamsSchema.parse(request.params);
       const parsed = scheduleResponseSchema.safeParse(
         app.repository.getSchedule(id),
@@ -178,7 +199,10 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     });
     app.post('/api/projects/:id/commands', (request) => {
       const session = requireSession(request);
+      requireContractVersion(request, true);
       const { id } = projectParamsSchema.parse(request.params);
+      if (request.headers['x-leaf-legacy-replay'] === '1')
+        return app.repository.replayLegacy(id, request.body, session);
       return app.repository.applyCommand(
         id,
         commandEnvelopeSchema.parse(request.body),

@@ -1,295 +1,204 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildApp, type LeafApp } from '../src/server/app.js';
-import * as scheduling from '../src/domain/scheduling.js';
-import {
-  projectTreeSchema,
-  type Command,
-  type ProjectTree,
-} from '../src/shared/contracts.js';
-
+import type { Command, ProjectTree } from '../src/shared/contracts.js';
+let dir: string;
 let app: LeafApp;
-let directory: string;
+let tree: ProjectTree;
 let cookie: string;
 const origin = 'http://127.0.0.1:3000';
-const headers = () => ({ origin, cookie: `leaf_session=${cookie}` });
+const headers = () => ({ origin, cookie, 'x-leaf-contract-version': '2' });
 beforeEach(async () => {
-  directory = mkdtempSync(join(tmpdir(), 'leaf-scheduling-api-'));
+  dir = mkdtempSync(join(tmpdir(), 'leaf-schedule-api-'));
   app = await buildApp({
-    databasePath: join(directory, 'synthetic.sqlite'),
+    databasePath: join(dir, 'synthetic.sqlite'),
     publicOrigin: origin,
   });
-  const password = 'Synthetic-scheduling-test-passphrase';
-  await app.auth.setup(password);
-  const login = await app.inject({
+  await app.auth.setup('Synthetic-test-only-passphrase');
+  const response = await app.inject({
     method: 'POST',
     url: '/api/auth/login',
     headers: { origin },
-    payload: { password },
+    payload: { password: 'Synthetic-test-only-passphrase' },
   });
-  cookie = login.cookies[0]!.value;
+  cookie = `leaf_session=${response.cookies[0]!.value}`;
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/projects',
+    headers: headers(),
+    payload: { title: 'Synthetic' },
+  });
+  const loaded = await app.inject({
+    url: `/api/projects/${created.json().id}/tree`,
+    headers: headers(),
+  });
+  tree = loaded.json();
 });
 afterEach(async () => {
-  vi.restoreAllMocks();
   await app.close();
-  rmSync(directory, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
 });
-function tree() {
-  return app.repository.getTree(
-    app.repository.createProject('Synthetic API plan').id,
-    app.auth.session(cookie)!,
-  );
-}
-function send(
-  current: ProjectTree,
-  command: Command | object,
-  operationId = randomUUID(),
-) {
-  return app.inject({
+async function send(command: Command) {
+  const response = await app.inject({
     method: 'POST',
-    url: `/api/projects/${current.project.id}/commands`,
+    url: `/api/projects/${tree.project.id}/commands`,
     headers: headers(),
     payload: {
-      expectedRevision: current.project.revision,
-      operationId,
+      contractVersion: 2,
+      expectedRevision: tree.project.revision,
+      operationId: randomUUID(),
       command,
     },
   });
+  if (response.statusCode === 200) tree = response.json();
+  return response;
 }
-async function step(current: ProjectTree, command: Command) {
-  const response = await send(current, command);
-  expect(response.statusCode).toBe(200);
-  return projectTreeSchema.parse(response.json());
-}
-describe('scheduling HTTP contract', () => {
-  it('accepts a combined edit and rejects empty edits, legacy date fields and summary plans', async () => {
-    let current = await step(tree(), {
-      type: 'task.create',
-      title: 'A',
-      parentId: null,
-    });
-    const taskId = current.tasks[0]!.id;
-    const before = current;
-    current = await step(current, {
-      type: 'task.edit',
-      taskId,
-      changes: { title: 'A revised' },
-      plan: { mode: 'auto', durationDays: 3 },
-    });
-    expect(current.project.revision).toBe(before.project.revision + 1);
-    expect(current.tasks[0]).toMatchObject({
-      title: 'A revised',
-      durationDays: 3,
-    });
-    for (const command of [
-      { type: 'task.edit', taskId, changes: {} },
-      { type: 'task.edit', taskId, changes: { inputStart: '2026-10-05' } },
-      {
+it('returns strict target projection and atomically rejects mismatched source alongside details', async () => {
+  expect(
+    (await send({ type: 'task.create', title: 'A', parentId: null }))
+      .statusCode,
+  ).toBe(200);
+  const id = tree.tasks[0]!.id;
+  expect(
+    (
+      await send({
         type: 'task.edit',
-        taskId,
-        changes: { title: 'Rejected' },
-        plan: { mode: 'auto', durationDays: 0 },
-      },
-    ])
-      expect((await send(current, command)).statusCode).toBe(400);
-    const undone = await step(current, { type: 'undo' });
-    expect(undone.tasks).toEqual(before.tasks);
-    current = await step(undone, {
-      type: 'task.create',
-      title: 'Child',
-      parentId: taskId,
-    });
-    const response = await send(current, {
-      type: 'task.edit',
-      taskId,
-      changes: { title: 'Rejected summary' },
-      plan: { mode: 'auto', durationDays: 2 },
-    });
-    expect(response.statusCode).toBe(400);
-    expect(response.json().code).toBe('SUMMARY_PLANNING');
-    expect(
-      app.repository.getTree(current.project.id, app.auth.session(cookie)!),
-    ).toEqual(current);
+        taskId: id,
+        changes: { inputStart: '2026-10-05', inputFinish: '2026-10-06' },
+      })
+    ).statusCode,
+  ).toBe(200);
+  const before = structuredClone(tree);
+  const bad = await send({
+    type: 'task.edit',
+    taskId: id,
+    changes: { title: 'Changed', status: 'done', durationDays: 3 },
   });
-  it('returns a revision-consistent authenticated schedule and validates the full tree schema', async () => {
-    let current = tree();
-    const url = `/api/projects/${current.project.id}/schedule`;
-    expect((await app.inject(url)).statusCode).toBe(401);
-    current = await step(current, {
-      type: 'project.schedule',
-      changes: {
-        startDate: '2026-10-09',
-        calendarType: 'weekdays',
-        timezone: 'UTC',
-      },
-    });
-    current = await step(current, {
-      type: 'task.create',
-      title: 'A',
-      parentId: null,
-    });
-    current = await step(current, {
-      type: 'task.plan',
-      taskId: current.tasks[0]!.id,
-      plan: { mode: 'auto', durationDays: 2 },
-    });
-    const response = await app.inject({ url, headers: headers() });
-    expect(response.statusCode).toBe(200);
-    expect(response.headers['cache-control']).toBe('no-store');
-    expect(response.json()).toEqual({
-      projectId: current.project.id,
-      revision: current.project.revision,
-      schedule: current.schedule,
-    });
-    expect(current.schedule.tasks[current.tasks[0]!.id]!.finishDate).toBe(
-      '2026-10-12',
-    );
-    const malformed = await app.inject({
-      url: '/api/projects/invalid/schedule',
-      headers: headers(),
-    });
-    expect(malformed.statusCode).toBe(400);
+  expect(bad.statusCode).toBe(400);
+  expect(bad.json().code).toBe('DURATION_MISMATCH');
+  const loaded = await app.inject({
+    url: `/api/projects/${tree.project.id}/tree`,
+    headers: headers(),
   });
-  it('rejects unknown planning fields, empty changes, invalid durations and invalid timezones without mutation', async () => {
-    let current = tree();
-    current = await step(current, {
-      type: 'task.create',
-      title: 'A',
-      parentId: null,
-    });
-    for (const command of [
-      { type: 'project.schedule', changes: {} },
-      { type: 'project.schedule', changes: { timezone: 'Synthetic/Invalid' } },
-      { type: 'project.schedule', changes: { startDate: '2026-02-30' } },
-      {
-        type: 'task.plan',
-        taskId: current.tasks[0]!.id,
-        plan: { mode: 'auto', durationDays: 0 },
-      },
-      {
-        type: 'task.plan',
-        taskId: current.tasks[0]!.id,
-        plan: { mode: 'auto', durationDays: 1.5 },
-      },
-      {
-        type: 'task.plan',
-        taskId: current.tasks[0]!.id,
-        plan: { mode: 'auto', durationDays: 1000001 },
-      },
-      {
-        type: 'task.plan',
-        taskId: current.tasks[0]!.id,
-        plan: { mode: 'auto', durationDays: 2, inputFinish: '2026-10-10' },
-      },
-    ]) {
-      const response = await send(current, command);
-      expect(response.statusCode).toBe(400);
-      expect(Object.keys(response.json())).toEqual(['code', 'message']);
-      expect(
-        app.repository.getTree(current.project.id, app.auth.session(cookie)!),
-      ).toEqual(current);
-    }
+  expect(loaded.json()).toEqual(before);
+  const schedule = await app.inject({
+    url: `/api/projects/${tree.project.id}/schedule`,
+    headers: headers(),
   });
-  it('retains exact operation responses, conflict status and origin enforcement for schedule writes', async () => {
-    const current = tree();
-    const command: Command = {
-      type: 'project.schedule',
-      changes: { startDate: '2026-10-05' },
-    };
-    const operationId = randomUUID();
-    const first = await send(current, command, operationId);
-    expect(first.statusCode).toBe(200);
-    expect((await send(current, command, operationId)).json()).toEqual(
-      first.json(),
-    );
-    expect((await send(current, command)).statusCode).toBe(409);
-    const forbidden = await app.inject({
-      method: 'POST',
-      url: `/api/projects/${current.project.id}/commands`,
-      headers: {
-        cookie: `leaf_session=${cookie}`,
-        origin: 'http://wrong.example.test',
-      },
-      payload: { expectedRevision: 1, operationId: randomUUID(), command },
-    });
-    expect(forbidden.statusCode).toBe(403);
-    const undone = await step(first.json<ProjectTree>(), { type: 'undo' });
-    expect(undone.project.startDate).toBeNull();
-    expect(undone.schedule.originDate).toBeNull();
+  expect(schedule.json()).toMatchObject({
+    contractVersion: 2,
+    revision: tree.project.revision,
+    schedule: { analysisStatus: 'pending-policy', criticalTaskIds: [] },
   });
-  it.each([{ projectId: 'synthetic-invalid-project-id' }, { revision: -1 }])(
-    'rejects malformed GET schedule envelopes with a safe internal error: %j',
-    async (corruption) => {
-      const current = tree();
-      vi.spyOn(app.repository, 'getSchedule').mockReturnValue({
-        projectId: current.project.id,
-        revision: current.project.revision,
-        schedule: current.schedule,
-        ...corruption,
-      });
-      const response = await app.inject({
-        url: `/api/projects/${current.project.id}/schedule`,
-        headers: headers(),
-      });
-      expect(response.statusCode).toBe(500);
-      expect(response.json()).toEqual({
-        code: 'INTERNAL_ERROR',
-        message: 'Не удалось выполнить запрос.',
-      });
+  for (const field of ['deadline', 'notBefore', 'planMode', 'completedStart'])
+    expect(loaded.body).not.toContain(field);
+  expect(
+    (
+      await send({
+        type: 'task.edit',
+        taskId: id,
+        changes: { inputFinish: null, status: 'done' },
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await send({
+        type: 'task.edit',
+        taskId: id,
+        changes: { inputStart: null },
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect(
+    (
+      await send({
+        type: 'task.edit',
+        taskId: id,
+        changes: { status: 'doing', inputStart: null },
+      })
+    ).statusCode,
+  ).toBe(200);
+});
+it('rejects body version mismatch, forbidden legacy fields and unknown replay without mutation', async () => {
+  const url = `/api/projects/${tree.project.id}/commands`;
+  const before = structuredClone(tree);
+  for (const payload of [
+    {
+      expectedRevision: 0,
+      operationId: randomUUID(),
+      command: { type: 'undo' },
     },
-  );
-  it('rejects malformed computed GET tree and schedule results with safe internal errors', async () => {
-    const current = tree();
-    const calculate = scheduling.calculateSchedule;
-    vi.spyOn(scheduling, 'calculateSchedule').mockImplementation((input) => ({
-      ...calculate(input),
-      originDate: 'synthetic-internal-invalid-date',
-    }));
-    for (const route of ['tree', 'schedule']) {
-      const response = await app.inject({
-        url: `/api/projects/${current.project.id}/${route}`,
-        headers: headers(),
-      });
-      expect(response.statusCode).toBe(500);
-      expect(response.json()).toEqual({
-        code: 'INTERNAL_ERROR',
-        message: 'Не удалось выполнить запрос.',
-      });
-    }
-  });
-  it('maps malformed computed command responses to 500 while retaining 400 for malformed user requests', async () => {
-    const current = tree();
-    const calculate = scheduling.calculateSchedule;
-    const spy = vi
-      .spyOn(scheduling, 'calculateSchedule')
-      .mockImplementation((input) => ({
-        ...calculate(input),
-        projectFinishIndex: 1.5,
-      }));
-    const response = await send(current, {
-      type: 'project.schedule',
-      changes: { startDate: '2026-10-05' },
-    });
-    expect(response.statusCode).toBe(500);
-    expect(response.json()).toEqual({
-      code: 'INTERNAL_ERROR',
-      message: 'Не удалось выполнить запрос.',
-    });
-    spy.mockRestore();
+    {
+      contractVersion: 2,
+      expectedRevision: 0,
+      operationId: randomUUID(),
+      command: {
+        type: 'project.schedule',
+        changes: { startDate: '2026-10-05' },
+      },
+    },
+  ])
     expect(
-      app.repository.getTree(current.project.id, app.auth.session(cookie)!),
-    ).toEqual(current);
-    const invalidRequest = await send(current, {
-      type: 'project.schedule',
-      changes: { startDate: 'synthetic-invalid-user-date' },
-    });
-    expect(invalidRequest.statusCode).toBe(400);
-    expect(invalidRequest.json()).toEqual({
-      code: 'INVALID_REQUEST',
-      message: 'Проверьте поля запроса.',
-    });
+      (await app.inject({ method: 'POST', url, headers: headers(), payload }))
+        .statusCode,
+    ).toBe(400);
+  const replay = await app.inject({
+    method: 'POST',
+    url,
+    headers: { ...headers(), 'x-leaf-legacy-replay': '1' },
+    payload: {
+      expectedRevision: 0,
+      operationId: randomUUID(),
+      command: { type: 'task.create', title: 'Old', parentId: null },
+    },
   });
+  expect(replay.statusCode).toBe(409);
+  expect(replay.json().code).toBe('LEGACY_REPLAY_NOT_FOUND');
+  expect(
+    (
+      await app.inject({
+        url: `/api/projects/${tree.project.id}/tree`,
+        headers: headers(),
+      })
+    ).json(),
+  ).toEqual(before);
+});
+it('auth/origin take priority, unexpected replay fails and auth remains unversioned', async () => {
+  expect((await app.inject('/api/projects')).statusCode).toBe(401);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/projects',
+        headers: { origin: 'http://example.test', cookie },
+        payload: { title: 'Synthetic' },
+      })
+    ).statusCode,
+  ).toBe(403);
+  expect(
+    (await app.inject({ url: '/api/auth/session', headers: { cookie } }))
+      .statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await app.inject({
+        url: '/api/projects',
+        headers: { ...headers(), 'x-leaf-legacy-replay': '1' },
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url: `/api/projects/${tree.project.id}/commands`,
+        headers: { ...headers(), 'x-leaf-legacy-replay': '2' },
+        payload: {},
+      })
+    ).statusCode,
+  ).toBe(400);
 });
