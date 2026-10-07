@@ -23,6 +23,8 @@ migrations/               # SQL schema changes, never database dumps
 
 Не создавать эти папки с десятками пустых классов «на будущее». Границы важнее количества файлов. Domain не импортирует React, Fastify, sqlite, fs или process.
 
+Для адаптации C16/C17 приняты [ADR 007](adr/007-legacy-scheduling-migration.md) и [ADR 008](adr/008-explicit-date-cpm.md). Новый pure CPM использует введённые интервалы и отдельные partial results; он ещё не реализован. Frozen legacy calculator, archive и context-specific resolution остаются server-only compatibility code для однократной миграции/history, не вторым active scheduler. Existing legacy upgrade требует explicit preview/digest acknowledgement перед writes; обычный startup не конвертирует БД молча.
+
 Целевая адаптация исходных сроков и persisted history описана в [спецификации C11–C15](superpowers/specs/2026-10-07-optional-scheduling-design.md); технические предложения архива/adapter ещё не являются реализованной схемой.
 
 ## Данные

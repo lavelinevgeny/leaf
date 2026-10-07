@@ -2,27 +2,29 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` or `executing-plans` to implement this plan task-by-task. The owner requires separate agents for authoring, implementation and independent review. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Адаптировать leaf к C11–C15: независимые необязательные сроки, полный summary, условные полосы и совместимая отмена/replay без отдельного дедлайна; настоящий CPM завершить только после решения O06.
+**Goal:** Адаптировать leaf к C11–C17: независимые необязательные сроки, полный summary, условные полосы, совместимая legacy конвертация/undo/replay и настоящий CPM по принятой политике введённых интервалов.
 
-**Architecture:** Один пакет, существующий Fastify/SQLite transaction boundary и React/SVG. Сначала подготовить чистые target contracts, проекции и compatibility adapter без подключения к работающему приложению; затем одним проверенным checkpoint заменить прежние helpers/API/UI. Сервер рассчитывает реальные интервалы, FS, summary и отдельный display; CPM policy и активное представление legacy Auto/done ограничены явными gates.
+**Architecture:** Один пакет, существующий Fastify/SQLite transaction boundary и React/SVG. Сначала подготовить чистые target contracts, проекции и compatibility adapter без подключения к работающему приложению; затем одним проверенным checkpoint заменить прежние helpers/API/UI. Сервер рассчитывает реальные интервалы, FS, summary и отдельный display. C16/C17 закрывают выбор политики; registry требует проверенных resolution rules и explicit preview acknowledgement, CPM — технического annex и review.
 
 **Tech Stack:** TypeScript strict, React 19.3.0/Vite 8.3.3, Fastify 5.12.5, better-sqlite3 13.0.3, Zod 4.6.5, Vitest 5.0.3, Playwright 1.63.0; существующий exact lockfile.
 
-**Spec:** [Optional scheduling design](../specs/2026-10-07-optional-scheduling-design.md), нормативная ревизия `69b05dca5cf0c2c248eb9843b38f4f5b6f91c857`. На этой ревизии оба независимых spec reviewer дали APPROVED во втором раунде. [DECISIONS](../../DECISIONS.md), [ACCEPTANCE](../../ACCEPTANCE.md), [PRIVACY](../../PRIVACY.md), [AGENT_WORKFLOW](../../AGENT_WORKFLOW.md) читаются вместе со спецификацией.
+**Spec:** [Optional scheduling design](../specs/2026-10-07-optional-scheduling-design.md), базовая проверенная ревизия `69b05dca5cf0c2c248eb9843b38f4f5b6f91c857`, дополненная [принятым владельцем нормативным приложением C16/C17](../specs/2026-10-07-optional-scheduling-policy-proposal.md). Два spec APPROVED относятся к базовой ревизии; новые изменения не наследуют их автоматически. [DECISIONS](../../DECISIONS.md), [ADR 007](../../adr/007-legacy-scheduling-migration.md), [ADR 008](../../adr/008-explicit-date-cpm.md), [ACCEPTANCE](../../ACCEPTANCE.md), [PRIVACY](../../PRIVACY.md), [AGENT_WORKFLOW](../../AGENT_WORKFLOW.md) читаются вместе со спецификацией.
 
 ## Global Constraints
 
-- C11–C15 подтверждены владельцем. D13 и другие D — рабочие defaults. Правила W01–W06 ниже — технические предложения этой спецификации, допускающие отдельный пересмотр; они не добавляют записи C и не закрывают O06.
+- C11–C17 подтверждены владельцем. D13 и другие D — рабочие defaults. C16 сохраняет W01 допуск только валидных пар; C17 дополняет W06 однократной конвертацией и exact archive. Остальные W — технические предложения, не отдельные owner decisions.
 - Конечная задача содержит `inputStart: CalendarDate | null`, `inputFinish: CalendarDate | null`, `durationDays: positive integer | null`.
 - Пропуск поля в patch сохраняет прежнее значение; явный `null` очищает только его.
 - `CalendarDate` — валидная строка `YYYY-MM-DD` в существующем диапазоне 0001–9999. Окончание включительно.
 - Календарь проекта сохраняется: `all-days` или `weekdays` (пн–пт), default D04; timezone нужен для «Сегодня», не для арифметики дат.
 - Целевой публичный DTO не содержит `deadline`, `notBefore`, `planMode`, `project.startDate` и relative completed indices.
-- До G-CPM `analysisStatus = pending-policy`, floats отсутствуют, criticalTaskIds/criticalDependencyIds пусты; UI объясняет отсутствие расчёта.
+- До реализации нового CPM intermediate `analysisStatus = pending-policy`, floats отсутствуют, criticalTaskIds/criticalDependencyIds пусты; UI объясняет «Расчёт критического пути ещё не подключён», а не отсутствие принятой политики. Frozen replies сохраняют прежний status/outcome после Task 7.
 - Авторитетные записи, проверка графа, пересчёт, result и undo — одна SQLite-транзакция с `expectedRevision`/`operationId`.
 - При отсутствии/неподдерживаемой версии сервер возвращает HTTP 426 и прежний strict error DTO `{code,message}` до project mutation, target DTO и cached response.
 - Для точного повтора legacy envelope target-aware клиент передаёт transport headers `X-Leaf-Contract-Version: 2` и `X-Leaf-Legacy-Replay: 1`, сохраняя оригинальный body и archival canonical payload.
 - Не очищать operations/undo_snapshots при этой адаптации. Deadline не переносится в finish; notBefore не переносится в start; project.startDate не назначает даты задач.
+- C17 разрешает использовать абсолютную опору того же legacy context только для однократного восстановления существующего Auto/done интервала. Нет опоры — сохранить source/status и unknown с диагностикой; не брать Today/current project для historical context.
+- Existing БД с pending 003 не изменяется обычным startup без explicit `{policyId:'legacy-scheduling-v1',previewDigest}`; digest всех scheduling originals перепроверяется внутри immediate transaction до writes. Новый пустой экземпляр и уже применённая 003 не требуют legacy acknowledgement.
 - Граф остаётся DAG с leaf-only FS, lag=0, внутри одного проекта; parentId не создаёт precedence.
 - Один writer одновременно меняет shared contracts, schema, migration и scheduling semantics. Каждый concurrent agent использует свой worktree.
 - Только disposable synthetic fixtures. Не читать production DB, backups, `.env`, реальные экспорты, credential stores или истории агента. Не логировать archive/raw bodies/cookies.
@@ -32,21 +34,21 @@
 
 ## Готовность и зависимости
 
-Этот документ получил два независимых APPROVED на ревизии `c4c8193ed82c464998f16bd163def93c22a22fe2` и сохраняет ограниченные policy-зависимости. Приложение пока соответствует S2–S3; ни одна задача ниже не выполнена этим документом. Одобрение плана означает качество подготовки, а не закрытие G-CPM/G-MIGRATION.
+Базовая ревизия получила два независимых APPROVED на `c4c8193ed82c464998f16bd163def93c22a22fe2`. Владелец отдельно принял C16/C17: G-CPM/O06 и G-MIGRATION CLOSED как выбор политики. Ни одна application task этим изменением не реализована. Для новых плановых изменений отдельные independent APPROVED пока не заявляются; technical annex/review/test dependencies сохраняются.
 
 | Task | Вход | Проверяемый выход | Возможность исполнения |
 |---|---|---|---|
 | 1 | Approved spec; implementation requested отдельно | Неактивные target schemas и source validator | Независимая подготовка в рамках W01/W02/W05 |
 | 2 | Task 1 contracts | Pure real/FS/summary/display, pending-policy | Независимая подготовка W01–W04; без CPM |
 | 3 | Task 1/2, frozen S2 schemas | Archive integrity и mapper на synthetic данных; registry не подключён | Независимая preparation; неоднозначные legacy cases fail closed |
-| 4 | Synthetic category matrix Task 3 | Фактическое решение G-MIGRATION, ADR и resolution rules | Вход владельца отсутствует; gate открыт |
+| 4 | C17/ADR 007 и synthetic category matrix Task 3 | Исполнимые resolution rules, preview/acknowledgement и tests | Owner policy CLOSED; implementation и independent GREEN/review ещё нужны |
 | 5 | Task 1–3 GREEN и закрытый G-MIGRATION | Работающее target приложение, миграция/history/retry/undo/UI, pending-policy | Заблокировано до Task 4; один writer, единый интеграционный checkpoint |
-| 6 | Пять решений из spec §9 и owner decision | Математический ADR, независимые expected vectors и approved CPM annex | G-CPM/O06 открыт; новое математическое поведение не разрешено |
+| 6 | C16/ADR 008, P01–P11/N06 | Typed implementation annex с runnable tests и двумя independent APPROVED | Owner policy CLOSED; technical annex/review ещё не выполнены |
 | 7 | Approved annex Task 6; target приложение Task 5 | Реальный CPM и полная сквозная приёмка C11–C15 | Заблокировано до Task 6; не заменять annex старым Auto |
 
 Task 1–3 могут закончиться reviewable commit при работающем прежнем приложении: они не меняют активный `Task`, не регистрируют migration 003, не подключают новый route и не переключают `Repository.calculate`. Это подготовка замены, не второй продуктовый scheduler/API. Task 5 переносит эти реализации в существующие `contracts.ts`, `planning.ts`, `scheduling-types.ts`, `scheduling.ts` и удаляет промежуточные optional modules после исправления imports. Compatibility layer остаётся только для архивных форм. Нет режима выбора между двумя действующими планировщиками.
 
-После Task 5 допустим только промежуточный synthetic developer build с честным pending-policy. C05, OS16, полная адаптация и V1 ещё не приняты. G-MIGRATION находится перед добавлением SQL в `openDatabase`, поскольку registry автоматически применяется при запуске, а не только перед UI/deploy. G-CPM может быть закрыт до Task 4 или после Task 5: gates независимы.
+После Task 5 допустим только промежуточный synthetic developer build с честным пояснением отсутствующей реализации CPM. C05, OS16, полная адаптация и V1 ещё не приняты. Task 4 implementation/review и acknowledgement находятся перед добавлением SQL в `openDatabase`, поскольку registry применяется при запуске. Policy gates уже закрыты; Task 6 технический annex может готовиться независимо от Task 4/5, но Task 7 требует обоих результатов.
 
 ## Карта файлов и целевых интерфейсов
 
@@ -56,14 +58,15 @@ Task 1–3 могут закончиться reviewable commit при работ
 | Source patch/validation/done | `src/domain/optional-planning.ts` | `src/domain/planning.ts`; Repository |
 | Real/FS/summary/display | `src/domain/optional-scheduling-types.ts`, `optional-scheduling.ts` | `src/domain/scheduling-types.ts`, `scheduling.ts`; один `calculateSchedule` |
 | Frozen legacy parsing/projection | `src/server/legacy-contracts.ts`, `legacy-compatibility.ts` | Только migration/replay; не экспортируется в client |
+| Legacy conversion/upgrade acknowledgement | `src/server/legacy-scheduling.ts`, `optional-upgrade.ts`; accepted resolver в `legacy-compatibility.ts` | Frozen legacy calculator для восстановления собственного historical state; preview/digest до migration writes, server-only |
 | Exact canonical comparison | `src/shared/canonical.ts` | Repository и compatibility; идентичная прежней `canonical` функция |
 | Archive+projection migration | `src/server/optional-migration.ts`, `migrations/003-optional-scheduling.sql` | `database.ts` registry после G-MIGRATION |
 | Atomic writes/undo/replay | Existing `src/server/repository.ts`, `app.ts` | Замена старых branches с сохранением revision/idempotency/auth/origin |
 | UI/real labels/gestures | Existing `PlanFields.tsx`, `TaskPanel.tsx`, `ProjectPlan.tsx`, `planning-view.ts`, `api.ts`, `App.tsx`, `ScheduleStatus.tsx`, `strings.ts` | Три nullable поля, настройки calendar/timezone, 426 message, pending-policy |
 | SVG и graph | Existing `Gantt.tsx`, `gantt-view.ts`, `TaskTimeline.tsx`, `TaskTree.tsx`, `Dependencies.tsx`, `styles/planning.css` | Готовый server display отдельно от real labels/arrow endpoints |
 | Build boundary | `.dockerignore`, `scripts/package-check.mjs`, `src/server/database.ts` | Exact migration input/registry; без расширения allowlist на каталоги |
-| Tests | New `tests/optional-planning.test.ts`, `optional-scheduling.test.ts`, `legacy-compatibility.test.ts`, `optional-migration.test.ts`, `optional-api.test.ts`; existing client/E2E/storage suites | Внести новые suites в explicit `test:unit`/`test:integration`; полный `npm test` сохраняется |
-| Decisions/handoff | New `docs/adr/006-optional-scheduling-contract.md`, `007-legacy-scheduling-migration.md`, `008-explicit-date-cpm.md`; optional CPM annex | W proposals, gate evidence, revised status; никаких transcripts |
+| Tests | New `tests/optional-planning.test.ts`, `optional-scheduling.test.ts`, `legacy-compatibility.test.ts`, `optional-migration.test.ts`, `optional-upgrade.test.ts`, `optional-api.test.ts`; existing client/E2E/storage suites | Внести новые suites в explicit `test:unit`/`test:integration`; полный `npm test` сохраняется |
+| Decisions/handoff | New `docs/adr/006-optional-scheduling-contract.md`; existing `007-legacy-scheduling-migration.md`, `008-explicit-date-cpm.md`; technical CPM annex | C16/C17 evidence, technical contracts, factual status; никаких transcripts |
 
 Номера ADR перед созданием проверить `rg --files docs/adr`: если уже заняты другим завершённым изменением, выбрать следующие свободные номера и обновить ссылки этого плана; не перезаписывать чужой ADR.
 
@@ -73,7 +76,7 @@ Task 1–3 могут закончиться reviewable commit при работ
 - [ ] Использовать Node 24.21.0 / npm 11.19.0 из `.nvmrc`/packageManager. Проверить `node --version`, `npm --version`, `npm run doctor`; mismatch исправлять выбором установленной требуемой версии, не снижением pins. `npm ci --strict-allow-scripts --no-audit --no-fund` — только по проверенному lockfile, без новых packages.
 - [ ] Для каждой задачи: добавить независимые failing tests, увидеть конкретный RED, минимально реализовать, получить GREEN и affected checks. Не использовать `.skip`, пустые tests, `--if-present` или сравнение solver с собой.
 - [ ] Один worker создаёт scoped локальный commit. Независимые reviewer agents оценивают один точный SHA: Standards/безопасность/исполняемость и Spec/числа/поведение. На CHANGES_REQUIRED worker исправляет тот же scope, reruns affected checks и создаёт новый SHA. Оба reviewer повторяют проверку нового SHA; переход допустим только при двух APPROVED и отсутствии открытых blockers.
-- [ ] Gate решение проверяется по документальному evidence, не по времени ожидания и не по review approval. Task 4/6 не исполнять по догадке. Не спрашивать о permission, когда пользователь уже поручил конкретный локальный шаг.
+- [ ] Policy evidence уже есть: C16/C17 и accepted normative annex от 2026-10-07. Не запрашивать повторный выбор этих политик. Task 4/6 реализуют и уточняют technical contracts в этих границах; новую противоречащую политику не вводить под видом implementation choice.
 - [ ] Перед commit: `git diff --check`, scoped diff review, `git add --` только task files, `npm run security:staged`, `git diff --cached --check`, затем обычный `git commit -m '...'` с действующими hooks. Не менять identity и не обходить hook отказ.
 - [ ] После каждого accepted commit: factual STATUS — touched areas, passed/failed/not run, pending gates, следующий task. Общая интеграция и public workspace/preflight выполняются отдельным integrator в обычном checkout; linked `.git` pointer guard нельзя ослаблять.
 
@@ -377,7 +380,7 @@ export function loadLegacyContexts(db: Database.Database): LegacyContextRecord[]
 export function migrationCategoryCounts(db: Database.Database): { auto: number; completedAbsolute: number; completedRelative: number; inconsistent: number };
 ```
 
-SnapshotV2/ProjectTreeV2 импортировать из Task 1 optional-contracts; после Task 5 — из active contracts. Mapper копирует только target allowlist; done без locks и обычный source сохраняются. Каждый legacy Auto и каждый done с completed dates/indices требует context-specific resolution с digest соответствующего original task. Один taskId в current/history может иметь разные locks: нельзя использовать одну current-row resolution для всех снимков. При отсутствующей resolution бросать safe `MIGRATION_POLICY_REQUIRED`; unknown версии/невалидный JSON — `INVALID_LEGACY_SNAPSHOT`. Синтетические resolutions в tests не являются решением G-MIGRATION.
+SnapshotV2/ProjectTreeV2 импортировать из Task 1 optional-contracts; после Task 5 — из active contracts. Mapper копирует только target allowlist; done без locks и обычный source сохраняются. Каждый legacy Auto и каждый done с completed dates/indices требует context-specific resolution с digest соответствующего original task, включая approved source-preserving unknown outcome C17. Один taskId в current/history может иметь разные locks: нельзя использовать одну current-row resolution для всех снимков. При отсутствующей resolution бросать safe `MIGRATION_POLICY_REQUIRED`; unknown версии/невалидный JSON — `INVALID_LEGACY_SNAPSHOT`. Synthetic resolutions проверяют сохранность выбранной C17 политики; production execution ими не разрешается.
 
 **Durable replay choice W05/W06:** migration один раз адаптирует каждый original operations.response при accepted context resolution и сохраняет frozen target JSON в существующем `operations.response`. Добавить `responseContractVersion=2` и `responseSha256` для version/digest проверки. `operations.contractVersion=1` обозначает original payload format; original canonical payload остаётся в payload и archive. Original response остаётся exact в archive. Runtime replay после restart читает только frozen target response, проверяет digest/schema и не требует ResolutionIndex; context resolutions нужны только migration projections и архивным checks. Пока schema3 зарегистрирована, повторный startup не выполняет migration/resolution. Ни current project/revision/calendar, ни новая CPM policy не перерасчитывают старый outcome; historical pending result остаётся pending и принимается target parser даже после Task 7.
 
@@ -516,33 +519,67 @@ return parsed.data;
 
 - [ ] **Step 5: Run GREEN и commit.** `npm test -- tests/legacy-compatibility.test.ts tests/optional-migration.test.ts tests/migration.test.ts tests/scheduling-repository.test.ts`; `npm run test:integration`; typecheck/lint/format/check:kit. Expect PASS и исходный `openDatabase` по-прежнему применяет только1/2. Commit `feat: prepare lossless scheduling migration and replay adapter`; independent review. Task 3 не разрешает запуск 003 на пользовательской БД.
 
-## Task 4: Закрыть G-MIGRATION по явным решениям
+## Task 4: Реализовать выбранную C17 conversion policy и preview acknowledgement
 
-**Files:** Create `docs/adr/007-legacy-scheduling-migration.md`; modify `docs/DECISIONS.md`, spec gate/status только по фактическому owner decision; update `tests/optional-migration.test.ts` synthetic policy matrix. До решения implementation registry/API/UI остаётся прежним.
+**Files:** Create `src/server/legacy-scheduling.ts`, `src/server/optional-upgrade.ts`, `tests/optional-upgrade.test.ts`; modify `src/server/legacy-compatibility.ts`, `tests/legacy-compatibility.test.ts`, `tests/optional-migration.test.ts`, `package.json` explicit integration list. Existing [ADR 007](../../adr/007-legacy-scheduling-migration.md), DECISIONS и normative annex уже содержат принятое решение. Registry/API/UI подключаются только в Task 5 после GREEN/review.
 
-**Inputs:** Task 3 aggregate counts всех active/history contexts и synthetic examples; exact source/digest archive contract; W06 source-preserving proposal. Owner approval в этой сессии отсутствует.
+**Inputs:** C17/ADR 007; Task 3 aggregate counts всех active/history contexts, exact source/digest archive contract; normative M01–M10. Owner approval получено 2026-10-07; повторный выбор политики не требуется.
 
-- [ ] **Step 1: Подготовить конкретную decision matrix без доступа к real runtime.**
+- [ ] **Step 1: Превратить принятую матрицу M01–M10 в literal synthetic RED cases.**
 
-| Legacy category | Synthetic input | Разрешённый консервативный outcome для обсуждения | Нужное решение |
+| Legacy category | Synthetic input | Принятый C17 outcome | Проверка |
 |---|---|---|---|
-| Auto | source dates null, duration3; old cached computed5–7 октября | source dates null/duration3; old result archive-only | Согласовать потерю активной видимости прежнего Auto interval либо отдельную confirmed conversion |
-| Absolute done lock | input pair5–6 октября, completed pair9–12 октября | archive сохраняет обе пары | Какая pair остаётся активной и почему; нельзя выбрать скрыто |
-| Relative done lock | input dates null, completed indices0/2, project.startDate null | archive сохраняет indices; нельзя придумать CalendarDate | Явное incomplete active representation либо подтверждённая отдельная calendar anchor/conversion |
-| Deleted historical task | done/Auto только в undo/operation response | archive/context mapping сохраняет deleted ID/source | Та же policy применяется к соответствующему historical context, а не current taskId |
-| Invalid/calendar mismatch | saved Saturday pair либо duration mismatch | source unchanged, diagnostic, invalid real pair null | Подтвердить отсутствие normalization/deletion |
+| Auto | source null, duration3; корректный old interval5–7 октября | source pair5–7, duration3; originals archived | M01; Auto без абсолютной опоры — M02 source unchanged/unknown |
+| Absolute done lock | input pair5–7, completed pair6–8, duration3 | active6–8, done; archive обеих пар | M03/M07; replacement category в preview |
+| Relative done lock | indices[0,3), origin9 октября, weekdays | active9–13 октября; без опоры — source unchanged/unknown | M04/M05; не подставлять нынешний origin в history |
+| Deleted historical task | done/Auto только в undo/operation response | projection по собственному historical state, deleted ID сохранён | M08/M09; revision9 replay при current10 без mutations |
+| Invalid/calendar mismatch/FS | saved invalid pair/duration mismatch; либо пересекающаяся FS | originals сохраняются, invalid/FS diagnostic, без normalization | M10; валидная pair остаётся видимой при infeasible |
 
-- [ ] **Step 2: Получить owner decision по категориям.** Зафиксировать actual decision ID/дату/почему в DECISIONS и ADR; не записывать вопрос/переписку или personal paths. Если решения нет, отметить G-MIGRATION OPEN и завершить этот task без запуска зависимого Task 5. Сам spec/plan APPROVED не решение policy.
+- [x] **Step 2: Зафиксировать owner decision.** C17 и ADR 007 от 2026-10-07 содержат принятую однократную конвертацию, сохранность и explicit preview. Закрыт policy gate, а не application acceptance этого Task.
 
-- [ ] **Step 3: Сделать утверждённую conversion rule исполнимой.** ADR определяет deterministic `resolveLegacySources(contexts: readonly LegacyContextRecord[]): ResolutionIndex` либо эту же функцию над explicit confirmed conversion manifest с exact context/digest/source. Реализация rule появляется только после решения; Task 3 уже определяет LegacyContextRecord/ResolutionIndex и loader. Для relative context без approved anchor rule должен refuse, а не брать Today/project start случайно. Синтетические expected выходы каждого выбранного category записать literal в tests; archive original остаётся immutable. Пока категории не разрешены, helper Task 3 выдаёт MIGRATION_POLICY_REQUIRED и fail closed.
+- [ ] **Step 3: Реализовать deterministic resolver и acknowledgement с RED/GREEN.** Task 3 определяет LegacyContextRecord/ResolutionIndex и loader. Frozen server-only `calculateLegacySchedule` воспроизводит алгоритм исходного S3 `6317791dff9dc944de3a1676effebcf1322b2ff6` на полном собственном legacy snapshot; после переключения не импортирует mutable target scheduling types/solver. Это compatibility implementation для migration, без второго active product scheduler. Сохранённый historical schedule используется только с проверенным соответствующим context; отсутствие необходимых источников даёт approved source-preserving unknown, а не выдуманную опору. Каждая resolution содержит digest оригинала. Отсутствующий/mismatched resolution record по-прежнему fail closed.
 
-- [ ] **Step 4: Независимое review gate evidence и synthetic GREEN.** `npm test -- tests/legacy-compatibility.test.ts tests/optional-migration.test.ts`; `npm run check:kit`; `git diff --check`. Два reviewers проверяют owner evidence, category completeness и temporal context mapping. Commit `docs: define approved legacy scheduling migration policy` допустим только при фактическом решении. Если owner отказал source-preserving W06/выбрал другой policy, revise spec+affected tasks и повторить spec/plan review до integration.
+```ts
+// legacy-scheduling.ts; LegacySnapshotSchema/LegacyTreeSchema из frozen legacy-contracts.ts
+export function calculateLegacySchedule(snapshot: z.infer<typeof LegacySnapshotSchema>):
+  z.infer<typeof LegacyTreeSchema>['schedule'];
+// legacy-compatibility.ts, по M01–M10; unknown также явный resolved outcome
+export function resolveLegacySources(contexts: readonly LegacyContextRecord[]): ResolutionIndex;
+// optional-upgrade.ts: никаких active writes в preview
+export type OptionalUpgradeApproval = { policyId: 'legacy-scheduling-v1'; previewDigest: string };
+export type OptionalUpgradePreview = OptionalUpgradeApproval & { counts: {
+  sourceIntervals: number; materializedAuto: number; materializedDone: number;
+  unavailableAbsolute: number; replacedDoneSource: number; invalid: number;
+  fsConflicts: number; unavailableHistory: number;
+} };
+export function previewOptionalUpgrade(db: Database.Database): OptionalUpgradePreview;
+export function requireOptionalUpgradeApproval(db: Database.Database,
+  approval: OptionalUpgradeApproval | undefined): void;
+```
 
-**Acceptance:** G-MIGRATION закрыт записью решения; active/deleted/history Auto и обе категории done locks имеют exact expected representation и rollback tests. Production execution всё ещё требует отдельного поручения; закрытый policy gate не permission deploy.
+Preview digest включает exact архивируемые project/task scheduling sources, edges, raw payload/response/undo и их ключи/версии в детерминированном порядке, без auth/session bytes. `requireOptionalUpgradeApproval` повторяет preview на locked state внутри migration transaction: missing/wrong-policy → MIGRATION_APPROVAL_REQUIRED, другой digest → MIGRATION_PREVIEW_CHANGED. Ни один из этих отказов не пишет DDL/archive/source/history. Невосстановимые интервалы дают отдельную preview category и unknown diagnostic целевой проекции; archive сохраняет причину/originals, а source pair не дополняется.
+
+```ts
+it('requires the exact preview before migration writes', () => {
+  const preview = previewOptionalUpgrade(db);
+  const before = db.prepare('SELECT version FROM migrations ORDER BY version').all();
+  expect(() => requireOptionalUpgradeApproval(db, undefined)).toThrow('MIGRATION_APPROVAL_REQUIRED');
+  expect(() => requireOptionalUpgradeApproval(db, { ...preview, previewDigest: '0'.repeat(64) }))
+    .toThrow('MIGRATION_PREVIEW_CHANGED');
+  expect(db.prepare('SELECT version FROM migrations ORDER BY version').all()).toEqual(before);
+  expect(() => requireOptionalUpgradeApproval(db, preview)).not.toThrow();
+});
+```
+
+Дополнительно literal tests меняют source/calendar/edge и raw historical payload после preview: старое подтверждение отклоняется; auth/session bytes не входят в preview output. Run `npm test -- tests/legacy-compatibility.test.ts tests/optional-migration.test.ts tests/optional-upgrade.test.ts`: RED до реализации helper/resolver, затем GREEN на независимой M матрице. Archive original остаётся immutable.
+
+- [ ] **Step 4: Independent review и synthetic GREEN.** `npm test -- tests/legacy-compatibility.test.ts tests/optional-migration.test.ts tests/optional-upgrade.test.ts`; `npm run verify`, `npm run check:kit`, `git diff --check`. Два reviewers проверяют C17 evidence, M01–M10, temporal context mapping, frozen calculator boundary и digest acknowledgement. Commit `feat: prepare approved legacy scheduling conversion` после GREEN/review. Новые технические contracts не получают прежних APPROVED автоматически.
+
+**Acceptance:** C17 policy уже CLOSED; Task 4 GREEN только при exact active/deleted/history representation, frozen compatibility, acknowledgement/rollback tests и двух independent approvals. Production execution всё ещё требует отдельного поручения; policy choice не permission deploy.
 
 ## Task 5: Единый атомарный переход API, storage и UI
 
-**Files:** Modify `src/shared/contracts.ts`, `src/shared/work-preservation.ts`, `src/domain/planning.ts`, `scheduling-types.ts`, `scheduling.ts`, `src/server/database.ts`, `repository.ts`, `app.ts`, `.dockerignore`, `scripts/package-check.mjs`, all client files из карты, existing application fixtures/tests и `scripts/e2e-server.ts` (возврат только собственного synthetic databasePath); create `tests/optional-api.test.ts`, `tests/helpers/optional-api-fixtures.ts`, `tests/helpers/pinned-s3.ts`, `tests/client/optional-api.test.ts`, `tests/e2e/optional-scheduling.spec.ts`, `tests/e2e/legacy-client-upgrade.spec.ts`; update package test lists и README/BOOTSTRAP/STATUS. Preparation optional modules удалить после переноса их реализаций/imports. Frozen legacy contracts/compatibility/archive остаются server-only.
+**Files:** Modify `src/shared/contracts.ts`, `src/shared/work-preservation.ts`, `src/domain/planning.ts`, `scheduling-types.ts`, `scheduling.ts`, `src/server/database.ts`, `migrate.ts`, `repository.ts`, `app.ts`, `.dockerignore`, `scripts/package-check.mjs`, all client files из карты, existing application fixtures/tests и `scripts/e2e-server.ts` (возврат только собственного synthetic databasePath); create `tests/optional-api.test.ts`, `tests/helpers/optional-api-fixtures.ts`, `tests/helpers/pinned-s3.ts`, `tests/client/optional-api.test.ts`, `tests/e2e/optional-scheduling.spec.ts`, `tests/e2e/legacy-client-upgrade.spec.ts`; update package test lists и README/BOOTSTRAP/STATUS. Preparation optional modules удалить после переноса их реализаций/imports. Frozen legacy contracts/compatibility/archive остаются server-only.
 
 **Entry:** Task 1–3 approved exact SHAs, Task 4 CLOSED с policy ADR. Один writer держит все общие контракты. Этот task имеет один интеграционный commit после всех steps и полного GREEN: backend target без совместимого client не считается завершённым deliverable.
 
@@ -624,13 +661,15 @@ Import raw helper from `./helpers/optional-api-fixtures.js`; no runtime Resoluti
 
 - [ ] **Step 3: Перенести целевые модули и подключить migration после gate.** Тела Task 1/2 становятся существующими domain/contracts; old helpers `applyTaskPlan`, `completedInterval`, `fixedDuration`, plan modes и старый `ScheduleResult` заменяются новыми exports. `validateDependency/validateDependencies` принимает только необходимые id/parent fields и edges, не требует mode. Frozen schemas не импортируют mutable target schemas. Удалить optional modules и обновить все imports, без оставления второго active solver.
 
-`database.ts` migration registry меняется на records `{version,file,prepare?}`; 003 prepare выполняется внутри существующей immediate migration transaction до version insert. Gate Task 4 подтверждён до изменения registry. `.dockerignore` и expected allowlist `scripts/package-check.mjs` добавляют только `!migrations/003-optional-scheduling.sql`. Synthetic package check, unknown schema/downgrade и failed version insertion tests обязательно проходят.
+`database.ts` migration registry меняется на records `{version,file,prepare?}`; 003 prepare выполняется внутри существующей immediate migration transaction до version insert. Task 4 implementation/review подтверждён до изменения registry. `openDatabase` получает optional typed `optionalUpgrade: OptionalUpgradeApproval`; обычный startup его не передаёт. `isFreshDatabase` фиксируется по отсутствию исходной схемы до любых migration writes. Existing БД с pending003 без подтверждения отказывает до изменяющих PRAGMA/DDL; неподдерживаемая source schema отклоняется до промежуточных migrations. `.dockerignore` и expected allowlist `scripts/package-check.mjs` добавляют только `!migrations/003-optional-scheduling.sql`. Synthetic package check, unknown schema/downgrade, no-ack startup и failed version insertion tests обязательно проходят.
 
 ```ts
 const migrations: { file: string; prepare?: (db: Database.Database, sql: string) => void }[] = [
   { file: '001-initial.sql' }, { file: '002-scheduling.sql' },
-  { file: '003-optional-scheduling.sql', prepare: (db, sql) =>
-      prepareOptionalMigration(db, sql, resolveLegacySources(loadLegacyContexts(db))) },
+  { file: '003-optional-scheduling.sql', prepare: (db, sql) => {
+      if (!isFreshDatabase) requireOptionalUpgradeApproval(db, optionalUpgrade);
+      prepareOptionalMigration(db, sql, resolveLegacySources(loadLegacyContexts(db)));
+    } },
 ];
 // В существующем transaction callback, а не второй commit:
 if (entry.prepare) entry.prepare(db, migrationSql);
@@ -638,7 +677,9 @@ else db.exec(migrationSql);
 db.prepare('INSERT INTO migrations(version) VALUES (?)').run(index + 1);
 ```
 
-`resolveLegacySources` — конкретный reviewed export accepted Task 4 ADR, не env/global flag. До Task 4 этот dependency отсутствует и этот step запрещён. Helper получает reviewed SQL exact input; не выполнять arbitrary path/script из manifest. На production agent это не запускает; runtime migration закрывается fail-closed при неполном resolution.
+`resolveLegacySources` и `requireOptionalUpgradeApproval` — конкретные reviewed exports Task 4, не env/global flag. До Task 4 GREEN этот step запрещён. Helper получает reviewed SQL exact input; не выполнять arbitrary path/script из manifest. В `migrate.ts` будущий `--preview` открывает existing БД readonly напрямую, без automatic migrations, и выводит только policy/counts/digest; будущий `--confirm-preview=<digest>` передаёт typed approval в `openDatabase`. Эти flags пока не реализованы. Внутри transaction preview перепроверяется до writes; stale/missing acknowledgement полностью откатывает upgrade. На production agent это не запускает.
+
+Synthetic integration tests через реальный CLI/server: preview не меняет исходные bytes/versions/counts; обычный startup schema2 без approval отказывает; confirmed upgrade сохраняет accounts/history; changed source после preview блокирует apply; новый пустой экземпляр создаётся; restart schema3 без повторного approval проходит. Дополнить BOOTSTRAP процедурой backup/preview/explicit apply и честным отсутствием разрешения production execution.
 
 - [ ] **Step 4: Заменить Repository projections/writes и отдельный replay.** `SELECT *` для active project/task заменить explicit target columns; insert/save исключают legacy поля и сохраняют независимую duration. operations explicit `contractVersion`, payload/response; new version=2 canonical whole new envelope. Target parsed response validated до commit. Undo использует migrated V2 beforeSnapshot и existing session/revision/20-record bounds; archival originals остаются immutable. Перенести прежний canonical в shared function и regression подтвердить равенство literal old/new output. Replay version1 не меняет archived payload и не читает latest project вместо cached outcome.
 
@@ -1009,15 +1050,15 @@ npm run check:kit
 
 Expect все реальные suites PASS, no skipped. Synthetic screenshots outside checkout открыть и сверить все три PNG/два viewport; images не добавлять в public manifest. Migration003 application build/container synthetic smoke проверяет exact packaged input, SQLite native DROP support, non-root/read-only, restart/backup; только новые synthetic volume/path, no real backup reading. Test migrations1→2→3 и2→3, rollback и repeated run.
 
-- [ ] **Step 9: Commit и независимый интеграционный review.** `feat: adapt optional scheduling with lossless legacy compatibility`. Acceptance OS01–OS15/OS17, за исключением настоящего OS16 и полной C05; STATUS прямо pending-policy/G-CPM OPEN. Review all target schema, private archive, headers/replay order, source/display separation, counts/digests, invalid/error/loading/keyboard и package boundary. Два APPROVED на точном SHA; main integrator repeats affected checks/staged/history/public workspace/preflight без отключения guards. Приложение на checkpoint работает на target contract; V1 ещё не готова.
+- [ ] **Step 9: Commit и независимый интеграционный review.** `feat: adapt optional scheduling with lossless legacy compatibility`. Acceptance OS01–OS15/OS17, за исключением настоящего OS16 и полной C05; STATUS прямо указывает C16 policy CLOSED и CPM implementation pending. Review all target schema, private archive, explicit preview/digest acknowledgement, headers/replay order, source/display separation, counts/digests, invalid/error/loading/keyboard и package boundary. Два APPROVED на точном SHA; main integrator repeats affected checks/staged/history/public workspace/preflight без отключения guards. Приложение на checkpoint работает на target contract; V1 ещё не готова.
 
-## Task 6: Закрыть G-CPM/O06 и создать численно исполнимый annex
+## Task 6: Создать технический implementation annex принятой C16 политики
 
-**Files:** `docs/DECISIONS.md`, `docs/adr/008-explicit-date-cpm.md`, new `docs/superpowers/plans/2026-10-07-explicit-date-cpm.md`; при фактическом решении согласовать spec W01/OS examples. До решения Task 7 не имеет разрешения на выбор формул и не запускается.
+**Files:** Existing `docs/DECISIONS.md`, `docs/adr/008-explicit-date-cpm.md` и [нормативное приложение](../specs/2026-10-07-optional-scheduling-policy-proposal.md) уже содержат C16; create `docs/superpowers/plans/2026-10-07-explicit-date-cpm.md` с typed contracts, runnable tests и exact file map. До GREEN/review annex Task 7 не запускается; формулы уже выбраны и повторного owner approval не требуют.
 
-**Inputs:** Пять решений spec §9; N06 различает observed intervals, relative longest path и analytic earliest variants. Recommendation spec не выбранный вариант.
+**Inputs:** Пять принятых решений spec §9/C16, ADR 008, P01–P11 и N06. Выбран observed-interval анализ; relative longest path и analytic earliest не выбраны. Gate CLOSED относится к policy, а не готовности implementation annex.
 
-- [ ] **Step 1: Подготовить owner decision packet из синтетической матрицы.** Для каждого пункта нужен exact output contract, а не «CPM как обычно»:
+- [x] **Step 1: Подготовить policy decision packet.** Принятое нормативное приложение задаёт точную семантику пяти решений и независимые expected cases:
 
 | Решение | Проверяемый вопрос | Независимый пример для выбора |
 |---|---|---|
@@ -1027,15 +1068,15 @@ Expect все реальные suites PASS, no skipped. Synthetic screenshots ou
 | Floats/locks/done | ProjectFloat vs constraintFloat; неизменяемость не критичность? | B hard start5, done variant, независимая C10 |
 | Unknown/infeasible | Partial critical sets/labels допустимы? | known A→unknown U→dated B + independent C; conflict+unknown |
 
-- [ ] **Step 2: Получить и записать actual owner decision.** Не назначать правила по рекомендации spec или approvals reviewers. Если ответ отсутствует, G-CPM OPEN, Task 5 pending-policy сохраняется; C05/OS16 не выполнены. Если выбран аналитический вывод отсутствующей границы, revise W01/N cases и повторить independent spec/affected plan review до использования.
+- [x] **Step 2: Получить и записать actual owner decision.** C16/ADR 008 приняты 2026-10-07; O06/G-CPM CLOSED как выбор математической политики. W01 сохраняется, отсутствующие границы не выводятся. C05/OS16 остаются implementation/acceptance work.
 
-- [ ] **Step 3: Создать математический ADR и implementation annex на выбранных формулах.** Annex должен определять signatures конечного `calculateSchedule`, domain analysis types, horizon/critical-edge predicate, exact independent expected arrays/floats/diagnostics и Runnable RED/GREEN commands. Записать **выбранные** outputs для fork/join, switch, equal paths, disconnected, release gap, locks/done, unknown, infeasible, parent containsCritical. До выбора в настоящий документ нельзя вставлять придуманные CPM assertions.
+- [ ] **Step 3: Создать implementation annex по принятому ADR 008.** Математический ADR и P01–P11 уже существуют. Technical annex определяет signatures конечного `calculateSchedule`, полный typed DTO/strict schemas, domain analysis types, H/Hknown, critical-edge predicate, exact independent expected arrays/floats/diagnostics и Runnable RED/GREEN commands. Ready: ordinary projectFloat/constraintFloat и global IDs; incomplete: ordinary floats null, global IDs empty, отдельный partialAnalysis по полностью известным weak components; infeasible: no normal/partial floats/IDs. Partial содержит knownHorizonFloat и отдельно подписанные partial critical sets, без подмены global. Frozen pending replies парсятся и сохраняют outcome. Добавить к P01–P11 literal fork/join, deep-summary, conflict+unknown, undo/restart и invariance к смещению технической опоры. Формулы и запрет Auto не пересматривать.
 
-N06 числовые варианты из spec — только comparison packet: observed hypothetical float7/4/0 и constraint3 не целевой expected test. Annex не может использовать их как утверждённую математику без решения. Каждое numeric expected рассчитывается независимо от production solver (ручная арифметика/отдельный проверенный oracle fixture), с датами и объяснением выбора origin; display inputs запрещены.
+N06 по выбранной C16 политике имеет projectFloat A/B/C=7/4/0, constraintFloat=3/4/0 и critical только C; done variant B меняет только её constraintFloat на0. Это accepted target expectation вместе с P01–P11. Каждое numeric expected рассчитывается независимо от production solver (ручная арифметика/отдельный проверенный oracle fixture), с датами и объяснением технической опоры; display inputs запрещены.
 
-- [ ] **Step 4: Цикл ревью annex до двух APPROVED.** Separate plan author и два reviewers на exact SHA проверяют отсутствие скрытого Auto, type consistency, числовую матрицу, task file map/TDD/commands и owner evidence. На замечаниях revise annex+ADR/affected spec и повторить. Commit `docs: define approved explicit-date critical path plan` только после фактического решения. Этот step — обязательная конкретная dependency Task 7, не готовая неизвестная implementation.
+- [ ] **Step 4: Цикл ревью technical annex до двух APPROVED.** Separate plan author и два reviewers на exact SHA проверяют соответствие принятой C16, отсутствие скрытого Auto, type consistency, числовую матрицу, task file map/TDD/commands и owner evidence. На замечаниях исправлять technical annex; противоречащую принятой политику не вводить скрыто. Commit `docs: define approved explicit-date critical path plan` после review. Этот step — конкретная dependency Task 7; прежние approvals базового плана его не закрывают.
 
-**Acceptance:** G-CPM CLOSED, решение владельца и accepted formulas существуют; отдельный численно исполнимый annex с двумя независимыми approvals. Этот план не выдает открытый gate за READY; no deadline/project-start возвращения в active model.
+**Acceptance:** Policy G-CPM уже CLOSED, решение владельца и accepted formulas существуют. Task 6 GREEN требует отдельного численно исполнимого technical annex с двумя independent APPROVED; он ещё не подготовлен. No deadline/project-start возвращения в active model.
 
 ## Task 7: Выполнить approved CPM annex и полную приёмку адаптации
 
@@ -1063,15 +1104,15 @@ N06 числовые варианты из spec — только comparison pack
 | OS08 | 2+5, full sibling anchor and nested knownStartMin | order/collapse/filter/scale no source changes; anchor update display only |
 | OS09 | 2+5 | conditional gesture lock/no fake timeline arrow; graph relationship remains |
 | OS10 / C15 | 1+3+5 | no legacy fields in target schemas/UI/bundle/Network; finish nullable |
-| OS11 / W06 | 3+4+5, N05/current/deleted/history | exact raw archive+digests/counts; no field reassignment |
+| OS11 / C17/W06 | 3+4+5, M01–M10/N05/current/deleted/history | exact raw archive+digests/counts; approved pair materialization; no deadline/notBefore reassignment |
 | OS12 | 3+5 Steps2/8a | six project routes426 before lookup; pinned unchanged S3 source/build/browser + original ApiError probe; transport-only frozen legacy replay после restart; stale response/no duplicate |
-| OS13 | 3+4+5 | pre-migration undo, stale409, repeated migration, DDL+archive rollback, downgrade/invalid JSON |
+| OS13 | 3+4+5 | pre-migration undo, stale409, repeated migration, DDL+archive rollback, downgrade/invalid JSON, missing/stale preview acknowledgement и no-write startup |
 | OS14 | 2+5, N04 | known FS ends without pair; unknown !=0, non-working diagnostic, cycle rollback |
-| OS15 | 2+5 | pending-policy visible, floats absent, critical IDs empty with explanation; C05 unmet |
-| OS16 / C05/O06 | 6+7 only, actual selected vectors | BLOCKED G-CPM; true math/IDs/tight edges after approved annex |
+| OS15 | 2+5 | intermediate pending-policy объясняет отсутствующую реализацию; C16 принят, C05 unmet |
+| OS16 / C05/C16 | 6+7, P01–P11/N06 | Owner policy CLOSED; technical annex/review и actual math/IDs/tight/partial tests pending |
 | OS17 | 5 Steps6/8b +7 | dirty/loading/error/offline/focus/Tab/Esc/keyboard; selected task delete→fresh snapshot→disabled readable draft→discard/close/focus; exact retry/undo, both viewports |
 
-## Авторская проверка и документальный review этого плана
+## Историческая авторская проверка и review базовой ревизии
 
 - [x] Coverage: каждый spec section/C11–C15/OS01–OS17 сопоставлен строкам выше; W01–W06 не стали C, G-MIGRATION стоит до registry, G-CPM не заменён набором пустых critical IDs.
 - [x] Placeholder scan: в implementation steps нет скрытых незаполненных решений. Блокированные policy задачи имеют перечисленные входы/проверяемые выходы и отдельный review gate; формулы неизвестного CPM не выдуманы.
@@ -1081,6 +1122,6 @@ N06 числовые варианты из spec — только comparison pack
 - [x] Document-only `npm run check:kit`, `git diff --check`, `git diff --cached --check`, staged guard/Gitleaks и history scans прошли для второго кандидата. Обычные hooks включены. Root integrator отдельно проверяет public workspace/preflight; linked-worktree pointer refusal не обходить.
 - [x] Два независимых plan reviewer проверили один candidate SHA `c4c8193ed82c464998f16bd163def93c22a22fe2`: соответствие спецификации — APPROVED; исполнимость/standards — APPROVED. Пять blockers первого раунда закрыты; review metadata зафиксировано после получения обоих вердиктов.
 
-План не начинает реализацию автоматически. Когда владелец поручит код, координатор выполняет разрешённые preparation задачи отдельными worker agents, продолжая независимый review цикл; policy gates сохраняют перечисленные ограничения.
+План не начинает реализацию автоматически. При поручении кода координатор выполняет preparation задачи отдельными worker agents, продолжая independent review цикл. C16/C17 уже приняты; technical/test dependencies Tasks 4–7 и отдельное разрешение production operation сохраняются.
 
-Раунд 1 независимого plan review на `1a151c29c81d78096b634eb7e2458443f5a61c51`: соответствие спецификации — CHANGES_REQUIRED; исполнимость/standards — CHANGES_REQUIRED. Закрыты пять blockers: source marker projection/render/tests, настоящий pinned unchanged S3 upgrade check, selected task deletion recovery, durable frozen replay после restart и полные schemas/helper definitions. Раунд 2 на `c4c8193ed82c464998f16bd163def93c22a22fe2`: соответствие спецификации — APPROVED; исполнимость/standards — APPROVED. Нормативная approved spec не менялась; G-CPM/O06 и G-MIGRATION остаются открытыми, реализация не начата.
+Раунд 1 независимого plan review на `1a151c29c81d78096b634eb7e2458443f5a61c51`: соответствие спецификации — CHANGES_REQUIRED; исполнимость/standards — CHANGES_REQUIRED. Закрыты пять blockers: source marker projection/render/tests, настоящий pinned unchanged S3 upgrade check, selected task deletion recovery, durable frozen replay после restart и полные schemas/helper definitions. Раунд 2 на `c4c8193ed82c464998f16bd163def93c22a22fe2`: соответствие спецификации — APPROVED; исполнимость/standards — APPROVED. На той ревизии базовая spec не менялась, policy gates были открыты, implementation не начиналась. Изменения после принятия C16/C17 закрывают выбор политик и синхронизируют technical tasks; новых independent verdicts на эти изменения пока нет.
