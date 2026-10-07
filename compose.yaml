@@ -1,0 +1,24 @@
+services:
+  leaf:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      NODE_ENV: production
+      LEAF_HOST: 0.0.0.0
+      LEAF_PORT: '3000'
+      LEAF_DATA_DIR: /data
+      LEAF_PUBLIC_ORIGIN: http://127.0.0.1:3000
+    volumes:
+      - leaf-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 10s
+volumes:
+  leaf-data:

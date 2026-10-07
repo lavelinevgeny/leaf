@@ -418,7 +418,10 @@ export function App() {
           ? { parentId: task.id }
           : { parentId: task.parentId, afterId: task.id },
       );
-      document.getElementById('quick-task')?.focus();
+      setSelected(null);
+      requestAnimationFrame(() =>
+        document.getElementById('quick-task')?.focus(),
+      );
       return;
     }
     if (value === 'delete') {

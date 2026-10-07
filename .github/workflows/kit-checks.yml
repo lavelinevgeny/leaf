@@ -33,6 +33,6 @@ jobs:
         run: npm run hooks:install
       - name: Verify kit, guard, real scanner and Git metadata
         run: npm run preflight
-# This validates the starter kit, NOT the future application.
-# S0 must add real typecheck/lint/unit/integration/build jobs; S3 adds E2E.
+# This validates the kit and repository safety.
+# Real application and browser checks live in app-checks.yml.
 # No deployments, registry pushes, secrets or pull_request_target execution.

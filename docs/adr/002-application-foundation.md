@@ -78,5 +78,6 @@ Sources: [Node releases](https://nodejs.org/dist/index.json),
 Snapshots and stored idempotent results trade storage for simple reliable command
 semantics. Undo snapshots are bounded; stored operation responses currently have
 no retention policy. SQLite synchronous writes suit a small single-owner planner;
-large projects and lifecycle maintenance need later measurement. No scheduling,
-backup/restore, import/export or complete release functionality is claimed here.
+large projects and lifecycle maintenance need later measurement. The packaging follow-up adds native consistent SQLite backup and a non-root
+production image with a deny-default build context. Restore, scheduling,
+import/export and complete release functionality are not implemented.

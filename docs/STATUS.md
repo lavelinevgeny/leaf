@@ -2,23 +2,48 @@
 
 ## Текущее состояние
 
-Стартовый комплект распакован и проверен в корне локального Git-репозитория; исходный ZIP удалён после побайтовой сверки распакованных файлов. Основная ветка — `main`, установлен локальный `core.hooksPath=.githooks`. Создан начальный коммит. Production-кода leaf пока нет. Три выбранных референса включены и просмотрены; последний коллаж подзадач исключён. Kit checks и их тесты отделены от будущих application tests. Исходный отчёт подготовки комплекта — в VALIDATION; результаты инициализации приведены ниже.
+Реализован и интегрирован промежуточный S0/S1: один TypeScript-пакет, React/Vite, Fastify, SQLite, локальный вход, проекты, произвольная глубина дерева, компактная правая панель, статусы, описание, optional input dates, перенос/удаление веток и серверная отмена. Данные сохраняются после настоящего перезапуска процесса. Даты пока являются сохранённым вводом; расчёта расписания нет. Три утверждённых референса сохранены; исключённый коллаж не используется.
 
-Обвязка проверена в `chore/harden-agent-harness`. На 2026-10-07 реальная synthetic OS probe Codex проходит; комплект имеет 51 проходящий тест, полный local preflight прошёл на текущих публичных файлах. Владелец разрешил публичный Git identity email в полях автора/коммиттера; согласованный review manifest сохранён в репозитории. Пробел Gitleaks-проверки индекса в preflight исправлен; правила scanner для проверок публикации берутся из index. Результаты аудита и исправлений приведены ниже. Внешняя публикация не выполнялась.
+Это ещё не готовая V1: Гант, зависимости и пересчитываемые критические пути остаются обязательными этапами S2/S3. Production-контейнер упаковывает текущий фундамент. Kit/privacy проверки отделены от application tests. Git identity review и scanner policy сохранены. Внешняя публикация и deployment не выполнялись.
 
 | Этап | Статус |
 |---|---|
-| S0: репозиторий и исполняемый фундамент | Репозиторий подготовлен; исполняемый фундамент не начат |
-| S1: дерево, панель, SQLite CRUD | Не начат |
-| S2: scheduling module и транзакции | Не начат |
+| S0: репозиторий и исполняемый фундамент | Реализован; финальный combined preflight после интеграции ожидается |
+| S1: дерево, панель, SQLite CRUD | Реализован и проверяется реальными browser/restart scenarios |
+| S2: scheduling module и транзакции | Следующий этап, не начат |
 | S3: Гант и схема зависимостей | Не начат |
 | S4: повседневный UX и доска | Не начат |
-| S5: self-hosting и сохранность данных | Не начат |
+| S5: self-hosting и сохранность данных | Есть Docker/Compose и consistent backup; restore/import/export/upgrade не реализованы |
 | S6: релизная приёмка | Не начат |
 
 ## Следующая задача
 
-Перед публикацией отдельно подтвердить серверную защиту и удалённый CI. Следующая проверка агентной среды: effective Claude sandbox/permissions и пять model scenarios на выбранных версиях CLI/model, с сохранением только безопасных итогов. Продуктовая задача S0 остаётся отдельным поручением: проверить и зафиксировать версии среды и зависимостей, создать lockfile, клиент/сервер и настоящие команды запуска, сборки и тестирования. Затем перейти к сквозному сценарию S1. Не объявлять комплектацию документации реализованным приложением.
+Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Финальный whole-branch review и combined preflight выполняются после интеграции из обычного checkout. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
+
+## S0–S1 — 2026-10-07
+
+Изменённые области: строгая TypeScript/tooling среда и exact lockfile, shared/domain/API/storage/auth/runtime/CLI, клиент и HTTP tests, browser harness, Docker/Compose, application CI, README/BOOTSTRAP/DEPLOYMENT и план реализации. S1 реализован в рамках утверждённого spec. API защищает JSON/origin, ревизии, idempotency, rollback и undo; local setup скрывает пароль. Runtime storage и все synthetic DB находятся вне checkout.
+
+Добавлены реальные browser сценарии для создания проекта/дерева, ввода/очистки дат, статуса/описания, collapse/keyboard/move, удаления ветки/undo, reload и actual process restart. Проверены отказы foreign/missing origin и потерянный ответ после реального committed save: черновик/ошибка видимы, точный retry не применяет команду повторно. При 1024 и 990 px child/sibling action раскрывает доступный быстрый ввод; ниже breakpoint исправлено перекрытие редактора чистой панелью. Dirty-panel protection сохранена.
+
+Локальный dev smoke проверяет custom server port, Vite proxy, browser origin и graceful shutdown обоих дочерних процессов. Native backup тестирует committed WAL при открытом writer, integrity, права 0600/0700 и отказ overwrite/symlink/checkout destination. Контейнерный smoke использует только новый synthetic named volume: non-root, read-only filesystem, loopback, healthcheck, static-root isolation, real SQLite write, CLI setup/backup, SIGTERM exit 0 и restart persistence. Контейнер и его том удалены после smoke.
+
+| Проверка | Результат |
+|---|---|
+| `npm ci --strict-allow-scripts --no-audit --no-fund` | Прошло по exact lockfile, 273 packages. |
+| `npm run verify` | Прошло: typecheck, lint, 76/76 tests в 7 suites и production client/server build. |
+| `npm run format:check` / `npm run check:package` | Прошло. |
+| `npm run test:e2e` | Прошло: 6/6 Chromium scenarios на 1440×900 и 1280×800, без skipped/retries; narrow actions также при 1024 и 990 px. |
+| Синтетические screenshots | Оба открыты и просмотрены; header bounds внутри viewport, дерево/панель читаемы. Approved asset manifest не менялся. |
+| `npm run check:kit` / `npm run test:kit` | Прошло: 29 Markdown files, 51 local links, три references; 52/52 real-scanner/hook tests, skipped 0. |
+| `npm audit` и `npm audit --omit=dev` | Прошло: 0 vulnerabilities при moderate threshold. |
+| Docker build / Compose config / runtime smoke | Прошло на Linux ARM64, including real native SQLite/CLI/health/restart. |
+| `git diff --check`, staged diff, `security:staged` / `security:history` | Прошло: 27 changed index blobs; история и metadata также прошли guard/Gitleaks. |
+| Combined preflight / финальный whole-branch review | Ожидаются после интеграции в обычном checkout. |
+
+Linked worktree guard отклоняет корневой `.git` pointer по PERSONAL_HOME_PATH; policy не изменялась. Здесь preflight не запускался: он должен быть выполнен в обычном checkout после итоговой интеграции. Предыдущий обычный-checkout preflight для API прошёл, но не подменяет итоговую проверку.
+
+Не выполнены: remote CI execution, AMD64 container smoke, HTTPS reverse proxy, restore/import/export, previous-schema upgrade, scheduling/Gantt/dependencies/CPM, S6 acceptance. Browser snapshots только синтетические и вне публичных assets; traces/video и CI uploads отсутствуют. Документация не содержит raw reports, runtime данных или личных путей.
 
 ## REPO-INIT — 2026-10-06
 

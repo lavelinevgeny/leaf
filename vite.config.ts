@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+const backend = `http://127.0.0.1:${process.env.LEAF_PORT ?? '3000'}`;
 export default defineConfig({
   plugins: [react()],
   build: { outDir: 'dist/client', sourcemap: false },
@@ -8,9 +9,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': 'http://127.0.0.1:3000',
-      '/healthz': 'http://127.0.0.1:3000',
-      '/readyz': 'http://127.0.0.1:3000',
+      '/api': backend,
+      '/healthz': backend,
+      '/readyz': backend,
     },
   },
 });

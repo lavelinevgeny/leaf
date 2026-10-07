@@ -1,0 +1,34 @@
+name: Application checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: app-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  app:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Pinned Node runtime
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Exact lockfile install with reviewed lifecycle scripts
+        run: npm ci --strict-allow-scripts --no-audit --no-fund
+      - name: Typecheck, lint, unit and integration tests, production build
+        run: npm run verify
+      - name: Formatting and package boundary
+        run: npm run format:check && npm run check:package
+      - name: Install matching Chromium
+        run: npm exec playwright -- install --with-deps chromium
+      - name: Real browser and SQLite scenarios
+        run: npm run test:e2e
+# No artifacts, uploads, publication, deployment or external credentials.

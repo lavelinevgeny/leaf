@@ -27,7 +27,7 @@ Dates, leaf-only FS dependencies, calendars, locked dates, undo, cycles and inco
 - Repo/deployment: `docs/BOOTSTRAP.md`, `docs/DEPLOYMENT.md`, `docs/PRIVACY.md`.
 - Handoff: `docs/AGENT_WORKFLOW.md`, `docs/STATUS.md`.
 
-## Commands available in the starter kit
+## Repository checks
 
 - `npm run check:kit`: validate documentation links, reference integrity and numerical fixtures.
 - `npm run test:kit`: guard and hook integration tests with real Gitleaks; required scanner absence fails.
@@ -38,7 +38,7 @@ Dates, leaf-only FS dependencies, calendars, locked dates, undo, cycles and inco
 - `npm run agent:sandbox`: disposable Codex OS isolation probe; fail closed if unsupported.
 - `npm run hooks:install`: opt-in local installation; refuses to overwrite another hook setup.
 
-No `dev`, `build`, application unit tests or Docker deployment exist yet. Implement them in S0/S1; never report them as passing before they exist. Do not use `--if-present`, empty tests or skipped suites to make application CI green.
+S0/S1 provides `dev`, `build`, `start`, `verify`, `format:check`, `test:unit`, `test:integration`, `test:e2e`, `check:package`, `admin:setup`, `db:migrate` and `db:backup`. Read README/BOOTSTRAP for runtime and browser setup. Docker/Compose packages this foundation; scheduling, Gantt, dependencies and release acceptance remain unfinished. Do not use `--if-present`, empty tests or skipped suites to make application CI green.
 
 ## Public-repository safety — mandatory
 

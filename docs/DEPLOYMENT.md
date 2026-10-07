@@ -1,54 +1,42 @@
-# Self-hosted развёртывание — требования агенту
+# Локальная упаковка S0/S1
 
-**Это целевое руководство. До реализации S0–S5 приложение и Dockerfile отсутствуют.** Агент заменяет проектные примеры проверенными командами, а не выдаёт их за работающую установку.
+Один production-контейнер запускает один Fastify-процесс: API и собранную React SPA. SQLite хранится на постоянном томе `/data`. Node 24.21.0 bookworm-slim закреплён по official digest в Dockerfile; пакеты устанавливаются при сборке по lockfile, а не во время запуска.
 
-## Production-форма
+Это проверенная упаковка промежуточного S0/S1, не завершение S5 или релизной приёмки. Контейнер собран и запущен на Linux ARM64. AMD64, HTTPS reverse proxy, обновление предыдущей схемы, restore и import/export пока не проверены.
 
-Один контейнер: Node-процесс, API и собранная SPA. SQLite на постоянном томе `/data`. Устанавливать пакеты/браузеры во время production-запуска нельзя. Build — multi-stage, non-root runtime, минимально необходимые runtime dependencies. В image не включать docs/reference screenshots, `.git`, env, backups, агентские настройки и tooling credentials.
+## Сборка и вход
 
-Рекомендуется поддерживаемый Debian slim Node image с проверенным patch и digest; точную версию выбирает S0. Нативный sqlite-driver проверяется на целевой архитектуре. Не обещать arm64 до реальной сборки/проверки. Нельзя копировать весь checkout командой COPY без работающего allowlist `.dockerignore`.
-
-## Целевой пример Compose после реализации
-
-```yaml
-services:
-  leaf:
-    build: .
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      NODE_ENV: production
-      LEAF_HOST: 0.0.0.0
-      LEAF_PORT: "3000"
-      LEAF_DATA_DIR: /data
-      LEAF_PUBLIC_ORIGIN: http://127.0.0.1:3000
-    volumes:
-      - leaf-data:/data
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-volumes:
-  leaf-data:
+```sh
+docker compose build
+docker compose up -d
+docker compose exec leaf npm run admin:setup
 ```
 
-Пароля в примере нет. До установки локального аккаунта сервер должен быть закрыт для работы с данными. Admin CLI нужно вызвать локально/через доверенный интерактивный shell; агент реализует команду и проверяет отсутствие пароля в аргументах и логах. Никаких admin/admin или seeded owner passwords.
+CLI требует интерактивный TTY, скрывает ввод и подтверждение пароля, не принимает пароль из args/env. До setup доступ к проектам закрыт. Затем откройте http://127.0.0.1:3000. Повторный setup не перезаписывает существующий аккаунт.
 
-Порт по умолчанию привязан к loopback хоста. Для внешнего доступа — доверенный reverse proxy с HTTPS и корректным LEAF_PUBLIC_ORIGIN, безопасными cookies и ограниченным trust proxy. VPN/домашняя сеть не заменяют аутентификацию. Не открывать сервер в Интернет автоматически.
+Compose связывает порт только с `127.0.0.1`, создаёт named volume, запускает процесс от `node` (uid 1000), с read-only root filesystem, отдельным временным каталогом, без capabilities и с no-new-privileges. Свежий том наследует владельца и права `/data` из образа; startup не выполняет chmod произвольных host paths. Не заменяйте named volume реальными production mounts в агентной среде. Docker socket приложению не нужен.
 
-## Постоянство и backups
+Healthcheck обращается к `/readyz`; `/healthz` проверяет живой процесс. Эти endpoints не раскрывают проекты. SIGTERM корректно закрывает SQLite. `docker compose stop` сохраняет named volume; повторный `up -d` использует ту же базу.
 
-Запись возможна только в `/data` и необходимый временный каталог; root filesystem по возможности read-only после проверки native dependencies и shutdown. Обеспечить владельца/права volume без startup chmod на произвольные host paths. Не монтировать Docker socket.
+## Границы образа
 
-SQLite backup — согласованным API или после корректной остановки, не копированием одного живого `.db` при WAL (S07). Команда backup выдаёт файл вне репозитория с ограниченными правами, не печатает данные. Команда restore проверяет schema version, целостность и конфликт с запущенным процессом; предварительно делает backup существующего состояния. Перед применением destructive restore требуется явное согласие.
+`.dockerignore` запрещает всё, кроме точных build inputs и TypeScript/CSS source. `npm run check:package` проверяет эту политику и отсутствие source symlinks. Runtime содержит только production dependencies, dist, migrations и package/lockfile; docs, макеты, tests, Git, env, agent settings и runtime storage не копируются.
 
-Проектный JSON export не заменяет полный operational backup с аккаунтом/настройками. В документации различать два формата и их чувствительность.
+Builder использует `npm ci --strict-allow-scripts` с Python/make для reviewed implicit GYP. Production dependencies устанавливаются через `npm ci --omit=dev --ignore-scripts`: better-sqlite3 содержит bundled Node-API prebuild, загрузка которого и реальный SQLite query обязательны в самом build stage. Это не заявление о компиляции driver. Контейнерный smoke дополнительно проверяет native storage, CLI, статическую SPA и рестарт.
 
-## Миграции и проверка релиза
+## Миграции и согласованный backup
 
-Перед обновлением — backup. Миграции не теряют данные и имеют smoke test from previous schema. Если rollback схемы не поддержан, честно описать restore из backup вместо фиктивного down migration.
+```sh
+docker compose exec leaf npm run db:migrate
+docker compose exec leaf npm run db:backup -- /data/backups/snapshot-001.sqlite
+```
 
-Проверить чистую установку, безопасный setup, login/logout, task persistence, container restart, consistency after SIGTERM, backup/restore, import/export, отсутствие приватных файлов в image build context/layers и внешнего трафика страницы. `/healthz` — liveness, `/readyz` — готовность хранилища без раскрытия сведений о проектах.
+Начальная миграция также применяется при запуске. Backup использует SQLite native backup API, работает с открытой WAL-базой и выдаёт snapshot с правами 0600; новый каталог создаётся с 0700. Destination должен быть абсолютным, вне application tree, новым regular file; существующие файлы и symlinks отклоняются. Не копируйте один живой `.sqlite` без WAL как backup.
 
-По умолчанию нет автодеплоя, автоотправки образов в registry или удалённых команд. Ссылку/домен/хост и публикацию выбирает владелец. Обновления и dependency/security review описать после реальной установки, не привязывать к аккаунтам из окружения агента.
+Backup содержит задачи, аккаунт и сессии, остаётся приватным и не заменяется будущим проектным JSON export. Команда restore, проверки обновления старой схемы и export/import остаются S5. Автоматического destructive restore или фиктивных down migrations нет. Перед будущим обновлением нужно сохранить backup; процедуру восстановления ещё предстоит реализовать и проверить.
+
+## Внешний доступ
+
+Для внешнего доступа потребуется доверенный HTTPS reverse proxy и точный `LEAF_PUBLIC_ORIGIN`. Мутации проверяют origin; cookies HttpOnly/SameSite=Strict, Secure при HTTPS. Trust proxy сейчас выключен. Reverse proxy и его ограничения должны быть отдельно проверены до внешнего размещения. VPN/домашняя сеть не заменяют вход.
+
+Домен, хост, публикацию и отправку образа выбирает владелец. Автодеплоя, registry push, telemetry, CDN или внешних API в runtime нет. Приложение не требует credentials Codex/Claude.

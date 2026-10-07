@@ -313,6 +313,7 @@ describe('client HTTP interactions', () => {
       expect.stringContaining('сохранить'),
     );
     expect(commands[0]?.command).toMatchObject({ preserveWork: true });
+    await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
     await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
     expect(
       within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
@@ -789,6 +790,29 @@ describe('client HTTP interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     await screen.findByText('Сохранено');
     expect(commands[0]?.expectedRevision).toBe(8);
+  });
+  it('closes the clean panel for child and sibling actions and exposes the focused quick editor', async () => {
+    tree.tasks = [task(1, 'Задача A')];
+    await open();
+    const user = userEvent.setup();
+    for (const name of ['Добавить подзадачу', 'Добавить соседнюю задачу']) {
+      await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+      await user.click(screen.getByRole('button', { name }));
+      expect(
+        screen.queryByRole('complementary', { name: 'Задача' }),
+      ).not.toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByLabelText('Новая задача')).toHaveFocus(),
+      );
+      expect(
+        screen.getByText(
+          name === 'Добавить подзадачу'
+            ? 'Родитель: Задача A'
+            : 'Родитель: Корень проекта',
+        ),
+      ).toBeInTheDocument();
+    }
+    expect(commands).toHaveLength(0);
   });
   it('synchronizes the parent picker after a same-task server move and undo', async () => {
     tree.tasks = [task(1, 'Задача A'), task(2, 'Задача B', null, 1)];
