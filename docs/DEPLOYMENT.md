@@ -2,7 +2,7 @@
 
 Один production-контейнер запускает один Fastify-процесс: API и собранную React SPA. SQLite хранится на постоянном томе `/data`. Node 24.21.0 bookworm-slim закреплён по official digest в Dockerfile; пакеты устанавливаются при сборке по lockfile, а не во время запуска.
 
-Упаковка проверяется только на новых синтетических локальных ресурсах; это не production deployment и не завершение S5/S6. C16 принята, реализация нового CPM остаётся следующей задачей. HTTPS reverse proxy, restore/import/export и релизная приёмка ещё не завершены.
+Упаковка проверяется только на новых синтетических локальных ресурсах; это не production deployment и не завершение S5/S6. Tasks 5–7 реализовали optional source/storage/API/UI и серверный CPM по C16; технический annex и реализация прошли независимые reviews, текущие проверки и ограничения — в [STATUS](STATUS.md). Ordinary root preflight ещё ожидается. HTTPS reverse proxy, restore/import/export и релизная приёмка ещё не завершены; S4–S6 остаются незавершёнными.
 
 ## Сборка и вход
 
