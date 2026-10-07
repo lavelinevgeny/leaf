@@ -8,8 +8,8 @@
 
 | Этап | Статус |
 |---|---|
-| S0: репозиторий и исполняемый фундамент | Реализован; финальный combined preflight после интеграции ожидается |
-| S1: дерево, панель, SQLite CRUD | Реализован и проверяется реальными browser/restart scenarios |
+| S0: репозиторий и исполняемый фундамент | Реализован; application checks и combined preflight прошли |
+| S1: дерево, панель, SQLite CRUD | Реализован; реальные browser/restart scenarios прошли |
 | S2: scheduling module и транзакции | Следующий этап, не начат |
 | S3: Гант и схема зависимостей | Не начат |
 | S4: повседневный UX и доска | Не начат |
@@ -18,7 +18,7 @@
 
 ## Следующая задача
 
-Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Финальный whole-branch review и combined preflight выполняются после интеграции из обычного checkout. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
+Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Combined preflight прошёл после интеграции в обычном checkout на `0e97e22`; финальный whole-branch review ожидается. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
 
 ## S0–S1 — 2026-10-07
 
@@ -39,9 +39,10 @@
 | `npm audit` и `npm audit --omit=dev` | Прошло: 0 vulnerabilities при moderate threshold. |
 | Docker build / Compose config / runtime smoke | Прошло на Linux ARM64, including real native SQLite/CLI/health/restart. |
 | `git diff --check`, staged diff, `security:staged` / `security:history` | Прошло: 27 changed index blobs; история и metadata также прошли guard/Gitleaks. |
-| Combined preflight / финальный whole-branch review | Ожидаются после интеграции в обычном checkout. |
+| `npm run preflight` после интеграции | Прошло в обычном checkout на `0e97e22`, Node 24.21.0 / npm 11.19.0: doctor, kit, workspace, index, staged, history/metadata и Gitleaks; 52/52 kit tests, skipped 0; 119 index entries, 178 historical file versions, 10 metadata objects. |
+| Финальный whole-branch review | Ожидается после сверки этого handoff. |
 
-Linked worktree guard отклоняет корневой `.git` pointer по PERSONAL_HOME_PATH; policy не изменялась. Здесь preflight не запускался: он должен быть выполнен в обычном checkout после итоговой интеграции. Предыдущий обычный-checkout preflight для API прошёл, но не подменяет итоговую проверку.
+Историческое ограничение Task 3 worker: linked-worktree guard отклонял корневой `.git` pointer по PERSONAL_HOME_PATH; policy не менялась, preflight в worktree не запускался. Итоговый preflight выполнен основным агентом в обычном checkout на `0e97e22` и прошёл полностью; это ограничение не блокирует текущую интеграцию.
 
 Не выполнены: remote CI execution, AMD64 container smoke, HTTPS reverse proxy, restore/import/export, previous-schema upgrade, scheduling/Gantt/dependencies/CPM, S6 acceptance. Browser snapshots только синтетические и вне публичных assets; traces/video и CI uploads отсутствуют. Документация не содержит raw reports, runtime данных или личных путей.
 
