@@ -2,14 +2,14 @@
 
 ## Текущее состояние
 
-Реализован и интегрирован промежуточный S0/S1: один TypeScript-пакет, React/Vite, Fastify, SQLite, локальный вход, проекты, произвольная глубина дерева, компактная правая панель, статусы, описание, optional input dates, перенос/удаление веток и серверная отмена. Данные сохраняются после настоящего перезапуска процесса. Даты пока являются сохранённым вводом; расчёта расписания нет. Три утверждённых референса сохранены; исключённый коллаж не используется.
+Реализован, интегрирован и проверен промежуточный S0/S1: один TypeScript-пакет, React/Vite, Fastify, SQLite, локальный вход, проекты, произвольная глубина дерева, компактная правая панель, статусы, описание, optional input dates, перенос/удаление веток и серверная отмена. Данные сохраняются после настоящего перезапуска процесса. Финальные application checks прошли: 84/84 tests и 8/8 browser E2E; замечания whole-branch review закрыты scoped re-review, новый root preflight прошёл на `020f3d4`. Даты пока являются сохранённым вводом; расчёта расписания нет. Три утверждённых референса сохранены; исключённый коллаж не используется.
 
 Это ещё не готовая V1: Гант, зависимости и пересчитываемые критические пути остаются обязательными этапами S2/S3. Production-контейнер упаковывает текущий фундамент. Kit/privacy проверки отделены от application tests. Git identity review и scanner policy сохранены. Внешняя публикация и deployment не выполнялись.
 
 | Этап | Статус |
 |---|---|
-| S0: репозиторий и исполняемый фундамент | Реализован; application checks и combined preflight прошли |
-| S1: дерево, панель, SQLite CRUD | Реализован; реальные browser/restart scenarios прошли |
+| S0: репозиторий и исполняемый фундамент | Реализован и проверен; application checks и новый root preflight на `020f3d4` прошли |
+| S1: дерево, панель, SQLite CRUD | Реализован и проверен; реальные browser/restart scenarios и scoped final re-review прошли |
 | S2: scheduling module и транзакции | Следующий этап, не начат |
 | S3: Гант и схема зависимостей | Не начат |
 | S4: повседневный UX и доска | Не начат |
@@ -18,7 +18,7 @@
 
 ## Следующая задача
 
-Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Combined preflight прошёл после интеграции в обычном checkout на `0e97e22`. Whole-branch review выявил устаревший контекст быстрого ввода и два замечания к test harness; исправления описаны ниже. Перед итоговым отчётом ожидаются один scoped re-review исправлений и новый root preflight. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
+Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Whole-branch review выявил устаревший контекст быстрого ввода и два замечания к test harness; исправления закрыты scoped re-review, новый preflight прошёл в обычном checkout на `020f3d4`. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
 
 ## S0–S1 — 2026-10-07
 
@@ -40,9 +40,9 @@
 | Docker build / Compose config / runtime smoke | Прошло на Linux ARM64, including real native SQLite/CLI/health/restart. |
 | `git diff --check`, staged diff, `security:staged` / `security:history` | Прошло: 27 changed index blobs; история и metadata также прошли guard/Gitleaks. |
 | `npm run preflight` после интеграции | Прошло в обычном checkout на `0e97e22`, Node 24.21.0 / npm 11.19.0: doctor, kit, workspace, index, staged, history/metadata и Gitleaks; 52/52 kit tests, skipped 0; 119 index entries, 178 historical file versions, 10 metadata objects. |
-| Финальный whole-branch review | Выполнен; найденный дефект быстрого ввода и два замечания к harness исправлены отдельной волной. Scoped re-review и новый root preflight ожидаются. |
+| Финальный whole-branch review | Выполнен; найденный дефект быстрого ввода и два замечания к harness исправлены отдельной волной и закрыты scoped re-review без новых Critical/Important или out-of-scope findings. |
 
-Историческое ограничение Task 3 worker: linked-worktree guard отклонял корневой `.git` pointer по PERSONAL_HOME_PATH; policy не менялась, preflight в worktree не запускался. Итоговый preflight выполнен основным агентом в обычном checkout на `0e97e22` и прошёл полностью; это ограничение не блокирует текущую интеграцию.
+Историческое ограничение Task 3 worker: linked-worktree guard отклонял корневой `.git` pointer по PERSONAL_HOME_PATH; policy не менялась, preflight в worktree не запускался. Preflight исходной интеграции выполнен основным агентом в обычном checkout на `0e97e22` и прошёл полностью; после review fixes новый полный preflight также прошёл на `020f3d4`.
 
 Не выполнены: remote CI execution, AMD64 container smoke, HTTPS reverse proxy, restore/import/export, previous-schema upgrade, scheduling/Gantt/dependencies/CPM, S6 acceptance. Browser snapshots только синтетические и вне публичных assets; traces/video и CI uploads отсутствуют. Документация не содержит raw reports, runtime данных или личных путей.
 
@@ -60,9 +60,10 @@ Readiness fetch реального E2E-процесса ограничен Abort
 | `npm run format:check`, `git diff --check` | Прошло. |
 | `npm run test:e2e` | Прошло: 8/8, 1440×900 и 1280×800, retries/skipped 0; delete→create с подтверждением и сохранением после browser reload. |
 | Внешние synthetic probes | Прошло: ранний account setup failure и реальный nonzero child/stop failure оставляют собственный runtime очищенным; TCP listener без HTTP headers вызывает timeout, затем readiness реального процесса проходит. |
-| Scoped re-review / новый root preflight | Ожидаются; full preflight в linked worktree не запускался и policy не ослаблялась. |
+| Scoped re-review исправлений | Прошло: I1/M1/M2 закрыты; новых Critical/Important и out-of-scope findings нет. |
+| Новый root `npm run preflight` | Прошло в обычном checkout на `020f3d465bfcd57cc7db01361fec00c48c914eb4`, Node 24.21.0 / npm 11.19.0: doctor, kit (29 Markdown / 51 links), 52/52 real-scanner kit tests, skipped 0, workspace/index (119 entries), history (187 file versions / 12 metadata objects), guard/Gitleaks. Full preflight в linked worktree не запускался и policy не ослаблялась. |
 
-Предыдущие audit, Docker/native backup и kit-suite результаты выше не повторялись для этой ограниченной волны. Remote CI, другие архитектуры контейнера, HTTPS proxy, restore/import/export/upgrade и S2/S3 по-прежнему не проверены заново. Следующая продуктовая задача — S2 после контрольного review и root preflight.
+Предыдущие audit и Docker/native backup результаты выше не повторялись для этой ограниченной волны. Kit suite повторён основным агентом в новом root preflight после интеграции исправлений. Remote CI, другие архитектуры контейнера, HTTPS proxy, restore/import/export/upgrade и S2/S3 по-прежнему не проверены заново. Следующая продуктовая задача — S2; контрольный scoped review и root preflight завершены.
 
 ## REPO-INIT — 2026-10-06
 
