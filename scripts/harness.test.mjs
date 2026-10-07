@@ -485,3 +485,16 @@ test('public email reviews refuse unreachable source commits', (t) => {
   git(dir, 'add', '--', 'config/public-git-metadata.json');
   assert.throws(() => runGuard(dir, '--history'), /reachable/);
 });
+
+test('doctor accepts major or exact Node pins and rejects a different patch or malformed pin', (t) => {
+  const dir = repo(t);
+  write(dir, '.nvmrc', process.versions.node);
+  assert.ok(inspectEnvironment(dir).some((check) => check.id === 'node-version' && check.ok));
+  const [major, minor, patch] = process.versions.node.split('.').map(Number);
+  write(dir, '.nvmrc', `${major}.${minor}.${patch + 1}`);
+  assert.ok(inspectEnvironment(dir).some((check) => check.id === 'node-version' && !check.ok));
+  write(dir, '.nvmrc', String(major));
+  assert.ok(inspectEnvironment(dir).some((check) => check.id === 'node-version' && check.ok));
+  write(dir, '.nvmrc', 'synthetic-invalid-version');
+  assert.ok(inspectEnvironment(dir).some((check) => check.id === 'node-version' && !check.ok));
+});

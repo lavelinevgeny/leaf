@@ -12,8 +12,11 @@ export function inspectEnvironment(root) {
   const command = (cmd, args) => spawnSync(cmd, args, { cwd: root, encoding: 'utf8' });
   const target = command('git', ['rev-parse', '--show-toplevel']);
   check('git-root', target.status === 0 && path.resolve(target.stdout.trim()) === path.resolve(root));
-  const major = Number(readWorkspaceFile(root, '.nvmrc').toString('utf8').trim());
-  check('node-major', Number(process.versions.node.split('.')[0]) === major);
+  const nodePin = readWorkspaceFile(root, '.nvmrc').toString('utf8').trim();
+  const validPin = /^\d+(?:\.\d+\.\d+)?$/.test(nodePin);
+  const major = Number(nodePin.split('.')[0]);
+  check('node-major', validPin && Number(process.versions.node.split('.')[0]) === major);
+  check('node-version', validPin && (nodePin.includes('.') ? process.versions.node === nodePin : Number(process.versions.node.split('.')[0]) === major));
   check('npm', command('npm', ['--version']).status === 0);
   const leaks = command('gitleaks', ['version']);
   const version = /\b(\d+)\.(\d+)\.(\d+)\b/.exec(leaks.stdout ?? '');

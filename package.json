@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "license": "UNLICENSED",
-  "description": "leaf repository starter kit; application implementation pending",
+  "description": "Small self-hosted planner: transactional task tree foundation",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=24.21.0 <25"
   },
   "scripts": {
     "check:kit": "node scripts/check-kit.mjs",
@@ -18,6 +18,52 @@
     "security:workspace": "node scripts/security-check.mjs --workspace",
     "security:staged": "node scripts/security-check.mjs --staged && node scripts/run-gitleaks.mjs --staged",
     "security:history": "node scripts/security-check.mjs --tracked && node scripts/security-check.mjs --history && node scripts/run-gitleaks.mjs --history",
-    "hooks:install": "node scripts/install-hooks.mjs"
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "start": "node dist/server/server/main.js",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "lint": "eslint src tests scripts/dev.mjs vite.config.ts vitest.config.ts",
+    "format:check": "prettier --check src tests migrations index.html tsconfig*.json vite.config.ts vitest.config.ts eslint.config.js scripts/dev.mjs",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/domain.test.ts tests/client",
+    "test:integration": "vitest run tests/repository.test.ts tests/api.test.ts tests/runtime.test.ts",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "admin:setup": "node dist/server/server/admin.js",
+    "db:migrate": "node dist/server/server/migrate.js"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "fastify": "5.12.5",
+    "better-sqlite3": "13.0.3",
+    "zod": "4.6.5",
+    "@fastify/static": "10.1.5",
+    "@fastify/cookie": "11.1.2"
+  },
+  "devDependencies": {
+    "vite": "8.3.3",
+    "@vitejs/plugin-react": "6.1.2",
+    "vitest": "5.0.3",
+    "typescript": "6.0.3",
+    "eslint": "10.12.0",
+    "typescript-eslint": "8.71.1",
+    "@types/node": "24.19.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/better-sqlite3": "9.6.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@testing-library/jest-dom": "7.0.1",
+    "jsdom": "30.1.2",
+    "@playwright/test": "1.63.0"
+  },
+  "packageManager": "npm@11.19.0",
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents": false,
+    "better-sqlite3@13.0.3": true
   }
 }
