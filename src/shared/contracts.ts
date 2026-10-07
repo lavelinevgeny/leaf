@@ -158,6 +158,21 @@ export const taskChangesSchema = z
   })
   .refine((changes) => Object.keys(changes).length > 0, 'Empty changes');
 export const commandSchema = z.discriminatedUnion('type', [
+  z
+    .strictObject({
+      type: z.literal('task.edit'),
+      taskId: uuidSchema,
+      changes: z.strictObject({
+        title: taskTitleSchema.optional(),
+        description: z.string().max(10000).optional(),
+        status: z.enum(['todo', 'doing', 'done']).optional(),
+      }),
+      plan: taskPlanSchema.optional(),
+    })
+    .refine(
+      (edit) => edit.plan !== undefined || Object.keys(edit.changes).length > 0,
+      'Empty edit',
+    ),
   z.strictObject({
     type: z.literal('project.schedule'),
     changes: z

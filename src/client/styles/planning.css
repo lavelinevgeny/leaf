@@ -1,0 +1,449 @@
+.app-shell {
+  position: relative;
+}
+.workspace-content.planning-workspace {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  padding-bottom: 0;
+}
+.planning-workspace > .error-message {
+  flex-shrink: 0;
+  max-height: 160px;
+  overflow: auto;
+}
+.planning-workspace .tree-toolbar {
+  flex-shrink: 0;
+  padding-block: 10px;
+  gap: 16px;
+}
+.gantt-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 0 0;
+}
+.gantt-toggle input {
+  width: auto;
+  accent-color: var(--leaf-accent);
+}
+.task-timeline {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.plan-scroll {
+  flex: 1;
+  min-height: 80px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.timeline-columns {
+  display: flex;
+  min-height: 100%;
+  align-items: flex-start;
+}
+.timeline-tree {
+  width: var(--tree-width);
+  max-width: calc(100% - 160px);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.timeline-heading {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 12px;
+  color: #59675f;
+  border-bottom: 1px solid var(--leaf-border);
+  gap: 12px;
+}
+.timeline-tree .task-row {
+  height: 38px;
+  min-height: 38px;
+  padding-block: 0;
+}
+.timeline-tree .task-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 100px;
+  max-width: 230px;
+}
+.timeline-tree .task-date {
+  padding-left: 4px;
+  font-size: 11px;
+}
+.timeline-tree .task-date {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.timeline-divider {
+  width: 6px;
+  align-self: stretch;
+  flex-shrink: 0;
+  cursor: col-resize;
+  border-inline: 1px solid var(--leaf-border);
+  background: #f7faf8;
+  touch-action: none;
+}
+.timeline-divider:hover {
+  background: #c6e2d1;
+}
+.timeline-time {
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.gantt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-block: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.gantt-toolbar label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font-size: 12px;
+}
+.gantt-toolbar select {
+  width: auto;
+  margin: 0;
+  padding: 5px 8px;
+}
+.gantt-toolbar button {
+  padding: 5px 10px;
+}
+.gantt-toolbar > span {
+  font-size: 12px;
+  color: #59675f;
+}
+.gantt-svg {
+  display: block;
+  user-select: none;
+}
+.gantt-grid {
+  stroke: #e9eeeb;
+  stroke-width: 1;
+}
+.gantt-row-line {
+  stroke: #f0f4f2;
+  stroke-width: 1;
+}
+.gantt-weekend {
+  fill: #f6f8f7;
+}
+.gantt-month {
+  font-size: 12px;
+  fill: #55665c;
+}
+.gantt-day {
+  font-size: 10px;
+  fill: #69766f;
+}
+.gantt-today {
+  stroke: var(--leaf-today);
+  fill: var(--leaf-today);
+  stroke-width: 1;
+}
+.gantt-edge {
+  fill: none;
+  stroke: #729685;
+  stroke-width: 1.4;
+  pointer-events: none;
+}
+.gantt-edge.critical {
+  stroke: var(--leaf-critical);
+  stroke-width: 1.8;
+}
+.gantt-work {
+  fill: #b9dccc;
+  stroke: #78b594;
+  stroke-width: 1;
+  cursor: grab;
+  touch-action: none;
+}
+.gantt-work.summary {
+  fill: #668e78;
+  stroke: #668e78;
+  cursor: pointer;
+}
+.gantt-work.critical {
+  fill: #f2a6b2;
+  stroke: var(--leaf-critical);
+}
+.gantt-work.completed {
+  fill: #bed6c6;
+  stroke: #397b54;
+  cursor: pointer;
+}
+.gantt-work.partial {
+  stroke-dasharray: 4 2;
+}
+.gantt-work:hover {
+  filter: brightness(0.95);
+}
+.gantt-work:focus-visible {
+  outline: 2px solid var(--leaf-focus);
+  outline-offset: 3px;
+}
+.gantt-resize {
+  fill: #ffffff99;
+  stroke: none;
+  cursor: ew-resize;
+}
+.gantt-note {
+  stroke: #7894ae;
+  stroke-width: 3;
+  cursor: pointer;
+}
+.gantt-preview {
+  fill: #17472d;
+  font-size: 12px;
+  font-weight: 600;
+}
+.gantt-hint {
+  flex-shrink: 0;
+  margin: 4px 0;
+  font-size: 11px;
+  color: #59675f;
+}
+.critical-indicator,
+.critical-label {
+  color: var(--leaf-critical);
+  font-size: 12px;
+}
+.planning-workspace .quick-add {
+  flex-shrink: 0;
+  margin-block: 8px 12px;
+}
+.project-plan {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 0 12px;
+}
+.project-plan summary {
+  cursor: pointer;
+  color: #59675f;
+  padding-block: 4px;
+}
+.project-plan form {
+  margin-top: 8px;
+}
+.project-plan fieldset {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.project-plan label {
+  margin-bottom: 8px;
+  max-width: 220px;
+}
+.project-plan button {
+  margin-bottom: 8px;
+}
+.schedule-status {
+  font-size: 12px;
+  color: #55665c;
+  padding-block: 6px;
+}
+.schedule-status > span + span {
+  margin-left: 12px;
+}
+.schedule-status p {
+  margin: 4px 0;
+}
+.schedule-warning {
+  color: #886013;
+}
+.schedule-error,
+.field-error {
+  color: #9e3447;
+}
+.schedule-diagnostics {
+  margin: 4px 0;
+  padding-left: 18px;
+  max-height: 90px;
+  overflow: auto;
+}
+.calculated-dates {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.calculated-dates output {
+  color: #244b35;
+  font-weight: 500;
+}
+.task-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: min(380px, 100vw);
+  box-shadow: -8px 0 24px #202a2612;
+}
+.task-panel .task-row {
+  min-width: 100%;
+  width: max-content;
+}
+.task-panel .task-tree {
+  overflow-x: auto;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.panel-back {
+  margin-left: -8px;
+}
+.panel-header h2 {
+  flex: 1;
+}
+.dependency-section-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  margin: 14px 0 0;
+  color: #59675f;
+}
+.dependency-section-label button {
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.dependency-graph {
+  position: relative;
+  background: #f8faf9;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+.dependency-graph > svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.dependency-arrow {
+  fill: none;
+  stroke: #819588;
+  stroke-width: 1.4;
+}
+.dependency-arrow.critical {
+  stroke: var(--leaf-critical);
+  stroke-width: 1.8;
+}
+.dependency-card {
+  position: absolute;
+  left: 38px;
+  right: 16px;
+  height: 64px;
+  border: 1px solid #e3ebe6;
+  border-radius: 6px;
+  background: white;
+  display: flex;
+  align-items: center;
+}
+.dependency-card.current {
+  border-color: #6194d5;
+  background: #eaf2ff;
+}
+.dependency-open {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  line-height: 1.3;
+}
+.dependency-open:disabled {
+  opacity: 1;
+}
+.dependency-open .status-dot {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+.dependency-open > span:last-child {
+  overflow: hidden;
+  min-width: 0;
+}
+.dependency-open strong {
+  display: block;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  font-weight: 500;
+}
+.dependency-open small {
+  display: block;
+  font-size: 10px;
+  color: #5b6b62;
+  margin-top: 3px;
+}
+.dependency-open small.critical-label {
+  color: var(--leaf-critical);
+}
+.dependency-remove {
+  font-size: 16px;
+  padding: 3px 6px;
+  margin-right: 4px;
+}
+.graph-empty,
+.graph-section-title {
+  position: absolute;
+  left: 16px;
+  right: 12px;
+  font-size: 11px;
+  color: #59675f;
+  margin: 0;
+}
+.graph-empty {
+  padding: 6px 0;
+}
+.dependency-create {
+  border-top: 1px solid var(--leaf-border);
+  padding-top: 18px;
+  margin-top: 16px;
+}
+@media (max-width: 1000px) {
+  .task-panel {
+    position: fixed;
+  }
+}
+@media (max-width: 600px) {
+  .planning-workspace .gantt-hint {
+    display: none;
+  }
+  .timeline-tree {
+    width: 300px;
+    max-width: calc(100% - 80px);
+  }
+  .gantt-toolbar {
+    justify-content: flex-start;
+  }
+}

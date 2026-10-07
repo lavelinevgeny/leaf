@@ -1,0 +1,58 @@
+import type { Project, ProjectTree, Task } from '../../src/shared/contracts.js';
+export const project: Project = {
+  id: '11111111-1111-4111-8111-111111111111',
+  title: 'Демо-проект',
+  revision: 0,
+  startDate: '2026-10-05',
+  calendarType: 'weekdays',
+  timezone: 'UTC',
+  createdAt: '2026-10-07T00:00:00.000Z',
+  updatedAt: '2026-10-07T00:00:00.000Z',
+};
+export const task = (n: number, changes: Partial<Task> = {}): Task => ({
+  id: `22222222-2222-4222-8222-${String(n).padStart(12, '0')}`,
+  projectId: project.id,
+  parentId: null,
+  sortOrder: n,
+  title: `Работа ${n}`,
+  description: '',
+  status: 'todo',
+  planMode: 'unscheduled',
+  durationDays: null,
+  inputStart: null,
+  inputFinish: null,
+  notBefore: null,
+  deadline: null,
+  completedStart: null,
+  completedFinish: null,
+  completedStartIndex: null,
+  completedFinishIndex: null,
+  createdAt: project.createdAt,
+  updatedAt: project.updatedAt,
+  ...changes,
+});
+export const emptySchedule: ProjectTree['schedule'] = {
+  feasibility: 'feasible',
+  originDate: project.startDate,
+  projectFinishIndex: null,
+  coverage: { knownLeafCount: 0, totalLeafCount: 0 },
+  tasks: {},
+  summaries: {},
+  criticalTaskIds: [],
+  criticalDependencyIds: [],
+  diagnostics: [],
+};
+export const computed = (
+  startDate = '2026-10-09',
+  finishDate = '2026-10-12',
+) => ({
+  ES: 4,
+  EF: 6,
+  LS: 4,
+  LF: 6,
+  startDate,
+  finishDate,
+  projectFloat: 0,
+  constraintFloat: 0,
+  blockedReason: null,
+});

@@ -65,6 +65,55 @@ async function step(current: ProjectTree, command: Command) {
   return projectTreeSchema.parse(response.json());
 }
 describe('scheduling HTTP contract', () => {
+  it('accepts a combined edit and rejects empty edits, legacy date fields and summary plans', async () => {
+    let current = await step(tree(), {
+      type: 'task.create',
+      title: 'A',
+      parentId: null,
+    });
+    const taskId = current.tasks[0]!.id;
+    const before = current;
+    current = await step(current, {
+      type: 'task.edit',
+      taskId,
+      changes: { title: 'A revised' },
+      plan: { mode: 'auto', durationDays: 3 },
+    });
+    expect(current.project.revision).toBe(before.project.revision + 1);
+    expect(current.tasks[0]).toMatchObject({
+      title: 'A revised',
+      durationDays: 3,
+    });
+    for (const command of [
+      { type: 'task.edit', taskId, changes: {} },
+      { type: 'task.edit', taskId, changes: { inputStart: '2026-10-05' } },
+      {
+        type: 'task.edit',
+        taskId,
+        changes: { title: 'Rejected' },
+        plan: { mode: 'auto', durationDays: 0 },
+      },
+    ])
+      expect((await send(current, command)).statusCode).toBe(400);
+    const undone = await step(current, { type: 'undo' });
+    expect(undone.tasks).toEqual(before.tasks);
+    current = await step(undone, {
+      type: 'task.create',
+      title: 'Child',
+      parentId: taskId,
+    });
+    const response = await send(current, {
+      type: 'task.edit',
+      taskId,
+      changes: { title: 'Rejected summary' },
+      plan: { mode: 'auto', durationDays: 2 },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('SUMMARY_PLANNING');
+    expect(
+      app.repository.getTree(current.project.id, app.auth.session(cookie)!),
+    ).toEqual(current);
+  });
   it('returns a revision-consistent authenticated schedule and validates the full tree schema', async () => {
     let current = tree();
     const url = `/api/projects/${current.project.id}/schedule`;

@@ -67,7 +67,7 @@ Doctor проверяет корень, exact Node patch из `.nvmrc`, npm, Git
 
 Отдельный workflow kit проверяет документацию и Git privacy с Gitleaks. Application workflow выполняет exact npm ci, typecheck, lint, реальные unit/integration tests, build, format/package checks и Chromium E2E. Оба используют read-only permissions и закреплённые SHA actions; uploads, release/deploy отсутствуют. Не применять `pull_request_target` для запуска кода из fork. Не использовать production self-hosted runner для чужих PR.
 
-## Запуск и проверки приложения S0–S2
+## Запуск и проверки приложения S0–S3
 
 Для основных операций есть Makefile: `make help` показывает справку. Первый локальный запуск: `make install`, `make build`, `make admin-setup`, `make dev`. Make использует внешний каталог `~/.local/share/leaf-dev` по умолчанию; заданный `LEAF_DATA_DIR` из окружения или аргументов имеет приоритет. Прямые npm-команды ниже по-прежнему требуют явного `LEAF_DATA_DIR` для запуска приложения и работы с БД.
 

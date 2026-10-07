@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Task } from '../shared/contracts.js';
-import { dateLabel, treeRows } from './tree-view.js';
+import type { ProjectTree, Task } from '../shared/contracts.js';
+import { compactDateLabel, computedDateLabel } from './gantt-view.js';
+import { treeRows } from './tree-view.js';
 import { statusLabels, strings } from './strings.js';
 export type TreeAction =
   'sibling' | 'child' | 'delete' | 'up' | 'down' | 'in' | 'out';
@@ -13,6 +14,8 @@ interface Props {
   onAction: (action: TreeAction, task: Task) => void;
   rootId?: string;
   label?: string;
+  rows?: ReturnType<typeof treeRows>;
+  schedule?: ProjectTree['schedule'];
 }
 export function focusTaskRow(id: string) {
   const row = document.querySelector<HTMLElement>(`[data-task-id="${id}"]`);
@@ -28,8 +31,10 @@ export function TaskTree({
   onAction,
   rootId,
   label = strings.tasks,
+  rows: suppliedRows,
+  schedule,
 }: Props) {
-  const rows = treeRows(tasks, collapsed, rootId);
+  const rows = suppliedRows ?? treeRows(tasks, collapsed, rootId);
   const [focusedId, setFocusedId] = useState<string | null>(selectedId);
   const refs = useRef(new Map<string, HTMLDivElement>());
   const focusId = rows.some((row) => row.task.id === focusedId)
@@ -64,7 +69,7 @@ export function TaskTree({
             else refs.current.delete(task.id);
           }}
           role="treeitem"
-          aria-label={`${task.title}, ${statusLabels[task.status]}${dateLabel(task) ? `, ${dateLabel(task)}` : ''}`}
+          aria-label={`${task.title}, ${statusLabels[task.status]}${computedDateLabel(task, schedule) ? `, ${computedDateLabel(task, schedule)}` : ''}`}
           aria-level={depth + 1}
           aria-expanded={hasChildren ? !collapsed.has(task.id) : undefined}
           aria-selected={selectedId === task.id}
@@ -156,8 +161,36 @@ export function TaskTree({
           <span className={`status-dot ${task.status}`} aria-hidden="true">
             {task.status === 'done' ? '✓' : ''}
           </span>
-          <span className="task-title">{task.title}</span>
-          <span className="task-date">{dateLabel(task) || strings.noDate}</span>
+          <span className="task-title" title={task.title}>
+            {task.title}
+          </span>
+          {schedule?.criticalTaskIds.includes(task.id) && (
+            <span
+              className="critical-indicator"
+              title={strings.critical}
+              aria-label={strings.critical}
+            >
+              ◆
+            </span>
+          )}
+          {collapsed.has(task.id) &&
+            schedule?.summaries[task.id]?.containsCritical && (
+              <span
+                title={strings.containsCritical}
+                aria-label={strings.containsCritical}
+              >
+                ◇
+              </span>
+            )}
+          <span
+            className="task-date"
+            title={computedDateLabel(task, schedule) || strings.noDate}
+          >
+            {compactDateLabel(task, schedule) || strings.noDate}
+            {schedule?.summaries[task.id]?.partial && (
+              <span title={strings.partial}> *</span>
+            )}
+          </span>
         </div>
       ))}
     </div>

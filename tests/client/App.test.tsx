@@ -174,6 +174,55 @@ async function open() {
 }
 
 describe('client HTTP interactions', () => {
+  it('preserves a combined plan draft and retries the exact envelope after a lost save response', async () => {
+    tree = { ...tree, tasks: [task(1, 'Работа A')] };
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /Работа A,/ }));
+    await user.clear(screen.getByLabelText('Название задачи'));
+    await user.type(screen.getByLabelText('Название задачи'), 'Работа revised');
+    await user.selectOptions(
+      screen.getByLabelText('Режим планирования'),
+      'auto',
+    );
+    await user.type(screen.getByLabelText('Длительность, рабочих дней'), '9');
+    let first: CommandEnvelope | undefined;
+    fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
+      first = JSON.parse(String(init.body)) as CommandEnvelope;
+      return Promise.reject(new TypeError('synthetic lost response'));
+    });
+    await user.click(screen.getByRole('button', { name: /^Сохранить$/ }));
+    await screen.findByText(/Нет связи с сервером/);
+    expect(screen.getByLabelText('Название задачи')).toHaveValue(
+      'Работа revised',
+    );
+    expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(9);
+    expect(screen.getByLabelText('Режим планирования')).toBeDisabled();
+    expect(
+      screen.queryByText('Сохранено', { exact: true }),
+    ).not.toBeInTheDocument();
+    fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
+      expect(JSON.parse(String(init.body))).toEqual(first);
+      return json({
+        ...tree,
+        project: { ...project, revision: 1 },
+        tasks: [
+          { ...task(1, 'Работа revised'), planMode: 'auto', durationDays: 9 },
+        ],
+        canUndo: true,
+      });
+    });
+    await user.click(
+      screen.getByRole('button', { name: 'Повторить сохранение' }),
+    );
+    await screen.findByText('Сохранено', { exact: true });
+    expect(first?.command).toMatchObject({
+      type: 'task.edit',
+      changes: { title: 'Работа revised' },
+      plan: { mode: 'auto', durationDays: 9 },
+    });
+    expect(screen.getByLabelText('Режим планирования')).toHaveValue('auto');
+  });
   it('keeps quick intent on rejected stale reload and reconciles it only on a fresh conflict snapshot', async () => {
     tree = {
       ...tree,
@@ -778,7 +827,7 @@ describe('client HTTP interactions', () => {
       expectedRevision: 0,
       title: 'Переименованный проект',
     });
-    expect(screen.queryByText('Гант')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Гант' })).toBeChecked();
     expect(screen.queryByText('Доска')).not.toBeInTheDocument();
   });
   it('keeps the real parent when creating a sibling from the reused subtask tree', async () => {

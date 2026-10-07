@@ -340,6 +340,36 @@ export class Repository {
       }
     };
     switch (command.type) {
+      case 'task.edit': {
+        const task = find(command.taskId);
+        if (
+          task.status === 'done' &&
+          command.changes.status &&
+          command.changes.status !== 'done'
+        )
+          this.apply(
+            snapshot,
+            {
+              type: 'task.update',
+              taskId: task.id,
+              changes: { status: command.changes.status },
+            },
+            timestamp,
+          );
+        if (command.plan)
+          this.apply(
+            snapshot,
+            { type: 'task.plan', taskId: task.id, plan: command.plan },
+            timestamp,
+          );
+        if (Object.keys(command.changes).length)
+          this.apply(
+            snapshot,
+            { type: 'task.update', taskId: task.id, changes: command.changes },
+            timestamp,
+          );
+        break;
+      }
       case 'project.schedule': {
         Object.assign(snapshot.project, command.changes);
         for (const task of tasks)

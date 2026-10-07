@@ -16,6 +16,78 @@ export const strings = {
   task: 'Задача',
   subtasks: 'Подзадачи',
   details: 'Детали',
+  dependencies: 'Зависимости',
+  planning: 'Планирование',
+  projectPlan: 'План проекта',
+  saveProjectPlan: 'Сохранить план проекта',
+  projectStart: 'Начало проекта',
+  calendar: 'Календарь',
+  timezone: 'Часовой пояс проекта',
+  mode: 'Режим планирования',
+  duration: 'Длительность, рабочих дней',
+  notBefore: 'Не раньше',
+  deadline: 'Дедлайн',
+  computedStart: 'Рассчитанное начало',
+  computedFinish: 'Рассчитанное окончание',
+  autoHint:
+    'Начало рассчитывается по связям и «Не раньше». Изменение окончания меняет длительность.',
+  fixedHint:
+    'Обе границы закреплены. В календаре пн–пт они должны быть рабочими днями.',
+  doneHint: 'Верните завершённую задачу в работу перед планированием.',
+  fixedOffer: 'Закрепить интервал',
+  clearPlan: 'Удалить планирование',
+  clearPlanConfirm:
+    'Удалить планирование? Связанные работы могут получить неполный расчёт. Изменение можно отменить.',
+  workingDateError:
+    'Выберите допустимое окончание не раньше начала; обе границы должны быть рабочими днями.',
+  missingOrigin: 'Укажите начало проекта, чтобы увидеть календарный план.',
+  coverage: 'Запланировано',
+  of: 'из',
+  leaves: 'конечных задач',
+  preliminary: 'Предварительный расчёт',
+  infeasible: 'Конфликт плана',
+  critical: 'Критическая работа',
+  criticalEdge: 'Критическая связь',
+  containsCritical: 'Внутри критические задачи',
+  partial: 'Неполные сводные даты',
+  projectFloat: 'Резерв до окончания проекта',
+  constraintFloat: 'Резерв до закреплённой работы',
+  workingDays: 'раб. дн.',
+  notScheduled: 'Не запланировано',
+  blocked: 'Расчёт заблокирован',
+  gantt: 'Гант',
+  scale: 'Масштаб Ганта',
+  today: 'Сегодня',
+  previousPeriod: 'Предыдущий период',
+  nextPeriod: 'Следующий период',
+  treeWidth: 'Ширина дерева',
+  showOnGantt: 'Показать на Ганте',
+  gestureHint:
+    'Перенос — начало; правый край — длительность. ←/→ — рабочий день, Shift+←/→ — окончание. Esc — отмена жеста.',
+  invalidGesture:
+    'Недопустимая дата: проверьте рабочие дни, начало и окончание. План не изменён.',
+  constrainedMove:
+    'Начало осталось на допустимой дате: его ограничивают предшественники или начало проекта.',
+  moveBar: 'Перенести работу',
+  resizeBar: 'Изменить длительность',
+  predecessor: 'Предшественник',
+  successor: 'Последователь',
+  predecessors: 'Предшествующие задачи',
+  successors: 'Последующие задачи',
+  addDependency: 'Добавить зависимость',
+  deleteDependency: 'Удалить связь',
+  searchDependency: 'Поиск работы для связи',
+  dependencyDirection: 'Направление связи',
+  dependencyWork: 'Работа для связи',
+  noPredecessors: 'Предшественников нет.',
+  noSuccessors: 'Последователей нет.',
+  noCandidates: 'Нет допустимых работ для связи.',
+  summaryDependencyHint:
+    'Связи разрешены только между конечными работами. Выберите подзадачу.',
+  showMore: 'Показать ещё',
+  back: 'Назад',
+  currentTask: 'Текущая задача',
+  openTask: 'Открыть',
   empty: 'В проекте пока нет задач.',
   emptySubtasks: 'Подзадач пока нет.',
   newTask: 'Новая задача',
@@ -79,6 +151,55 @@ export const strings = {
   refreshProjects: 'Обновить список проектов',
   chooseProject: 'Выберите проект.',
 } as const;
+export const modeLabels = {
+  unscheduled: 'Не запланировано',
+  auto: 'Автоматический',
+  fixed: 'Закреплённый',
+} as const;
+export const scaleLabels = {
+  days: 'Дни',
+  weeks: 'Недели',
+  months: 'Месяцы',
+} as const;
+export const calendarLabels = {
+  weekdays: 'Пн–пт',
+  'all-days': 'Все дни',
+} as const;
+export const monthLabels = [
+  'янв.',
+  'фев.',
+  'мар.',
+  'апр.',
+  'мая',
+  'июн.',
+  'июл.',
+  'авг.',
+  'сент.',
+  'окт.',
+  'нояб.',
+  'дек.',
+] as const;
+export const diagnosticLabels: Record<string, string> = {
+  MISSING_PROJECT_START: strings.missingOrigin,
+  BLOCKED_BY_MISSING_PROJECT_START: strings.missingOrigin,
+  BLOCKED_BY_UNKNOWN: 'Есть предшественник с неизвестной длительностью.',
+  UNKNOWN_DEPENDENCY:
+    'Связанная работа не запланирована; зависимая цепь неполная.',
+  BLOCKED_BY_INVALID_PREDECESSOR:
+    'Недопустимый интервал предшественника блокирует расчёт.',
+  FIXED_PRECEDENCE_CONFLICT:
+    'Предшественник заканчивается после закреплённого начала.',
+  COMPLETED_PRECEDENCE_CONFLICT:
+    'Предшественник заканчивается после начала завершённой работы.',
+  FIXED_RELEASE_CONFLICT:
+    'Закреплённое начало нарушает ограничение «Не раньше».',
+  DEADLINE_EXCEEDED: 'Плановое окончание позже дедлайна.',
+  INVALID_FIXED_INTERVAL: 'Недопустимый закреплённый интервал.',
+  FIXED_BEFORE_PROJECT: 'Закреплённая работа начинается раньше проекта.',
+  FIXED_BEFORE_PROJECT_START: 'Закреплённая работа начинается раньше проекта.',
+  NON_WORKING_DATE: 'Закреплённая граница приходится на выходной.',
+  CALENDAR_RANGE_EXCEEDED: 'План выходит за допустимый диапазон календаря.',
+};
 export const statusLabels = {
   todo: 'К выполнению',
   doing: 'В работе',

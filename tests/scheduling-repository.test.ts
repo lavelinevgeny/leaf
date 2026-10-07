@@ -88,6 +88,84 @@ function counts() {
   );
 }
 describe('scheduling transactions', () => {
+  it('edits details and plan in one revision, retries once and undoes the complete edit', () => {
+    const before = parallel();
+    const envelope = {
+      expectedRevision: before.project.revision,
+      operationId: randomUUID(),
+      command: {
+        type: 'task.edit' as const,
+        taskId: id(before, 'C'),
+        changes: { title: 'C revised', description: 'Synthetic description' },
+        plan: { mode: 'auto' as const, durationDays: 9 },
+      },
+    };
+    const after = repository.applyCommand(before.project.id, envelope, session);
+    expect(after.project.revision).toBe(before.project.revision + 1);
+    expect(after.schedule.projectFinishIndex).toBe(10);
+    expect(
+      after.tasks.find((t) => t.id === envelope.command.taskId),
+    ).toMatchObject({ title: 'C revised', durationDays: 9 });
+    expect(
+      repository.applyCommand(before.project.id, envelope, session),
+    ).toEqual(after);
+    const undone = step(after, { type: 'undo' });
+    expect(undone.tasks).toEqual(before.tasks);
+    expect(undone.schedule).toEqual(before.schedule);
+  });
+  it('rolls back details, operations and undo when a combined plan is invalid', () => {
+    const before = parallel();
+    const beforeCounts = counts();
+    expect(() =>
+      step(before, {
+        type: 'task.edit',
+        taskId: id(before, 'C'),
+        changes: { title: 'Rejected rename' },
+        plan: {
+          mode: 'fixed',
+          inputStart: '2026-10-12',
+          inputFinish: '2026-10-05',
+        },
+      }),
+    ).toThrow(/интервал/);
+    expect(repository.getTree(before.project.id, session)).toEqual(before);
+    expect(counts()).toEqual(beforeCounts);
+  });
+  it('plans before completing and releases a done lock only with an explicit status change', () => {
+    const before = create(fresh(), 'A');
+    const done = step(before, {
+      type: 'task.edit',
+      taskId: id(before, 'A'),
+      changes: { status: 'done' },
+      plan: { mode: 'auto', durationDays: 2 },
+    });
+    expect(done.tasks[0]).toMatchObject({
+      status: 'done',
+      completedStart: '2026-10-05',
+      completedFinish: '2026-10-06',
+    });
+    expect(() =>
+      step(done, {
+        type: 'task.edit',
+        taskId: id(done, 'A'),
+        changes: { title: 'Rejected' },
+        plan: { mode: 'auto', durationDays: 3 },
+      }),
+    ).toThrow(/Верните/);
+    const resumed = step(done, {
+      type: 'task.edit',
+      taskId: id(done, 'A'),
+      changes: { status: 'doing' },
+      plan: { mode: 'auto', durationDays: 3 },
+    });
+    expect(resumed.tasks[0]).toMatchObject({
+      status: 'doing',
+      durationDays: 3,
+      completedStart: null,
+      completedFinish: null,
+    });
+    expect(resumed.schedule.projectFinishIndex).toBe(3);
+  });
   it('switches critical branches and ancestor bounds, restores one change with undo and survives reopen', () => {
     const before = parallel();
     expect(before.schedule.projectFinishIndex).toBe(8);

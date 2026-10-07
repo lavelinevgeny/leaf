@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Task } from '../shared/contracts.js';
+import {
+  taskPlanSchema,
+  type Task,
+  type TaskPlan,
+  type ProjectTree,
+} from '../shared/contracts.js';
+import { PlanFields } from './PlanFields.js';
+import { planOf } from './planning-view.js';
+import { ScheduleStatus } from './ScheduleStatus.js';
+import { Dependencies } from './Dependencies.js';
+import type { Command } from '../shared/contracts.js';
 import { TaskTree, type TreeAction } from './TaskTree.js';
 import { subtreeIds } from './tree-view.js';
 import { statusLabels, strings } from './strings.js';
@@ -15,16 +25,25 @@ const draftOf = (task: Task): Draft => ({
   inputStart: task.inputStart,
   inputFinish: task.inputFinish,
 });
+export type PanelTab = 'details' | 'subtasks' | 'dependencies';
 interface Props {
   task: Task;
   removed: boolean;
   tasks: Task[];
+  tree: ProjectTree;
+  tab: PanelTab;
+  onTab: (tab: PanelTab) => void;
+  onDependency: (command: Command) => Promise<boolean>;
+  onNeighbor: (task: Task) => void;
+  onShow: (task: Task) => void;
+  backTask: Task | null;
+  onBack: () => void;
   collapsed: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onSelect: (task: Task) => void;
   onAction: (action: TreeAction, task: Task) => void;
   onMove: (task: Task, parentId: string | null) => void;
-  onSave: (changes: Draft) => Promise<boolean>;
+  onSave: (changes: Draft, plan?: TaskPlan) => Promise<boolean>;
   onDirty: (dirty: boolean) => void;
   onClose: () => void;
   busy: boolean;
@@ -37,6 +56,14 @@ export function TaskPanel({
   task,
   removed,
   tasks,
+  tree,
+  tab,
+  onTab,
+  onDependency,
+  onNeighbor,
+  onShow,
+  backTask,
+  onBack,
   collapsed,
   onToggle,
   onSelect,
@@ -53,11 +80,15 @@ export function TaskPanel({
 }: Props) {
   const [draft, setDraft] = useState<Draft>(() => draftOf(task));
   const [baseline, setBaseline] = useState<Draft>(() => draftOf(task));
+  const [plan, setPlan] = useState<TaskPlan>(() => planOf(task));
+  const [baselinePlan, setBaselinePlan] = useState<TaskPlan>(() =>
+    planOf(task),
+  );
   const [saved, setSaved] = useState(false);
-  const [tab, setTab] = useState<'details' | 'subtasks'>('details');
   const [moveParent, setMoveParent] = useState(task.parentId ?? '');
   const previousParent = useRef(task.parentId);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  const planDirty = JSON.stringify(plan) !== JSON.stringify(baselinePlan);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || planDirty;
   const summary = tasks.some((child) => child.parentId === task.id);
   const excluded = removed ? new Set<string>() : subtreeIds(tasks, task.id);
   useEffect(() => {
@@ -81,6 +112,8 @@ export function TaskPanel({
       const fresh = draftOf(task);
       setDraft(fresh);
       setBaseline(fresh);
+      setPlan(planOf(task));
+      setBaselinePlan(planOf(task));
     }
   }, [task, dirty, busy]);
   function update<K extends keyof Draft>(field: K, value: Draft[K]) {
@@ -90,9 +123,12 @@ export function TaskPanel({
   async function save() {
     if (busy || removed || conflict || !draft.title.trim()) return;
     const fields = { ...draft, title: draft.title.trim() };
-    if (await onSave(fields)) {
+    if (!summary && planDirty && !taskPlanSchema.safeParse(plan).success)
+      return;
+    if (await onSave(fields, summary || !planDirty ? undefined : plan)) {
       setDraft(fields);
       setBaseline(fields);
+      setBaselinePlan(plan);
       setSaved(true);
       onDirty(false);
     }
@@ -110,6 +146,17 @@ export function TaskPanel({
       }}
     >
       <header className="panel-header">
+        {backTask && (
+          <button
+            type="button"
+            className="quiet panel-back"
+            aria-label={`${strings.back}: ${backTask.title}`}
+            disabled={busy || locked || dirty}
+            onClick={onBack}
+          >
+            ←
+          </button>
+        )}
         <h2>{task.title}</h2>
         <button
           type="button"
@@ -121,7 +168,7 @@ export function TaskPanel({
         </button>
       </header>
       <div className="panel-tabs" role="tablist" aria-label={strings.task}>
-        {(['details', 'subtasks'] as const).map((value) => (
+        {(['details', 'subtasks', 'dependencies'] as const).map((value) => (
           <button
             type="button"
             key={value}
@@ -130,17 +177,22 @@ export function TaskPanel({
             aria-controls={`panel-${value}`}
             aria-selected={tab === value}
             tabIndex={tab === value ? 0 : -1}
-            onClick={() => setTab(value)}
+            onClick={() => onTab(value)}
             onKeyDown={(event) => {
               if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
                 event.preventDefault();
-                const next = tab === 'details' ? 'subtasks' : 'details';
-                setTab(next);
+                const tabs = ['details', 'subtasks', 'dependencies'] as const;
+                const next =
+                  tabs[
+                    (tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : 2)) %
+                      3
+                  ]!;
+                onTab(next);
                 document.getElementById(`tab-${next}`)?.focus();
               }
             }}
           >
-            {value === 'details' ? strings.details : strings.subtasks}
+            {strings[value]}
           </button>
         ))}
       </div>
@@ -180,33 +232,34 @@ export function TaskPanel({
                     ))}
                   </select>
                 </label>
-                <div className="date-fields">
-                  <label>
-                    {strings.start}
-                    <input
-                      type="date"
-                      disabled={summary || removed}
-                      value={draft.inputStart ?? ''}
-                      onChange={(event) =>
-                        update('inputStart', event.target.value || null)
-                      }
-                    />
-                  </label>
-                  <label>
-                    {strings.finish}
-                    <input
-                      type="date"
-                      disabled={summary || removed}
-                      value={draft.inputFinish ?? ''}
-                      onChange={(event) =>
-                        update('inputFinish', event.target.value || null)
-                      }
-                    />
-                  </label>
-                </div>
-                <p className="field-hint">
-                  {summary ? strings.summaryHint : strings.datesHint}
-                </p>
+                <PlanFields
+                  task={{
+                    ...task,
+                    status:
+                      task.status === 'done' && draft.status === 'done'
+                        ? 'done'
+                        : 'doing',
+                  }}
+                  plan={plan}
+                  computed={
+                    tree.schedule.tasks[task.id] ??
+                    tree.schedule.summaries[task.id]
+                  }
+                  calendar={tree.project.calendarType}
+                  summary={summary}
+                  disabled={removed}
+                  onChange={(next) => {
+                    setPlan(next);
+                    if (next.mode !== 'auto')
+                      setDraft((previous) => ({
+                        ...previous,
+                        inputStart: next.inputStart || null,
+                        inputFinish: next.inputFinish || null,
+                      }));
+                    setSaved(false);
+                  }}
+                />
+                <ScheduleStatus tree={tree} task={task} />
                 <label>
                   {strings.description}
                   <textarea
@@ -229,7 +282,10 @@ export function TaskPanel({
                     conflict ||
                     (locked && !retry) ||
                     (!dirty && !retry) ||
-                    !draft.title.trim()
+                    !draft.title.trim() ||
+                    (!summary &&
+                      planDirty &&
+                      !taskPlanSchema.safeParse(plan).success)
                   }
                 >
                   {busy
@@ -257,6 +313,8 @@ export function TaskPanel({
                     const fresh = draftOf(task);
                     setDraft(fresh);
                     setBaseline(fresh);
+                    setPlan(planOf(task));
+                    setBaselinePlan(planOf(task));
                     setSaved(false);
                     onDirty(false);
                   }}
@@ -266,7 +324,7 @@ export function TaskPanel({
               )}
             </form>
           </div>
-        ) : (
+        ) : tab === 'subtasks' ? (
           <div
             role="tabpanel"
             id="panel-subtasks"
@@ -282,10 +340,26 @@ export function TaskPanel({
                 onSelect={onSelect}
                 onAction={onAction}
                 label={strings.subtasks}
+                schedule={tree.schedule}
               />
             ) : (
               <p className="empty-state">{strings.emptySubtasks}</p>
             )}
+          </div>
+        ) : (
+          <div
+            role="tabpanel"
+            id="panel-dependencies"
+            aria-labelledby="tab-dependencies"
+          >
+            <Dependencies
+              task={task}
+              tree={tree}
+              disabled={busy || locked || conflict || removed || dirty}
+              onCommand={onDependency}
+              onSelect={onNeighbor}
+              onShow={onShow}
+            />
           </div>
         )}
         <div className="task-actions">

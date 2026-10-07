@@ -7,16 +7,22 @@ import type {
   ProjectTree,
   RenameProject,
   Task,
+  TaskPlan,
 } from '../shared/contracts.js';
 import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import { api, ApiError } from './api.js';
 import { ProjectSidebar } from './ProjectSidebar.js';
 import { QuickAdd, type AddContext } from './QuickAdd.js';
-import { TaskPanel } from './TaskPanel.js';
-import { focusTaskRow, TaskTree, type TreeAction } from './TaskTree.js';
+import { TaskPanel, type PanelTab } from './TaskPanel.js';
+import { focusTaskRow, type TreeAction } from './TaskTree.js';
 import { orderedChildren } from './tree-view.js';
 import { strings } from './strings.js';
+import { ProjectPlan } from './ProjectPlan.js';
+import { ScheduleStatus } from './ScheduleStatus.js';
+import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
+import { planForGesture } from './planning-view.js';
 import './styles/app.css';
+import './styles/planning.css';
 
 type Mutation =
   | {
@@ -47,6 +53,8 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tree, setTree] = useState<ProjectTree | null>(null);
   const [selected, setSelected] = useState<Task | null>(null);
+  const [panelTab, setPanelTab] = useState<PanelTab>('details');
+  const [panelHistory, setPanelHistory] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [quickDrafts, setQuickDrafts] = useState<Record<string, QuickDraft>>(
     {},
@@ -57,6 +65,14 @@ export function App() {
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [projectDirty, setProjectDirty] = useState(false);
+  const [showGantt, setShowGantt] = useState(true);
+  const [ganttReveal, setGanttReveal] = useState<GanttReveal | null>(null);
+  const projectDirtyRef = useRef(false);
+  const setProjectPlanDirty = useCallback((value: boolean) => {
+    projectDirtyRef.current = value;
+    setProjectDirty(value);
+  }, []);
   const [pending, setPending] = useState<Mutation | null>(null);
   const [rename, setRename] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -77,7 +93,8 @@ export function App() {
   const panelRetry =
     uncertain &&
     pending?.kind === 'command' &&
-    pending.envelope.command.type === 'task.update' &&
+    (pending.envelope.command.type === 'task.update' ||
+      pending.envelope.command.type === 'task.edit') &&
     pending.envelope.command.taskId === selected?.id;
   const setPanelDirty = useCallback((value: boolean) => {
     dirtyRef.current = value;
@@ -155,6 +172,7 @@ export function App() {
   function canNavigate(allowRename = false) {
     if (
       dirtyRef.current ||
+      projectDirtyRef.current ||
       (!allowRename &&
         rename !== null &&
         rename !== treeRef.current?.project.title)
@@ -174,7 +192,10 @@ export function App() {
     setNotice('');
     if (!preserveDraft) {
       setSelected(null);
+      setPanelHistory([]);
+      setPanelTab('details');
       setPanelDirty(false);
+      setProjectPlanDirty(false);
       setTree(null);
       treeRef.current = null;
       setCollapsed(new Set());
@@ -239,6 +260,7 @@ export function App() {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (
         dirty ||
+        projectDirty ||
         hasQuickDrafts ||
         pending ||
         busy ||
@@ -250,7 +272,7 @@ export function App() {
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
-  }, [dirty, hasQuickDrafts, pending, busy, rename, tree]);
+  }, [dirty, projectDirty, hasQuickDrafts, pending, busy, rename, tree]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && selected) {
@@ -364,14 +386,41 @@ export function App() {
   function selectTask(task: Task) {
     if (!canNavigate()) return;
     setSelected(task);
+    setPanelTab('details');
+    setPanelHistory([]);
     setContext({ parentId: task.parentId, afterId: task.id });
   }
   function closePanel() {
     if (!canNavigate()) return;
     const id = selected?.id;
     setSelected(null);
+    setPanelHistory([]);
     if (!id || !focusTaskRow(id))
       document.getElementById('quick-task')?.focus();
+  }
+  function selectNeighbor(task: Task) {
+    if (!canNavigate()) return;
+    if (selected) setPanelHistory((previous) => [...previous, selected.id]);
+    setSelected(task);
+    setPanelTab('dependencies');
+  }
+  function showOnGantt(task: Task) {
+    if (!canNavigate() || !treeRef.current) return;
+    const byId = new Map(treeRef.current.tasks.map((item) => [item.id, item]));
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      let parent = task.parentId;
+      while (parent) {
+        next.delete(parent);
+        parent = byId.get(parent)?.parentId ?? null;
+      }
+      return next;
+    });
+    setShowGantt(true);
+    setGanttReveal((previous) => ({
+      taskId: task.id,
+      sequence: (previous?.sequence ?? 0) + 1,
+    }));
   }
   function toggle(id: string) {
     setCollapsed((previous) => {
@@ -455,6 +504,28 @@ export function App() {
   async function undo() {
     if (canNavigate() && treeRef.current?.canUndo)
       await command({ type: 'undo' });
+  }
+  async function planTask(task: Task, kind: 'move' | 'resize', target: string) {
+    if (!canNavigate() || !treeRef.current) return;
+    try {
+      const plan = planForGesture(
+        task,
+        treeRef.current.schedule.tasks[task.id],
+        treeRef.current.project,
+        kind,
+        target,
+      );
+      if (await command({ type: 'task.plan', taskId: task.id, plan })) {
+        if (
+          kind === 'move' &&
+          plan.mode === 'auto' &&
+          treeRef.current.schedule.tasks[task.id]?.startDate !== plan.notBefore
+        )
+          setNotice(strings.constrainedMove);
+      }
+    } catch {
+      setNotice(strings.invalidGesture);
+    }
   }
   async function createProject(title: string) {
     if (!canNavigate() || createUncertain || !title.trim()) return false;
@@ -665,6 +736,8 @@ export function App() {
   const selectedTask = selected
     ? (tree?.tasks.find((task) => task.id === selected.id) ?? selected)
     : null;
+  const backTask =
+    tree?.tasks.find((task) => task.id === panelHistory.at(-1)) ?? null;
   return (
     <div className="app-shell">
       <ProjectSidebar
@@ -729,7 +802,7 @@ export function App() {
             </button>
           </form>
         )}
-        <div className="workspace-content">
+        <div className="workspace-content planning-workspace">
           {!selectedTask && errorView}
           {loading && <p role="status">{strings.loading}</p>}
           {!loading && !tree && !error && (
@@ -739,8 +812,24 @@ export function App() {
           )}
           {tree && (
             <>
+              <ProjectPlan
+                key={`project-${tree.project.id}`}
+                project={tree.project}
+                disabled={busy || loading || !!pending || conflict || dirty}
+                onSave={command}
+                onDirty={setProjectPlanDirty}
+              />
+              <ScheduleStatus tree={tree} />
               <div className="tree-toolbar">
                 <span>{strings.tasks}</span>
+                <label className="gantt-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showGantt}
+                    onChange={(event) => setShowGantt(event.target.checked)}
+                  />
+                  {strings.gantt}
+                </label>
                 <button
                   type="button"
                   disabled={
@@ -749,7 +838,8 @@ export function App() {
                     loading ||
                     !!pending ||
                     conflict ||
-                    dirty
+                    dirty ||
+                    projectDirty
                   }
                   onClick={() => void undo()}
                 >
@@ -759,8 +849,22 @@ export function App() {
               {!tree.tasks.length && (
                 <p className="empty-state">{strings.empty}</p>
               )}
-              <TaskTree
-                tasks={tree.tasks}
+              <TaskTimeline
+                key={`timeline-${tree.project.id}`}
+                tree={tree}
+                show={showGantt}
+                reveal={ganttReveal}
+                disabled={
+                  busy ||
+                  loading ||
+                  !!pending ||
+                  conflict ||
+                  dirty ||
+                  projectDirty
+                }
+                onPlan={(task, kind, target) =>
+                  void planTask(task, kind, target)
+                }
                 selectedId={selected?.id ?? null}
                 collapsed={collapsed}
                 onToggle={toggle}
@@ -773,7 +877,7 @@ export function App() {
                 onContext={setContext}
                 onCreate={createTask}
                 busy={busy || loading}
-                blocked={!!pending || conflict || dirty}
+                blocked={!!pending || conflict || dirty || projectDirty}
                 title={quickDrafts[tree.project.id]?.title ?? ''}
                 onTitle={(title) =>
                   updateQuick(tree.project.id, (draft) => ({ ...draft, title }))
@@ -789,32 +893,64 @@ export function App() {
           task={selectedTask}
           removed={!tree.tasks.some((task) => task.id === selectedTask.id)}
           tasks={tree.tasks}
+          tree={tree}
+          tab={panelTab}
+          onTab={setPanelTab}
+          onDependency={command}
+          onNeighbor={selectNeighbor}
+          onShow={showOnGantt}
+          backTask={backTask}
+          onBack={() => {
+            if (backTask && canNavigate()) {
+              setSelected(backTask);
+              setPanelHistory((previous) => previous.slice(0, -1));
+            }
+          }}
           collapsed={collapsed}
           onToggle={toggle}
           onSelect={selectTask}
           onAction={action}
           onMove={(task, parentId) => void moveTask(task, parentId)}
-          onSave={(changes) =>
-            command({
+          onSave={(changes, plan?: TaskPlan) => {
+            const summary = tree.tasks.some(
+              (task) => task.parentId === selectedTask.id,
+            );
+            if (
+              plan &&
+              !(
+                plan.mode === 'unscheduled' &&
+                selectedTask.planMode === 'unscheduled' &&
+                plan.deadline === selectedTask.deadline
+              )
+            )
+              return command({
+                type: 'task.edit',
+                taskId: selectedTask.id,
+                changes: {
+                  title: changes.title,
+                  description: changes.description,
+                  status: changes.status,
+                },
+                plan,
+              });
+            return command({
               type: 'task.update',
               taskId: selectedTask.id,
-              changes: tree.tasks.some(
-                (task) => task.parentId === selectedTask.id,
-              )
+              changes: summary
                 ? {
                     title: changes.title,
                     description: changes.description,
                     status: changes.status,
                   }
                 : changes,
-            })
-          }
+            });
+          }}
           onDirty={setPanelDirty}
           onClose={closePanel}
           busy={busy}
           retry={panelRetry}
           conflict={conflict}
-          locked={!!pending || loading}
+          locked={!!pending || loading || projectDirty}
           feedback={errorView}
         />
       )}
