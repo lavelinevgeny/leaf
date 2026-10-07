@@ -1,5 +1,13 @@
 # Статус разработки
 
+## Task 3: исправление payload validation после review — 2026-10-07
+
+Standards review candidate `68e6cd9bf89ffe7a126808cb991d5d9d333e0036` обнаружил P2: object-only проверка original operations.payload позволяла классифицировать unsupported version/command как legacy format 1. Spec review подтвердил inactive scope. Добавлены независимые frozen command/rename envelope schemas без нормализации: полная прежняя vocabulary, strict fields, UUID/revision/plan validation и привязка body.operationId к ключу operation row. Проверка выполняется до DDL; исходный payload text не заменяется parsed/normalized JSON. Active request schemas и runtime mutation/replay wiring не изменены.
+
+18 отрицательных synthetic cases сначала дали RED: прежняя preparation принимала неизвестные версии/команды/режимы, лишние поля, неподдерживаемые envelopes и неверные/mismatched identities. Теперь каждый даёт safe INVALID_LEGACY_SNAPSHOT, сохраняя всю schema/current/history и отсутствие archive. Дополнительные положительные проверки покрывают все legacy command branches и три plan modes, raw rename/command whitespace, exact archive text/digest и canonical replay. Task 4 unavailable outcome gate остаётся отдельным; эта правка его не решает.
+
+Прошли: focused compatibility/migration/legacy repository — 95/95; `test:integration` — 143/143; `test:kit` — 52/52 с настоящим Gitleaks без пропусков; `typecheck`, `lint`, `format:check`, `check:kit`, `git diff --check`, `git diff --cached --check`, `security:staged` и обычные commit hooks. Dependency symlink удалена и не staged. Unit/build/E2E/Docker/preflight повторно не запускались: correction ограничена неактивным legacy payload validation; общий checkpoint проверяет integrator. Registry, SQL/digest policy, active API/contracts, lockfile и security policy не менялись. Следующий шаг — independent re-review точного fix SHA.
+
 ## Task 3: compatibility preparation — 2026-10-07
 
 Подготовлены неактивные frozen S2 schemas, byte-identical canonical helper, context/digest-bound mapper, lookup-only replay, private archive SQL 003 и synthetic migration helper. Target allowlist исключает legacy planning fields; source-only finish не меняется из-за deadline. Auto и done locks требуют отдельной resolution для каждого active/operation/undo context; duration/status сохраняются, ordinary source нельзя переписать resolution. Scalar stored duration не получает новый input cap. Category counts охватывают current и всю history, включая удалённые задачи. [ADR 007](adr/007-legacy-scheduling-migration.md) уточняет frozen response и transaction boundary.

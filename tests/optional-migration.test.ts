@@ -503,6 +503,14 @@ describe('synthetic optional scheduling preparation', () => {
       };
       db.prepare('UPDATE operations SET payload=?').run(canonical(rename));
       migrate(db);
+      expect(archive(db, 'operation-payload', operationId).originalText).toBe(
+        canonical(rename),
+      );
+      expect(
+        db
+          .prepare('SELECT payload FROM operations WHERE operationId=?')
+          .get(operationId),
+      ).toEqual({ payload: canonical(rename) });
       expect(
         replayLegacyOperation(db, projectId, sessionId, rename).project
           .revision,
@@ -511,6 +519,49 @@ describe('synthetic optional scheduling preparation', () => {
         replayLegacyOperation(db, projectId, sessionId, {
           ...rename,
           title: 'Synthetic renamed',
+        }),
+      ).toThrowError('Идентификатор операции уже использован.');
+    }));
+  it('keeps raw legacy command title/description and payload bytes through preparation and replay', () =>
+    fixture((db) => {
+      const body = {
+        expectedRevision: 8,
+        operationId,
+        command: {
+          type: 'task.update',
+          taskId: aId,
+          changes: {
+            title: ' Synthetic command ',
+            description: ' Synthetic description ',
+            status: 'doing',
+          },
+        },
+      };
+      const payload = canonical(body);
+      db.prepare('UPDATE operations SET payload=?').run(payload);
+      migrate(db);
+      expect(archive(db, 'operation-payload', operationId)).toEqual({
+        originalText: payload,
+        sha256: sha(payload),
+        sourceSchemaVersion: 2,
+      });
+      expect(
+        db
+          .prepare(
+            'SELECT payload,contractVersion FROM operations WHERE operationId=?',
+          )
+          .get(operationId),
+      ).toEqual({ payload, contractVersion: 1 });
+      expect(
+        replayLegacyOperation(db, projectId, sessionId, body).project.revision,
+      ).toBe(9);
+      expect(() =>
+        replayLegacyOperation(db, projectId, sessionId, {
+          ...body,
+          command: {
+            ...body.command,
+            changes: { ...body.command.changes, title: 'Synthetic command' },
+          },
         }),
       ).toThrowError('Идентификатор операции уже использован.');
     }));
@@ -652,6 +703,97 @@ describe('synthetic optional scheduling preparation', () => {
       );
       expect(state(db)).toEqual(before);
     }),
+  );
+  it.each([
+    [
+      'unsupported-version-and-command',
+      {
+        ...legacyBody,
+        contractVersion: 99,
+        command: { type: 'synthetic-unknown' },
+      },
+    ],
+    ['target-version', { ...legacyBody, contractVersion: 2 }],
+    ['explicit-legacy-version', { ...legacyBody, contractVersion: 1 }],
+    [
+      'unknown-command',
+      { ...legacyBody, command: { type: 'synthetic-unknown' } },
+    ],
+    [
+      'unknown-plan-mode',
+      {
+        ...legacyBody,
+        command: {
+          type: 'task.plan',
+          taskId: aId,
+          plan: { mode: 'synthetic-unknown' },
+        },
+      },
+    ],
+    [
+      'unknown-nested-field',
+      { ...legacyBody, command: { ...legacyBody.command, extra: true } },
+    ],
+    ['empty-envelope', {}],
+    ['mixed-envelope', { ...legacyBody, title: 'Synthetic rename' }],
+    ['unknown-envelope-field', { ...legacyBody, schema: 'synthetic-unknown' }],
+    [
+      'missing-operation-id',
+      { expectedRevision: 8, command: { type: 'undo' } },
+    ],
+    [
+      'invalid-operation-id',
+      { ...legacyBody, operationId: 'synthetic-invalid' },
+    ],
+    ['mismatched-operation-id', { ...legacyBody, operationId: bId }],
+    ['invalid-revision', { ...legacyBody, expectedRevision: -1 }],
+    ['string-revision', { ...legacyBody, expectedRevision: '8' }],
+    [
+      'invalid-task-id',
+      {
+        ...legacyBody,
+        command: { ...legacyBody.command, taskId: 'synthetic-invalid' },
+      },
+    ],
+    ['invalid-rename-title', { title: ' ', expectedRevision: 8, operationId }],
+    [
+      'unknown-rename-field',
+      {
+        title: 'Synthetic rename',
+        expectedRevision: 8,
+        operationId,
+        extra: true,
+      },
+    ],
+    [
+      'mismatched-rename-operation-id',
+      { title: 'Synthetic rename', expectedRevision: 8, operationId: bId },
+    ],
+  ])(
+    'rejects original payload %s with safe schema error before any writes',
+    (_name, payload) =>
+      fixture((db) => {
+        db.prepare('UPDATE operations SET payload=?').run(canonical(payload));
+        const before = state(db);
+        try {
+          migrate(db);
+          expect.fail('Expected invalid legacy payload rejection');
+        } catch (error) {
+          expect(error).toBeInstanceOf(DomainError);
+          expect(error).toMatchObject({
+            code: 'INVALID_LEGACY_SNAPSHOT',
+            message: 'Неверный прежний снимок плана.',
+          });
+        }
+        expect(state(db)).toEqual(before);
+        expect(
+          db
+            .prepare(
+              "SELECT name FROM sqlite_schema WHERE name='scheduling_migration_archive'",
+            )
+            .get(),
+        ).toBeUndefined();
+      }),
   );
   it('rolls back archive, column drops, projections, histories and version when outer insert aborts', () =>
     fixture((db) => {

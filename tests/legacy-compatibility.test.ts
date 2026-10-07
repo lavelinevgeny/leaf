@@ -4,6 +4,7 @@ import { canonical } from '../src/shared/canonical.js';
 import {
   LegacySnapshotSchema,
   LegacyTreeSchema,
+  LegacyOperationPayloadSchema,
 } from '../src/server/legacy-contracts.js';
 import {
   adaptLegacyTree,
@@ -106,6 +107,127 @@ function resolve(
 }
 
 describe('frozen legacy compatibility', () => {
+  it.each([
+    {
+      type: 'task.edit',
+      taskId: aId,
+      changes: {
+        title: ' Synthetic edit ',
+        status: 'doing',
+        description: ' Synthetic description ',
+      },
+    },
+    {
+      type: 'task.edit',
+      taskId: aId,
+      changes: {},
+      plan: {
+        mode: 'fixed',
+        inputStart: '2026-10-05',
+        inputFinish: '2026-10-07',
+      },
+    },
+    {
+      type: 'project.schedule',
+      changes: { startDate: null, calendarType: 'weekdays', timezone: 'UTC' },
+    },
+    {
+      type: 'task.plan',
+      taskId: aId,
+      plan: {
+        mode: 'unscheduled',
+        inputStart: null,
+        inputFinish: '2026-10-06',
+        deadline: '2026-10-20',
+      },
+    },
+    {
+      type: 'task.plan',
+      taskId: aId,
+      plan: {
+        mode: 'auto',
+        durationDays: 3,
+        notBefore: '2026-10-05',
+        deadline: null,
+      },
+    },
+    {
+      type: 'task.plan',
+      taskId: aId,
+      plan: {
+        mode: 'fixed',
+        inputStart: '2026-10-05',
+        inputFinish: '2026-10-07',
+        deadline: '2026-10-20',
+      },
+    },
+    { type: 'dependency.create', predecessorId: aId, successorId: bId },
+    { type: 'dependency.delete', dependencyId: bId },
+    {
+      type: 'task.create',
+      title: ' Synthetic create ',
+      parentId: null,
+      afterId: bId,
+      preserveWork: true,
+    },
+    {
+      type: 'task.update',
+      taskId: aId,
+      changes: {
+        title: ' Synthetic update ',
+        description: ' Synthetic description ',
+        status: 'todo',
+        inputStart: '2026-10-05',
+        inputFinish: null,
+      },
+    },
+    {
+      type: 'task.move',
+      taskId: aId,
+      parentId: bId,
+      position: 1,
+      preserveWork: false,
+    },
+    { type: 'task.delete', taskId: aId },
+    { type: 'undo' },
+  ])('validates frozen command $type without normalization', (command) => {
+    const body = { expectedRevision: 8, operationId: operation.key, command };
+    const parsed = LegacyOperationPayloadSchema.parse(body);
+    expect(parsed).toEqual(body);
+    expect(canonical(parsed)).toBe(canonical(body));
+  });
+  it('validates raw rename without normalization and rejects empty legacy changes/plans', () => {
+    const rename = {
+      title: ' Synthetic rename ',
+      expectedRevision: 8,
+      operationId: operation.key,
+    };
+    expect(LegacyOperationPayloadSchema.parse(rename)).toEqual(rename);
+    expect(rename.title).toBe(' Synthetic rename ');
+    for (const command of [
+      { type: 'task.edit', taskId: aId, changes: {} },
+      { type: 'task.update', taskId: aId, changes: {} },
+      { type: 'project.schedule', changes: {} },
+      {
+        type: 'task.plan',
+        taskId: aId,
+        plan: { mode: 'fixed', inputStart: '2026-10-05' },
+      },
+      {
+        type: 'task.plan',
+        taskId: aId,
+        plan: { mode: 'auto', durationDays: 1000001 },
+      },
+      { type: 'task.create', title: ' ', parentId: null },
+    ])
+      expect(
+        LegacyOperationPayloadSchema.safeParse({
+          expectedRevision: 8,
+          operationId: operation.key,
+          command,
+        }).success,
+      ).toBe(false);
+  });
   it('keeps canonical payload bytes, nested ordering, arrays, null and transport version', () => {
     expect(canonical({ z: [null, { z: 1, a: 'Synthetic' }], a: false })).toBe(
       '{"a":false,"z":[null,{"a":"Synthetic","z":1}]}',

@@ -9,6 +9,7 @@ import {
   LegacyDependencySchema,
   LegacySnapshotSchema,
   LegacyTreeSchema,
+  LegacyOperationPayloadSchema,
 } from './legacy-contracts.js';
 import {
   adaptLegacyTree,
@@ -252,13 +253,11 @@ export function prepareOptionalMigration(
       policyRequired();
   // Parse all originals and finish every projection before any DDL or writes.
   for (const operation of rows.operations) {
-    const payload = json(operation.payload);
-    if (
-      payload === null ||
-      typeof payload !== 'object' ||
-      Array.isArray(payload)
-    )
-      invalidSnapshot();
+    const payload = parse(
+      LegacyOperationPayloadSchema,
+      json(operation.payload),
+    );
+    if (payload.operationId !== operation.operationId) invalidSnapshot();
   }
   const snapshots = new Map(
     legacyContexts.map(({ context, snapshot }) => [

@@ -134,3 +134,111 @@ export const LegacyTreeSchema = LegacySnapshotSchema.extend({
 export type LegacyTask = z.infer<typeof LegacyTaskSchema>;
 export type LegacySnapshot = z.infer<typeof LegacySnapshotSchema>;
 export type LegacyTree = z.infer<typeof LegacyTreeSchema>;
+
+// Frozen request validation checks the original envelope without normalizing
+// titles, stripping fields or substituting the target command vocabulary.
+const LegacyTaskPlanSchema = z.discriminatedUnion('mode', [
+  z.strictObject({
+    mode: z.literal('unscheduled'),
+    inputStart: calendarDateSchema.nullable().optional(),
+    inputFinish: calendarDateSchema.nullable().optional(),
+    deadline: calendarDateSchema.nullable().optional(),
+  }),
+  z.strictObject({
+    mode: z.literal('auto'),
+    durationDays: durationSchema.max(1000000),
+    notBefore: calendarDateSchema.nullable().optional(),
+    deadline: calendarDateSchema.nullable().optional(),
+  }),
+  z.strictObject({
+    mode: z.literal('fixed'),
+    inputStart: calendarDateSchema,
+    inputFinish: calendarDateSchema,
+    deadline: calendarDateSchema.nullable().optional(),
+  }),
+]);
+const LegacyTaskChangesSchema = z
+  .strictObject({
+    title: taskTitleSchema.optional(),
+    description: z.string().max(10000).optional(),
+    status: z.enum(['todo', 'doing', 'done']).optional(),
+    inputStart: calendarDateSchema.nullable().optional(),
+    inputFinish: calendarDateSchema.nullable().optional(),
+  })
+  .refine((changes) => Object.keys(changes).length > 0, 'Empty changes');
+const LegacyCommandSchema = z.discriminatedUnion('type', [
+  z
+    .strictObject({
+      type: z.literal('task.edit'),
+      taskId: uuidSchema,
+      changes: z.strictObject({
+        title: taskTitleSchema.optional(),
+        description: z.string().max(10000).optional(),
+        status: z.enum(['todo', 'doing', 'done']).optional(),
+      }),
+      plan: LegacyTaskPlanSchema.optional(),
+    })
+    .refine(
+      (edit) => edit.plan !== undefined || Object.keys(edit.changes).length > 0,
+      'Empty edit',
+    ),
+  z.strictObject({
+    type: z.literal('project.schedule'),
+    changes: z
+      .strictObject({
+        startDate: calendarDateSchema.nullable().optional(),
+        calendarType: calendarTypeSchema.optional(),
+        timezone: timezoneSchema.optional(),
+      })
+      .refine((changes) => Object.keys(changes).length > 0, 'Empty changes'),
+  }),
+  z.strictObject({
+    type: z.literal('task.plan'),
+    taskId: uuidSchema,
+    plan: LegacyTaskPlanSchema,
+  }),
+  z.strictObject({
+    type: z.literal('dependency.create'),
+    predecessorId: uuidSchema,
+    successorId: uuidSchema,
+  }),
+  z.strictObject({
+    type: z.literal('dependency.delete'),
+    dependencyId: uuidSchema,
+  }),
+  z.strictObject({
+    type: z.literal('task.create'),
+    title: taskTitleSchema,
+    parentId: uuidSchema.nullable(),
+    afterId: uuidSchema.optional(),
+    preserveWork: z.boolean().optional(),
+  }),
+  z.strictObject({
+    type: z.literal('task.update'),
+    taskId: uuidSchema,
+    changes: LegacyTaskChangesSchema,
+  }),
+  z.strictObject({
+    type: z.literal('task.move'),
+    taskId: uuidSchema,
+    parentId: uuidSchema.nullable(),
+    position: z.number().int().nonnegative(),
+    preserveWork: z.boolean().optional(),
+  }),
+  z.strictObject({ type: z.literal('task.delete'), taskId: uuidSchema }),
+  z.strictObject({ type: z.literal('undo') }),
+]);
+export const LegacyCommandEnvelopeSchema = z.strictObject({
+  expectedRevision: z.number().int().nonnegative(),
+  operationId: uuidSchema,
+  command: LegacyCommandSchema,
+});
+export const LegacyRenameEnvelopeSchema = z.strictObject({
+  title: projectTitleSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  operationId: uuidSchema,
+});
+export const LegacyOperationPayloadSchema = z.union([
+  LegacyCommandEnvelopeSchema,
+  LegacyRenameEnvelopeSchema,
+]);
