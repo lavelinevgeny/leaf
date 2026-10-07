@@ -32,7 +32,7 @@
 
 ## Готовность и зависимости
 
-Этот документ — кандидат исполнимого плана с ограниченными policy-зависимостями. Приложение пока соответствует S2–S3; ни одна задача ниже не выполнена этим документом. Одобрение плана означает качество подготовки, а не закрытие G-CPM/G-MIGRATION.
+Этот документ получил два независимых APPROVED на ревизии `c4c8193ed82c464998f16bd163def93c22a22fe2` и сохраняет ограниченные policy-зависимости. Приложение пока соответствует S2–S3; ни одна задача ниже не выполнена этим документом. Одобрение плана означает качество подготовки, а не закрытие G-CPM/G-MIGRATION.
 
 | Task | Вход | Проверяемый выход | Возможность исполнения |
 |---|---|---|---|
@@ -1079,8 +1079,8 @@ N06 числовые варианты из spec — только comparison pack
 - [x] Commands: новые suites перечислены для explicit package scripts при реализации; `npm test -- <paths>` соответствует Vitest script; Playwright только после build; Node exact pin не заменён установленной старой версией.
 - [x] Scope: первый кандидат затронул plan, IMPLEMENTATION_PLAN/STATUS и factual spec review footer; исправления раунда 1 меняют только plan/STATUS. Ни application source, ни schema/fixtures не изменены.
 - [x] Document-only `npm run check:kit`, `git diff --check`, `git diff --cached --check`, staged guard/Gitleaks и history scans прошли для второго кандидата. Обычные hooks включены. Root integrator отдельно проверяет public workspace/preflight; linked-worktree pointer refusal не обходить.
-- [ ] Два новых независимых plan reviewer проверяют один candidate SHA. До получения вердиктов plan review PENDING; исправления имеют новый SHA и повторный цикл до двух APPROVED. Точное metadata записать только после результата.
+- [x] Два независимых plan reviewer проверили один candidate SHA `c4c8193ed82c464998f16bd163def93c22a22fe2`: соответствие спецификации — APPROVED; исполнимость/standards — APPROVED. Пять blockers первого раунда закрыты; review metadata зафиксировано после получения обоих вердиктов.
 
 План не начинает реализацию автоматически. Когда владелец поручит код, координатор выполняет разрешённые preparation задачи отдельными worker agents, продолжая независимый review цикл; policy gates сохраняют перечисленные ограничения.
 
-Раунд 1 независимого plan review на `1a151c29c81d78096b634eb7e2458443f5a61c51`: соответствие спецификации — CHANGES_REQUIRED; исполнимость/standards — CHANGES_REQUIRED. Новый кандидат уточняет пять blockers: source marker projection/render/tests, настоящий pinned unchanged S3 upgrade check, selected task deletion recovery, durable frozen replay после restart и полные schemas/helper definitions. Оба повторных вердикта ещё не получены; APPROVED не заявляется. Нормативная approved spec не менялась.
+Раунд 1 независимого plan review на `1a151c29c81d78096b634eb7e2458443f5a61c51`: соответствие спецификации — CHANGES_REQUIRED; исполнимость/standards — CHANGES_REQUIRED. Закрыты пять blockers: source marker projection/render/tests, настоящий pinned unchanged S3 upgrade check, selected task deletion recovery, durable frozen replay после restart и полные schemas/helper definitions. Раунд 2 на `c4c8193ed82c464998f16bd163def93c22a22fe2`: соответствие спецификации — APPROVED; исполнимость/standards — APPROVED. Нормативная approved spec не менялась; G-CPM/O06 и G-MIGRATION остаются открытыми, реализация не начата.
