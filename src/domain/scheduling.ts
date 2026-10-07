@@ -9,10 +9,10 @@ import { realInterval, validateSourceInput } from './planning.js';
 import type {
   ConditionalDisplay,
   OptionalInput,
-  OptionalResult,
   OptionalTask,
   RealTask,
 } from './scheduling-types.js';
+import type { FrozenPendingScheduleV2 } from '../shared/contracts.js';
 import type { CalendarType, SchedulingDependency } from './scheduling-types.js';
 import { DomainError } from './tree.js';
 
@@ -110,7 +110,9 @@ const minimum = (a: string | null, b: string | null): string | null =>
 const maximum = (a: string | null, b: string | null): string | null =>
   a === null ? b : b === null ? a : compare(a, b) > 0 ? a : b;
 
-export function calculateSchedule(input: OptionalInput): OptionalResult {
+export function calculateSchedule(
+  input: OptionalInput,
+): FrozenPendingScheduleV2 {
   const tasks = [...input.tasks].sort((a, b) => compare(a.id, b.id));
   const dependencies = [...input.dependencies].sort(
     (a, b) =>
@@ -118,7 +120,7 @@ export function calculateSchedule(input: OptionalInput): OptionalResult {
       compare(a.predecessorId, b.predecessorId) ||
       compare(a.successorId, b.successorId),
   );
-  const result: OptionalResult = {
+  const result: FrozenPendingScheduleV2 = {
     analysisStatus: 'pending-policy',
     feasibility: 'feasible',
     coverage: { knownLeafCount: 0, totalLeafCount: 0 },
@@ -146,7 +148,7 @@ export function calculateSchedule(input: OptionalInput): OptionalResult {
     if (severity === 'error') infeasible = true;
     else incomplete = true;
   };
-  const finishResult = (): OptionalResult => {
+  const finishResult = (): FrozenPendingScheduleV2 => {
     // Pending feasibility checks source/FS only; Task 7 supplies C16 analysis.
     result.feasibility = infeasible
       ? 'infeasible'

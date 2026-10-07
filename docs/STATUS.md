@@ -1,5 +1,14 @@
 # Статус разработки
 
+## Task 7 checkpoint A — strict frozen/LIVE contracts — 2026-10-08
+
+Выполнен только A [утверждённого CPM annex](superpowers/plans/2026-10-07-explicit-date-cpm.md): полный strict frozen pending/LIVE union, отдельные LIVE-only tree/schedule schemas и domain type aliases. Frozen pending сохраняет прежние поля, validators и outcome без defaults, добавления floats/horizon/partial или нормализации старых coverage/interval combinations. Source patch извлекает лишь defined inputStart/inputFinish/durationDays, сохраняя различие между omission и null. Текущий scheduler имеет только уточнённый pending return type; его emitted runtime и пользовательская подпись «Расчёт критического пути ещё не подключён» сохранены. Сужена одна existing Gantt test fixture; production UI не менялся.
+
+TDD: literal annex suite сначала дал RED (2 failed / 14 passed: отсутствующий frozen export и отказ старого parser принимать live infeasible), после полного schema block — GREEN16/16. Дополнительные frozen byte/digest, envelope и strict coverage/summary/float controls расширили suite до32/32. На Node24.21.0/npm11.19.0 прошли typecheck, lint, unit257/257 в13files, integration174/174 в12files, build, format:check, check:package и diff check; skips не добавлены. Self-review подтвердил полный schema block после одинакового форматирования, byte-identical approved execution body без review metadata и неизменность emitted pending scheduler runtime относительно integration base. Lockfile, SQL/native schema, source validation policy, hooks и security rules не менялись.
+
+Checkpoint A требует двух независимых exact-SHA reviews до B/C. Математика, LIVE composition, initial frozen compatibility switch, LIVE-only current server guards и critical UI/browser feature ещё не реализованы; C05/OS16 остаются незавершёнными. E2E/Docker и полный root preflight не повторялись для этого contract checkpoint; integrator выполняет root publication checks отдельно. Следующий шаг после двух APPROVED — единый B/C GREEN checkpoint с одновременным LIVE и initial frozen compatibility. S4–S6 и первый релиз остаются впереди; production migration, публикация и remote actions не выполнялись.
+
+
 ## Root verification принятой адаптации и плана CPM — 2026-10-08
 
 Основной checkout на объединённых reviewed Task5/Task6 прошёл `npm run verify`: typecheck, lint, 399/399 application tests в 24 files без skips и production build. `format:check` и `check:package` — PASS. Полный `preflight` — PASS: doctor, kit (43 Markdown files, 161 local links), 52/52 harness tests с настоящим Gitleaks, workspace/index/staged/history guards и scans, 41 Git metadata objects. Первоначальный workspace refusal выявил личный административный путь только в generated scratch report; пример заменён эквивалентной NVM_DIR-ссылкой, guard policy и application source не менялись.

@@ -141,6 +141,8 @@ it.each([
       durationDays: null,
     };
     tree.tasks = [source];
+    if (tree.schedule.analysisStatus !== 'pending-policy')
+      throw new Error('Expected frozen pending fixture');
     tree.schedule = {
       ...tree.schedule,
       coverage: { knownLeafCount: 0, totalLeafCount: 1 },

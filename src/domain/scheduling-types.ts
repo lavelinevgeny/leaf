@@ -1,4 +1,9 @@
-import type { SourceFields } from '../shared/contracts.js';
+import type {
+  SourceFields,
+  FrozenPendingScheduleV2,
+  LiveScheduleResultV2,
+  ScheduleResultV2,
+} from '../shared/contracts.js';
 export type CalendarType = 'weekdays' | 'all-days';
 export interface SchedulingDependency {
   id: string;
@@ -39,18 +44,42 @@ export interface ConditionalDisplay {
   finishDate: string;
   clipped: boolean;
 }
-export interface OptionalResult {
-  analysisStatus: 'pending-policy';
-  feasibility: 'feasible' | 'incomplete' | 'infeasible';
-  coverage: { knownLeafCount: number; totalLeafCount: number };
-  tasks: Record<string, RealTask>;
-  summaries: Record<string, OptionalSummary>;
-  display: Record<string, ConditionalDisplay>;
+export type OptionalResult = ScheduleResultV2;
+export type LiveResult = LiveScheduleResultV2;
+export type ExplicitProjection = Omit<
+  FrozenPendingScheduleV2,
+  'analysisStatus' | 'criticalTaskIds' | 'criticalDependencyIds'
+>;
+export interface WorkingInterval {
+  s: number;
+  f: number;
+  d: number;
+}
+export interface CpmVertex extends WorkingInterval {
+  id: string;
+  status: 'todo' | 'doing' | 'done';
+}
+export interface CpmGraph {
+  vertices: ReadonlyMap<string, CpmVertex>; // Only valid real leaves.
+  leafIds: readonly string[]; // Includes unknown leaves.
+  dependencies: readonly SchedulingDependency[]; // Original validated DAG.
+  topoIds: readonly string[]; // All leaves, no summary vertices.
+  weakComponents: readonly (readonly string[])[];
+  originDate: string;
+  calendarType: CalendarType;
+}
+export interface BackwardValue {
+  LS: number;
+  LF: number;
+  projectFloat: number;
+  constraintFloat: number;
+}
+export interface BackwardAnalysis {
+  horizon: number | null;
+  values: ReadonlyMap<string, BackwardValue>;
   criticalTaskIds: string[];
   criticalDependencyIds: string[];
-  diagnostics: ScheduleDiagnostic[];
 }
-
 export type SchedulingTask = OptionalTask;
 export type ScheduleInput = OptionalInput;
 export type ScheduleResult = OptionalResult;

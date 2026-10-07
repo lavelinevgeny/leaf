@@ -383,14 +383,12 @@ export class Repository {
       case 'task.edit': {
         const task = find(command.taskId);
         const patch: SourcePatch = {};
-        for (const key of [
-          'inputStart',
-          'inputFinish',
-          'durationDays',
-        ] as const) {
-          if (key in command.changes)
-            Object.assign(patch, { [key]: command.changes[key] });
-        }
+        if (command.changes.inputStart !== undefined)
+          patch.inputStart = command.changes.inputStart;
+        if (command.changes.inputFinish !== undefined)
+          patch.inputFinish = command.changes.inputFinish;
+        if (command.changes.durationDays !== undefined)
+          patch.durationDays = command.changes.durationDays;
         if (
           tasks.some((item) => item.parentId === task.id) &&
           Object.keys(patch).length
