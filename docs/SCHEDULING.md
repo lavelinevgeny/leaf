@@ -13,7 +13,7 @@
 
 Ниже сохранён исторический контракт, по которому реализованы S2–S3. Разделы об Auto, project.startDate, автоматическом назначении сроков по длительности, автосдвигах, deadline, partial summaries и полном запрете полос для задач без дат описывают прежнюю реализацию. Tasks 5–7 адаптировали source/storage/API/UI к C11–C17 и подключили серверный CPM по C16; исторический контракт ниже не задаёт новые требования текущей реализации. Актуальные проверки и ограничения — в [STATUS](STATUS.md).
 
-Подробная [спецификация адаптации](superpowers/specs/2026-10-07-optional-scheduling-design.md) дополнена [принятым нормативным приложением C16/C17](superpowers/specs/2026-10-07-optional-scheduling-policy-proposal.md). Owner policy gates закрыты; технический annex и реализация с numerical/сквозными tests прошли независимые reviews. Ordinary root preflight ещё ожидается; S4–S6 и первый релиз остаются незавершёнными.
+Подробная [спецификация адаптации](superpowers/specs/2026-10-07-optional-scheduling-design.md) дополнена [принятым нормативным приложением C16/C17](superpowers/specs/2026-10-07-optional-scheduling-policy-proposal.md). Owner policy gates закрыты; технический annex и реализация с numerical/сквозными tests прошли независимые reviews. Ordinary root preflight пройден 2026-10-08; S4–S6 и первый релиз остаются незавершёнными.
 
 ## Принятые политики C16/C17
 

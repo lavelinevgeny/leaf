@@ -62,7 +62,7 @@
 
 | ID | Решение и основание | Что остаётся выполнить |
 |---|---|---|
-| O06 / G-CPM | C16: владелец принял анализ введённых интервалов, общий горизонт и правила резервов/unknown; [ADR 008](adr/008-explicit-date-cpm.md). | Технический annex Task 6 и реализация Task 7 с numerical/сквозными tests прошли независимые reviews; ordinary root preflight ещё ожидается. Актуальные ограничения — в [STATUS](STATUS.md); S4–S6 и релиз незавершены. |
-| G-MIGRATION | C17: владелец принял однократную конвертацию и preservation policy; [ADR 007](adr/007-legacy-scheduling-migration.md). | Synthetic resolution/rollback tests, preview acknowledgement до registry по Tasks 4–5; production upgrade отдельно. |
+| O06 / G-CPM | C16: владелец принял анализ введённых интервалов, общий горизонт и правила резервов/unknown; [ADR 008](adr/008-explicit-date-cpm.md). | Технический annex Task 6 и реализация Task 7 с numerical/сквозными tests прошли независимые reviews; ordinary root preflight пройден 2026-10-08. Актуальные ограничения — в [STATUS](STATUS.md); S4–S6 и релиз незавершены. |
+| G-MIGRATION | C17: владелец принял однократную конвертацию и preservation policy; [ADR 007](adr/007-legacy-scheduling-migration.md). | Synthetic resolution/rollback и preview acknowledgement Tasks 4–5 проверены и reviewed; production upgrade требует отдельного поручения. |
 
 Изменение D или разрешение O фиксировать датой, краткой причиной и ссылкой на задачу. C не менять без явного решения владельца.

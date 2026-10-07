@@ -1,5 +1,19 @@
 # Статус разработки
 
+## Адаптация optional scheduling и CPM — локальная приёмка завершена 2026-10-08
+
+Tasks 1–7 [плана адаптации](superpowers/plans/2026-10-07-optional-scheduling.md) завершены: необязательные исходные сроки без Auto/deadline, совместимая migration003 с preview/acknowledgement и private archive, атомарные API/undo, серверный CPM введённых интервалов и отображение ready/partial/infeasible в tree/Gantt/dependencies. Display dates не становятся source dates; frozen historical ответы возвращаются без пересчёта. C05/OS16 выполнены в пределах локальной адаптации; это не завершение первого релиза.
+
+[Технический CPM annex](superpowers/plans/2026-10-07-explicit-date-cpm.md), execution candidate `9c71ed2aa8b8f9f9a68a282d50189b24299d14df`, получил независимые Spec и Standards/executability APPROVED до реализации CPM. Каждая граница Task7 A→B/C→D→E прошла два независимых review. Два финальных review всей адаптации `37726cc603ca9fee54d11592306cd0bca490a2ad..a9a12214006eb4e794b1e545b9859922fb80fd84` дали APPROVED. Единственный финальный minor о текущем статусе в трёх документах исправлен в `049451e9195d9dec5369863fe0abf81b056c7789`; два scoped re-review дали APPROVED, открытых замечаний нет. Последующая запись фактов приёмки меняет только документацию; прикладной код и тесты совпадают с reviewed candidate.
+
+Итоговые controller checks на Node 24.21.0/npm 11.19.0: `npm run verify` PASS — typecheck, lint, 524/524 unit/integration tests в 29 files и production build; `format:check` и `check:package` PASS. Actual browser E2E 46/46 PASS в 1440×900 и 1280×800, без skips/retries. Ordinary root `preflight` после принятого финального исправления PASS полностью: doctor 11/11, documentation/reference/fixture checks, test:kit 52/52 с настоящим Gitleaks и workspace/index/staged/history/commit-tag metadata guards. Независимые unit/integration runs исполнителя: 322/322 и 202/202 соответственно.
+
+Три approved PNG и шесть собственных synthetic main/panel/graph captures обоих viewports просмотрены controller и финальными reviewers. Исключённый subtask collage не использовался. Предупреждение полного E2E run о конфликте CLI color variables устранено только в launcher; focused undo browser run повторён 4/4 PASS без предупреждения, source/security policy не менялись.
+
+S4 повседневный UX/доска, S5 restore/import/export и S6 релизная приёмка остаются незавершёнными. Следующий продуктовый этап — S4: поиск/фильтры с родительским контекстом и иерархическая доска с отдельной проверкой ещё не утверждённого board layout. Container smoke выполнен в Task5; после CPM Docker не повторялся. Production/private data, реальный upgrade, push, deployment и release не выполнялись.
+
+Ниже сохранены исторические checkpoint records; их ожидавшиеся на тот момент reviews/checks закрыты итоговой приёмкой выше.
+
 ## Task 7 checkpoint E — серверная критичность в UI и browser acceptance — 2026-10-08
 
 После двух независимых APPROVED exact checkpoint D выполнен E [утверждённого annex](superpowers/plans/2026-10-07-explicit-date-cpm.md). Tree, Gantt и dependencies показывают общую критичность только для ready; summary получает отдельный indicator только при containsCritical=true. Incomplete показывает явно подписанный анализ датированной части, отдельные dashed/brown task/edge/summary indicators и резерв до известного горизонта. Infeasible и historical pending не получают critical highlights. Историческая подпись — точно «Сохранённый результат без расчёта критического пути». Панель разделяет структурный резерв проекта и резерв текущего размещения; done с положительным projectFloat не становится critical из-за constraintFloat=0. React использует готовые серверные IDs/floats, без CPM или новых layout/board/filter features.
