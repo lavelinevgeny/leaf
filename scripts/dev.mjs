@@ -5,6 +5,15 @@ if (!process.env.LEAF_DATA_DIR) {
   );
   process.exit(1);
 }
+const frontendPort = process.env.LEAF_DEV_PORT ?? '5173';
+if (
+  !/^\d+$/.test(frontendPort) ||
+  Number(frontendPort) < 1 ||
+  Number(frontendPort) > 65535
+) {
+  console.error('LEAF_DEV_PORT must be an integer between 1 and 65535.');
+  process.exit(1);
+}
 const children = [
   spawn(
     process.execPath,
@@ -14,7 +23,7 @@ const children = [
       env: {
         ...process.env,
         LEAF_PUBLIC_ORIGIN:
-          process.env.LEAF_PUBLIC_ORIGIN ?? 'http://127.0.0.1:5173',
+          process.env.LEAF_PUBLIC_ORIGIN ?? `http://127.0.0.1:${frontendPort}`,
       },
     },
   ),

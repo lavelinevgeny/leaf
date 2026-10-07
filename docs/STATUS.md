@@ -2,23 +2,83 @@
 
 ## Текущее состояние
 
-Реализован, интегрирован и проверен промежуточный S0/S1: один TypeScript-пакет, React/Vite, Fastify, SQLite, локальный вход, проекты, произвольная глубина дерева, компактная правая панель, статусы, описание, optional input dates, перенос/удаление веток и серверная отмена. Данные сохраняются после настоящего перезапуска процесса. Финальные application checks прошли: 84/84 tests и 8/8 browser E2E; замечания whole-branch review закрыты scoped re-review, новый root preflight прошёл на `020f3d4`. Даты пока являются сохранённым вводом; расчёта расписания нет. Три утверждённых референса сохранены; исключённый коллаж не используется.
+S2 реализован и перенесён в основной checkout поверх S0/S1 и текущих Make/admin/auth изменений. Чистый календарь и планировщик считают FS-сеть листьев, критические пути, резервы, ограничения и агрегаты дерева. SQLite хранит параметры, зависимости и done locks; API пересчитывает и проверяет ответ внутри атомарных операций с revision, idempotency и undo. Даты без планирования остаются пометками и не получают фиктивных интервалов. Гант и визуальное управление планом ещё не реализованы.
 
-Это ещё не готовая V1: Гант, зависимости и пересчитываемые критические пути остаются обязательными этапами S2/S3. Production-контейнер упаковывает текущий фундамент. Kit/privacy проверки отделены от application tests. Git identity review и scanner policy сохранены. Внешняя публикация и deployment не выполнялись.
+Проверенные исходники интегрированы после остановки существующего dev-сервера. Пользовательский runtime не открывался. Итоговые проверки основного checkout прошли: verify с 186/186 tests, typecheck, lint и production build, 12/12 browser E2E и полный preflight. Три утверждённых референса сохранены; исключённый коллаж не используется.
+
+Это ещё не готовая V1. Production-контейнер упаковывает текущий S0–S2; Гант, выбранная схема зависимостей и релизная приёмка остаются обязательными. Kit/privacy проверки отделены от application tests. Git identity review и scanner policy сохранены. Внешняя публикация и deployment не выполнялись.
 
 | Этап | Статус |
 |---|---|
-| S0: репозиторий и исполняемый фундамент | Реализован и проверен; application checks и новый root preflight на `020f3d4` прошли |
-| S1: дерево, панель, SQLite CRUD | Реализован и проверен; реальные browser/restart scenarios и scoped final re-review прошли |
-| S2: scheduling module и транзакции | Следующий этап, не начат |
-| S3: Гант и схема зависимостей | Не начат |
+| S0: репозиторий и исполняемый фундамент | Реализован и проверен |
+| S1: дерево, панель, SQLite CRUD | Реализован и проверен; browser/restart scenarios проходят |
+| S2: scheduling module и транзакции | Реализован, интегрирован и проверен: verify 186/186, browser E2E 12/12 и итоговый preflight прошли |
+| S3: Гант и схема зависимостей | Следующий продуктовый этап; не начат |
 | S4: повседневный UX и доска | Не начат |
-| S5: self-hosting и сохранность данных | Есть Docker/Compose и consistent backup; restore/import/export/upgrade не реализованы |
+| S5: self-hosting и сохранность данных | Есть Docker/Compose, consistent backup и проверка synthetic migration 001 → 002; restore/import/export и полноценный upgrade не реализованы |
 | S6: релизная приёмка | Не начат |
 
 ## Следующая задача
 
-Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Whole-branch review выявил устаревший контекст быстрого ввода и два замечания к test harness; исправления закрыты scoped re-review, новый preflight прошёл в обычном checkout на `020f3d4`. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
+Выполнить S3: настоящий Гант, ввод параметров планирования и визуальную схему зависимостей по утверждённым референсам. Расчёты и авторитетные записи остаются на сервере. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
+
+## S2 — 2026-10-07
+
+Изменённые области: чистые calendar/scheduling/planning domain modules, shared DTO и команды, SQLite migration 002, Repository snapshots/transactions/undo, API расписания, точная упаковка миграций и тестовые fixtures. [План](superpowers/plans/2026-10-07-s2-scheduling.md) и [ADR 004](adr/004-scheduling-transactions.md) фиксируют реализацию существующих рабочих defaults без превращения их в решения владельца.
+
+Поддержаны Unscheduled/Auto/Fixed, оба календаря, исходные даты, notBefore, deadline, ограничения фиксированных и выполненных работ, coverage и partial summary. Неизвестные связанные работы блокируют downstream; циклы, повторные/межпроектные рёбра и summary endpoints отклоняются до сохранения. Конверсия листа в summary переносит работу и оба конца зависимостей в work-child. Удаление убирает инцидентные связи, одна отмена восстанавливает весь план. Ответы проверяются Zod до commit; некорректный внутренний DTO даёт безопасный 500 и полный rollback. Миграция сохраняет исходные задачи/аккаунт/даты, очищая несовместимый старый формат undo/operations.
+
+Существующая правая панель совместима с scheduled tasks: сохранение названия с неизменными датами не меняет план. Параметры планирования и зависимости пока доступны через API; интерфейс их редактирования относится к S3. Проверен расчёт T=8 → T=10 со сменой критического пути, возврат T=8 одной отменой и сохранность после настоящего перезапуска.
+
+Закрыты два review findings: отсутствующий origin при deadline у unscheduled task и валидация исходящего ответа до commit. Scoped re-review обеих правок прошли. Полный verify также закрывает предыдущую волну admin/auth: readline/promises сохраняет редактирование скрытого пароля при TERM=dumb; три проверки TERM и существующие синтетические reset/login scenarios проходят. Dev smoke использует собственные два порта; обычный Vite default 5173 сохранён.
+
+Проверено на закреплённых Node 24.21.0 / npm 11.19.0 без изменения глобального окружения:
+
+- `npm run verify` — прошёл: typecheck, lint, 186/186 application tests в 13 suites, skipped 0, production client/server build.
+- `npm run format:check`, `npm run check:package`, `git diff --check` — прошли.
+- `npm run test:e2e` — прошёл после переноса в основной checkout: 12/12 Chromium scenarios на 1440×900 и 1280×800, retries/skipped 0. Проверены планирование, отмена, сохранность после перезапуска, подтверждение/отмена преобразования работы и перенос обоих концов зависимостей.
+- Docker build и synthetic smoke — прошли на ARM64: migration 002, native SQLite, FS даты, undo, WAL backup, non-root/read-only, graceful stop/restart persistence. Все 37 production inputs основного checkout совпадают с проверенной сборкой; после переноса Docker checks не повторялись.
+- Полный публичный source snapshot — privacy guard проверил 136 entries; реальный Gitleaks не нашёл утечек. Guard и scanner policy не менялись.
+- Финальное независимое review выявило один P2: клиентское подтверждение сохранения работы не учитывало undated done/Auto/deadline/связи. Общий чистый predicate синхронизировал клиент и сервер. 16 регрессий проверяют создание/перенос, подтверждение/отмену и пустые/сводные цели; реальный браузерный сценарий проверяет перенос работы и обоих концов связей. Scoped re-review закрыл P2; новых замечаний нет.
+- После переноса основной checkout прошёл `npm run verify` с 186/186 tests, typecheck, lint и build; `format:check`, `check:package` и `git diff --check` прошли. До переноса S0/S1 verify также проходил с 102/102 tests.
+- Root `npm run preflight` после переноса — прошёл: doctor, kit (32 Markdown / 62 links), 52/52 real-Gitleaks/hook tests, workspace (137 entries), index (119 entries), staged (0 changed blobs), history (189 file versions / 13 metadata objects) и Gitleaks. Index не менялся.
+
+Только disposable synthetic SQLite, аккаунты, задачи и container volume. Production/private данные не читались, index не менялся, commits/push/deployment не выполнялись. Не выполнены: S3 UI, S6 acceptance, remote CI, AMD64 smoke, HTTPS reverse proxy, restore/import/export и полный upgrade/restore процесс.
+
+## Восстановление локального входа — 2026-10-07
+
+В исходном CLI на отдельной синтетической базе воспроизведено попадание служебных байтов стрелок и bracketed paste в пароль: setup проходил, ожидаемый пароль получал `INVALID_LOGIN`. Обычный ввод, Unicode и Backspace работали. `readPassword` переведён на Node readline с отключённой историей и заглушённым выводом; добавлены проверки редактирования, разорванных последовательностей клавиш, повторных запросов, отмены, EOF и ограничения длины.
+
+Добавлены `npm run admin:reset-password` и `make admin-reset-password` (с предварительной сборкой). Локальный TTY и двукратный скрытый ввод обязательны. Новый хеш, отзыв всех сеансов и очистка истории отмены фиксируются атомарно; проекты, задачи и ревизии сохраняются. Повторная проверка хеша внутри транзакции login не позволяет входу, начатому до reset, выдать сеанс по старому паролю. HTTP endpoint восстановления отсутствует. Решение описано в ADR 003; обновлены README и DEPLOYMENT. Схема БД, зависимости, lockfile и scanner policy не менялись.
+
+Проверено:
+
+- `npm run typecheck`, `npm run lint` — прошли.
+- `npm test -- tests/domain.test.ts tests/admin.test.ts tests/client tests/repository.test.ts tests/api.test.ts tests/runtime.test.ts tests/backup.test.ts` — 98/98 tests в 7 suites, skipped 0. Проверены сохранность задач, отзыв сеансов, старый/новый пароль, rollback, гонка login/reset и отказ CLI без TTY или с аргументом пароля.
+- `make test-e2e` — production build и 8/8 browser scenarios прошли.
+- Реальный disposable PTY с собранным CLI — setup и вход прошли для обычного ввода, Unicode, Backspace, стрелок и bracketed paste. Настоящий `make admin-reset-password` прошёл: несовпадающее подтверждение сохраняет старый пароль, успешное подтверждение меняет пароль, символы пароля не выводятся.
+- `make format-check`, `make check-kit`, `make check-package`, `make security-workspace`, `git diff --check` — прошли.
+
+Не запускались: `tests/dev.test.ts` и полный `verify` (порт 5173 занят существующим dev-сервером), Docker smoke и preflight. Версии среды остаются указанными в записи Make-команд. Пользовательские пароли и базы не открывались и не менялись; причина конкретного отказа входа не подтверждена. Следующий продуктовый этап — S2.
+
+## Подсказка первого входа — 2026-10-07
+
+Обновлён текст setup-required в `src/client/strings.ts`: причина отсутствия формы входа, локальная команда `make admin-setup` из каталога проекта, отдельная команда Docker Compose и указание задать пароль и обновить страницу. Существующий клиентский тест теперь ожидает Make-команду. Логика входа и CLI не менялись; пользовательский runtime не открывался.
+
+Проверено: `make verify` (typecheck, lint, 84/84 tests и build), `make format-check`, `make check-kit`, `git diff --check` — прошли. Для этой текстовой правки browser E2E и preflight не повторялись; ограничение версии Node из записи Make-команд сохраняется. Следующий продуктовый этап — S2.
+
+## Make-команды — 2026-10-07
+
+Добавлен корневой Makefile со справкой по умолчанию и командами установки, запуска, сборки, тестов, настройки аккаунта, миграций, backup и kit/privacy проверок. Рецепты вызывают существующие npm-скрипты. Make задаёт внешний каталог разработки по умолчанию и сохраняет приоритет явного `LEAF_DATA_DIR`; `db-backup` требует `BACKUP` и передаёт путь одним аргументом; `test-e2e` сначала выполняет build. Обновлены README и BOOTSTRAP. Код приложения, зависимости, схема и security policy не менялись.
+
+Проверено:
+
+- `make help` и dry-run основных команд — прошли. Отдельный disposable smoke без настоящего npm/runtime проверил безопасную команду по умолчанию, default/env/CLI выбор каталога, backup с пробелами и shell-разделителем в имени, отказ без пути и последовательность build → E2E при `-j4`, включая остановку после ошибки сборки.
+- `make verify` — прошли typecheck, lint, 84/84 tests в 7 suites и production build.
+- `make test-e2e` — сборка и 8/8 Chromium scenarios прошли, retries/skipped 0; только синтетические данные.
+- `make check-kit`, `make format-check`, `make check-package`, `make security-workspace`, `git diff --check` — прошли.
+
+Ограничение среды: в текущем терминале Node 24.19.0 / npm 11.17.0 / GNU Make 4.3. `npm run doctor` не прошёл exact Node check: проект требует Node 24.21.0; остальные проверки doctor прошли. Результаты этой волны получены на текущих версиях и не заменяют проверку закреплённой среды. Полный preflight не повторялся. Установка пакетов/браузера/хуков и команды аккаунта/БД через Make проверены без реального выполнения; существующий runtime не открывался. Следующий продуктовый этап — S2.
 
 ## S0–S1 — 2026-10-07
 

@@ -38,7 +38,7 @@ Dates, leaf-only FS dependencies, calendars, locked dates, undo, cycles and inco
 - `npm run agent:sandbox`: disposable Codex OS isolation probe; fail closed if unsupported.
 - `npm run hooks:install`: opt-in local installation; refuses to overwrite another hook setup.
 
-S0/S1 provides `dev`, `build`, `start`, `verify`, `format:check`, `test:unit`, `test:integration`, `test:e2e`, `check:package`, `admin:setup`, `db:migrate` and `db:backup`. Read README/BOOTSTRAP for runtime and browser setup. Docker/Compose packages this foundation; scheduling, Gantt, dependencies and release acceptance remain unfinished. Do not use `--if-present`, empty tests or skipped suites to make application CI green.
+S0–S2 provides `dev`, `build`, `start`, `verify`, `format:check`, `test:unit`, `test:integration`, `test:e2e`, `check:package`, `admin:setup`, `db:migrate` and `db:backup`. Read README/BOOTSTRAP for runtime and browser setup. Docker/Compose packages this foundation; S2 scheduling and dependency commands are available through the API; Gantt, visual dependencies, planning UI and release acceptance remain unfinished. Do not use `--if-present`, empty tests or skipped suites to make application CI green.
 
 ## Public-repository safety — mandatory
 

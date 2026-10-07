@@ -1,56 +1,70 @@
 import { pathToFileURL } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
+import { createInterface } from 'node:readline/promises';
+import { Writable } from 'node:stream';
 import { openDatabase } from './database.js';
 import { loadConfig } from './config.js';
 import { Auth } from './auth.js';
 import { DomainError } from '../domain/tree.js';
 class SetupError extends Error {}
 
-export function readPassword(prompt: string): Promise<string> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY)
+export function readPassword(
+  prompt: string,
+  input: NodeJS.ReadStream = process.stdin,
+  output: NodeJS.WriteStream = process.stdout,
+): Promise<string> {
+  if (!input.isTTY || !output.isTTY)
     throw new SetupError('Admin setup requires an interactive TTY');
-  process.stdout.write(prompt);
   return new Promise((resolve, reject) => {
-    let value = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    const finish = (error?: Error) => {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdin.off('data', onData);
-      process.stdout.write('\n');
+    // The promises Interface keeps editing enabled even under TERM=dumb.
+    // Let Node handle cursor keys, editing and bracketed paste, but discard
+    // all readline output so neither password characters nor history echo.
+    const silent = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+    const reader = createInterface({
+      input,
+      output: silent,
+      terminal: true,
+      historySize: 0,
+      crlfDelay: Infinity,
+    });
+    let settled = false;
+    const finish = (error?: Error, value = '') => {
+      if (settled) return;
+      settled = true;
+      input.off('data', checkLength);
+      input.off('error', onError);
+      reader.close();
+      input.pause();
+      silent.destroy();
+      output.write('\n');
       if (error) reject(error);
       else resolve(value);
     };
-    const onData = (chunk: string) => {
-      for (const character of chunk) {
-        if (character === '\u0003') {
-          finish(new SetupError('Setup cancelled'));
-          return;
-        }
-        if (character === '\r' || character === '\n') {
-          finish();
-          return;
-        }
-        if (character === '\u007f' || character === '\b') {
-          value = Array.from(value).slice(0, -1).join('');
-          continue;
-        }
-        if (character >= ' ' && character !== '\u007f') {
-          value += character;
-          if (value.length > 1024) {
-            finish(new SetupError('Password is too long'));
-            return;
-          }
-        }
-      }
+    const checkLength = () => {
+      if (reader.line.length > 1024)
+        finish(new SetupError('Password is too long'));
     };
-    process.stdin.on('data', onData);
+    const onError = () => finish(new SetupError('Password input failed'));
+    reader.once('line', (value: string) => {
+      if (value.length > 1024) finish(new SetupError('Password is too long'));
+      else finish(undefined, value);
+    });
+    reader.once('SIGINT', () => finish(new SetupError('Setup cancelled')));
+    reader.once('close', () => finish(new SetupError('Setup cancelled')));
+    reader.once('error', onError);
+    input.on('data', checkLength);
+    input.once('error', onError);
+    output.write(prompt);
   });
 }
 export async function adminSetup(): Promise<void> {
-  if (process.argv.length !== 2)
+  const reset =
+    process.argv.length === 3 && process.argv[2] === '--reset-password';
+  if (process.argv.length !== 2 && !reset)
     throw new SetupError('Admin setup does not accept arguments');
   if (!process.stdin.isTTY || !process.stdout.isTTY)
     throw new SetupError('Admin setup requires an interactive TTY');
@@ -58,7 +72,16 @@ export async function adminSetup(): Promise<void> {
   const db = openDatabase(config.databasePath);
   try {
     const auth = new Auth(db);
-    if (auth.hasAccount()) throw new SetupError('Local account already exists');
+    if (reset && !auth.hasAccount())
+      throw new SetupError(
+        'Local account does not exist. Run admin:setup first.',
+      );
+    if (!reset && auth.hasAccount())
+      throw new SetupError('Local account already exists');
+    if (reset)
+      process.stdout.write(
+        'Смена пароля завершит все сеансы и очистит историю отмены. Проекты и задачи сохранятся.\n',
+      );
     const first = await readPassword('Новый пароль (не менее 12 символов): ');
     const second = await readPassword('Повторите пароль: ');
     const firstBytes = Buffer.from(first);
@@ -68,8 +91,13 @@ export async function adminSetup(): Promise<void> {
       !timingSafeEqual(firstBytes, secondBytes)
     )
       throw new SetupError('Passwords do not match');
-    await auth.setup(first);
-    process.stdout.write('Локальная учётная запись создана.\n');
+    if (reset) await auth.resetPassword(first);
+    else await auth.setup(first);
+    process.stdout.write(
+      reset
+        ? 'Пароль изменён. Войдите с новым паролем.\n'
+        : 'Локальная учётная запись создана.\n',
+    );
   } finally {
     db.close();
   }

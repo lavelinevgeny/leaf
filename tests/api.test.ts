@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildApp, type LeafApp } from '../src/server/app.js';
+import { openDatabase } from '../src/server/database.js';
 import type { Command, Project, ProjectTree } from '../src/shared/contracts.js';
 
 const origin = 'http://127.0.0.1:3000';
@@ -129,6 +130,116 @@ describe('authenticated API boundary', () => {
         })
       ).statusCode,
     ).toBe(401);
+  });
+  it('resets the local password while preserving tasks and revoking existing sessions and undo', async () => {
+    const oldCookie = await login();
+    const created = await project(oldCookie);
+    const result = await command(
+      oldCookie,
+      app.repository.getTree(created.id, app.auth.session(oldCookie)!),
+      { type: 'task.create', title: 'Synthetic retained task', parentId: null },
+    );
+    expect(result.statusCode).toBe(200);
+    const before = result.json<ProjectTree>();
+    expect(before.canUndo).toBe(true);
+    const replacement = 'Synthetic-replacement-passphrase';
+    await app.auth.resetPassword(replacement);
+    expect(app.auth.session(oldCookie)).toBeUndefined();
+    expect(
+      (await app.inject({ url: '/api/projects', headers: headers(oldCookie) }))
+        .statusCode,
+    ).toBe(401);
+    const incorrect = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin },
+      payload: { password: syntheticPassword },
+    });
+    expect(incorrect.statusCode).toBe(401);
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin },
+      payload: { password: replacement },
+    });
+    expect(accepted.statusCode).toBe(200);
+    const currentSession = app.auth.session(accepted.cookies[0]!.value)!;
+    const after = app.repository.getTree(created.id, currentSession);
+    expect(after.project).toEqual(before.project);
+    expect(after.tasks).toEqual(before.tasks);
+    expect(after.canUndo).toBe(false);
+    // Reset has no remote endpoint.
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/auth/reset-password',
+          headers: { origin },
+          payload: { password: replacement },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+  it('rejects invalid reset input without changing the account or active sessions', async () => {
+    const cookie = await login();
+    await expect(app.auth.resetPassword('short')).rejects.toMatchObject({
+      code: 'INVALID_PASSWORD',
+    });
+    expect(app.auth.session(cookie)).toBeDefined();
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin },
+      payload: { password: syntheticPassword },
+    });
+    expect(accepted.statusCode).toBe(200);
+  });
+  it('does not create a missing account through password reset', async () => {
+    await expect(
+      app.auth.resetPassword(syntheticPassword),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
+    expect(app.auth.hasAccount()).toBe(false);
+  });
+  it('rolls back the password and sessions if revocation fails', async () => {
+    const cookie = await login();
+    const db = openDatabase(join(dir, 'synthetic.sqlite'));
+    try {
+      db.exec(
+        "CREATE TRIGGER synthetic_reset_failure BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT, 'Synthetic failure'); END;",
+      );
+      await expect(
+        app.auth.resetPassword('Synthetic-replacement-passphrase'),
+      ).rejects.toThrow();
+      expect(app.auth.session(cookie)).toBeDefined();
+      const accepted = await app.auth.login(
+        syntheticPassword,
+        'synthetic-rollback',
+      );
+      expect(app.auth.session(accepted)).toBeDefined();
+    } finally {
+      db.close();
+    }
+  });
+  it('rejects a login already in progress when the password changes', async () => {
+    await app.auth.setup('Synthetic-replacement-passphrase');
+    const db = openDatabase(join(dir, 'synthetic.sqlite'));
+    try {
+      const replacement = db
+        .prepare('SELECT passwordHash FROM account WHERE id=1')
+        .get() as { passwordHash: string };
+      await app.auth.resetPassword(syntheticPassword);
+      const pending = app.auth.login(syntheticPassword, 'synthetic-race');
+      // Commit a competing reset while scrypt verification is still pending.
+      db.prepare('UPDATE account SET passwordHash=? WHERE id=1').run(
+        replacement.passwordHash,
+      );
+      await expect(pending).rejects.toMatchObject({ code: 'INVALID_LOGIN' });
+      expect(
+        db.prepare('SELECT COUNT(*) AS count FROM sessions').get(),
+      ).toEqual({ count: 0 });
+    } finally {
+      db.close();
+    }
   });
   it('requires exact origin and JSON for mutations, without logging sensitive values', async () => {
     const cookie = await login();

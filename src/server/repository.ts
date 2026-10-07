@@ -11,6 +11,7 @@ import {
   type ProjectTree,
   type RenameProject,
   type Task,
+  type Dependency,
 } from '../shared/contracts.js';
 import {
   assertCanMove,
@@ -19,9 +20,21 @@ import {
   subtreeIds,
 } from '../domain/tree.js';
 
+import { calculateSchedule } from '../domain/scheduling.js';
+import { requiresWorkPreservation } from '../shared/work-preservation.js';
+import {
+  applyTaskPlan,
+  completedInterval,
+  emptyPlanning,
+  fixedDuration,
+  validateDependencies,
+  validateDependency,
+} from '../domain/planning.js';
+
 interface Snapshot {
   project: Project;
   tasks: Task[];
+  dependencies: Dependency[];
 }
 interface UndoRecord {
   sequence: number;
@@ -43,6 +56,11 @@ function canonical(value: unknown): string {
       .join(',')}}`;
   return JSON.stringify(value);
 }
+function validatedTreeResponse(value: unknown): ProjectTree {
+  const parsed = projectTreeSchema.safeParse(value);
+  if (!parsed.success) throw new Error('Invalid internal tree response');
+  return parsed.data;
+}
 export class Repository {
   constructor(
     private readonly db: Database.Database,
@@ -60,6 +78,9 @@ export class Repository {
       id: randomUUID(),
       title: input.title,
       revision: 0,
+      startDate: null,
+      calendarType: 'weekdays',
+      timezone: 'UTC',
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -85,7 +106,10 @@ export class Repository {
         'SELECT * FROM tasks WHERE projectId=? ORDER BY parentId,sortOrder,id',
       )
       .all(projectId) as Task[];
-    return { project, tasks };
+    const dependencies = this.db
+      .prepare('SELECT * FROM dependencies WHERE projectId=? ORDER BY id')
+      .all(projectId) as Dependency[];
+    return { project, tasks, dependencies };
   }
   private latestUndo(
     projectId: string,
@@ -100,11 +124,30 @@ export class Repository {
   getTree(projectId: string, sessionId: string): ProjectTree {
     return this.db.transaction(() => {
       const snapshot = this.snapshot(projectId);
-      return {
+      return validatedTreeResponse({
         ...snapshot,
+        schedule: this.calculate(snapshot),
         canUndo:
           this.latestUndo(projectId, sessionId)?.afterRevision ===
           snapshot.project.revision,
+      });
+    })();
+  }
+  private calculate(snapshot: Snapshot) {
+    return calculateSchedule({
+      startDate: snapshot.project.startDate,
+      calendarType: snapshot.project.calendarType,
+      tasks: snapshot.tasks,
+      dependencies: snapshot.dependencies,
+    });
+  }
+  getSchedule(projectId: string) {
+    return this.db.transaction(() => {
+      const snapshot = this.snapshot(projectId);
+      return {
+        projectId,
+        revision: snapshot.project.revision,
+        schedule: this.calculate(snapshot),
       };
     })();
   }
@@ -164,7 +207,7 @@ export class Repository {
               'Идентификатор операции уже использован.',
               409,
             );
-          return projectTreeSchema.parse(JSON.parse(existing.response));
+          return validatedTreeResponse(JSON.parse(existing.response));
         }
         let snapshot = this.snapshot(projectId);
         const revision = snapshot.project.revision;
@@ -211,6 +254,8 @@ export class Repository {
         }
         snapshot.project.revision = revision + 1;
         snapshot.project.updatedAt = timestamp;
+        validateDependencies(snapshot.tasks, snapshot.dependencies);
+        this.calculate(snapshot);
         this.save(snapshot);
         const result = this.getTree(projectId, sessionId);
         this.db
@@ -231,16 +276,23 @@ export class Repository {
   private save(snapshot: Snapshot): void {
     this.db
       .prepare(
-        'UPDATE projects SET title=@title,revision=@revision,updatedAt=@updatedAt WHERE id=@id',
+        'UPDATE projects SET title=@title,revision=@revision,updatedAt=@updatedAt,startDate=@startDate,calendarType=@calendarType,timezone=@timezone WHERE id=@id',
       )
       .run(snapshot.project);
+    this.db
+      .prepare('DELETE FROM dependencies WHERE projectId=?')
+      .run(snapshot.project.id);
     this.db
       .prepare('DELETE FROM tasks WHERE projectId=?')
       .run(snapshot.project.id);
     const insert = this.db.prepare(
-      'INSERT INTO tasks(id,projectId,parentId,title,description,sortOrder,status,inputStart,inputFinish,createdAt,updatedAt) VALUES (@id,@projectId,@parentId,@title,@description,@sortOrder,@status,@inputStart,@inputFinish,@createdAt,@updatedAt)',
+      'INSERT INTO tasks(id,projectId,parentId,title,description,sortOrder,status,inputStart,inputFinish,createdAt,updatedAt,planMode,durationDays,notBefore,deadline,completedStart,completedFinish,completedStartIndex,completedFinishIndex) VALUES (@id,@projectId,@parentId,@title,@description,@sortOrder,@status,@inputStart,@inputFinish,@createdAt,@updatedAt,@planMode,@durationDays,@notBefore,@deadline,@completedStart,@completedFinish,@completedStartIndex,@completedFinishIndex)',
     );
     for (const task of snapshot.tasks) insert.run(task);
+    const insertEdge = this.db.prepare(
+      'INSERT INTO dependencies(id,projectId,predecessorId,successorId) VALUES (@id,@projectId,@predecessorId,@successorId)',
+    );
+    for (const edge of snapshot.dependencies) insertEdge.run(edge);
   }
   private apply(snapshot: Snapshot, command: Command, timestamp: string): void {
     const tasks = snapshot.tasks;
@@ -262,28 +314,86 @@ export class Repository {
       if (parentId === null) return;
       const parent = find(parentId);
       if (tasks.some((task) => task.parentId === parentId)) return;
-      if (parent.inputStart !== null || parent.inputFinish !== null) {
+      if (requiresWorkPreservation(parent, snapshot.dependencies)) {
         if (preserveWork !== true)
           throw new DomainError(
             'PRESERVE_WORK_REQUIRED',
             'Подтвердите сохранение собственной работы отдельной подзадачей.',
             409,
           );
+        const workId = randomUUID();
         tasks.push({
           ...parent,
-          id: randomUUID(),
+          id: workId,
           parentId: parent.id,
           sortOrder: 0,
           createdAt: timestamp,
           updatedAt: timestamp,
         });
-        parent.inputStart = null;
-        parent.inputFinish = null;
+        for (const edge of snapshot.dependencies) {
+          if (edge.predecessorId === parent.id) edge.predecessorId = workId;
+          if (edge.successorId === parent.id) edge.successorId = workId;
+        }
+        Object.assign(parent, emptyPlanning);
         parent.status = 'todo';
         parent.updatedAt = timestamp;
       }
     };
     switch (command.type) {
+      case 'project.schedule': {
+        Object.assign(snapshot.project, command.changes);
+        for (const task of tasks)
+          task.durationDays = fixedDuration(
+            task,
+            snapshot.project.calendarType,
+          );
+        break;
+      }
+      case 'task.plan': {
+        const task = find(command.taskId);
+        if (tasks.some((item) => item.parentId === task.id))
+          throw new DomainError(
+            'SUMMARY_PLANNING',
+            'Сводная задача не имеет собственной работы.',
+          );
+        Object.assign(
+          task,
+          applyTaskPlan(task, command.plan, snapshot.project.calendarType),
+          { updatedAt: timestamp },
+        );
+        break;
+      }
+      case 'dependency.create': {
+        validateDependency(
+          tasks,
+          snapshot.dependencies,
+          command.predecessorId,
+          command.successorId,
+        );
+        snapshot.dependencies.push({
+          id: randomUUID(),
+          projectId: snapshot.project.id,
+          predecessorId: command.predecessorId,
+          successorId: command.successorId,
+        });
+        break;
+      }
+      case 'dependency.delete': {
+        if (
+          !snapshot.dependencies.some(
+            (edge) => edge.id === command.dependencyId,
+          )
+        )
+          throw new DomainError(
+            'DEPENDENCY_NOT_FOUND',
+            'Связь не найдена.',
+            404,
+          );
+        snapshot.dependencies = snapshot.dependencies.filter(
+          (edge) => edge.id !== command.dependencyId,
+        );
+        break;
+      }
       case 'task.create': {
         if (
           command.parentId !== null &&
@@ -315,8 +425,7 @@ export class Repository {
           description: '',
           sortOrder: position,
           status: 'todo',
-          inputStart: null,
-          inputFinish: null,
+          ...emptyPlanning,
           createdAt: timestamp,
           updatedAt: timestamp,
         };
@@ -337,7 +446,35 @@ export class Repository {
             'SUMMARY_DATES',
             'Даты сводной задачи не редактируются.',
           );
-        Object.assign(task, command.changes, { updatedAt: timestamp });
+        const changes = command.changes;
+        if (
+          task.planMode !== 'unscheduled' &&
+          (('inputStart' in changes &&
+            changes.inputStart !== task.inputStart) ||
+            ('inputFinish' in changes &&
+              changes.inputFinish !== task.inputFinish))
+        )
+          throw new DomainError(
+            'SCHEDULED_DATES',
+            'Изменяйте режим и даты работы командой планирования.',
+          );
+        if (changes.status === 'done' && task.status !== 'done')
+          Object.assign(
+            task,
+            completedInterval(task, this.calculate(snapshot).tasks[task.id]),
+          );
+        else if (
+          changes.status !== undefined &&
+          changes.status !== 'done' &&
+          task.status === 'done'
+        )
+          Object.assign(task, {
+            completedStart: null,
+            completedFinish: null,
+            completedStartIndex: null,
+            completedFinishIndex: null,
+          });
+        Object.assign(task, changes, { updatedAt: timestamp });
         break;
       }
       case 'task.move': {
@@ -366,6 +503,10 @@ export class Repository {
         const task = find(command.taskId);
         const deleted = subtreeIds(tasks, task.id);
         snapshot.tasks = tasks.filter((item) => !deleted.has(item.id));
+        snapshot.dependencies = snapshot.dependencies.filter(
+          (edge) =>
+            !deleted.has(edge.predecessorId) && !deleted.has(edge.successorId),
+        );
         orderedChildren(snapshot.tasks, task.parentId).forEach(
           (item, index) => {
             item.sortOrder = index;

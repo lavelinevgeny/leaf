@@ -6,7 +6,7 @@ export default defineConfig({
   build: { outDir: 'dist/client', sourcemap: false },
   server: {
     host: '127.0.0.1',
-    port: 5173,
+    port: Number(process.env.LEAF_DEV_PORT ?? '5173'),
     strictPort: true,
     proxy: {
       '/api': backend,

@@ -22,6 +22,9 @@ const project = {
   id: '11111111-1111-4111-8111-111111111111',
   title: 'Демо-проект',
   revision: 0,
+  startDate: null,
+  calendarType: 'weekdays' as const,
+  timezone: 'UTC',
   createdAt: '2026-10-07T00:00:00.000Z',
   updatedAt: '2026-10-07T00:00:00.000Z',
 };
@@ -40,11 +43,30 @@ const task = (
   description: '',
   sortOrder,
   status: 'todo',
+  planMode: 'unscheduled',
+  durationDays: null,
+  notBefore: null,
+  deadline: null,
+  completedStart: null,
+  completedFinish: null,
+  completedStartIndex: null,
+  completedFinishIndex: null,
   inputStart: null,
   inputFinish: null,
   createdAt: project.createdAt,
   updatedAt: project.updatedAt,
 });
+const emptySchedule: ProjectTree['schedule'] = {
+  feasibility: 'feasible',
+  originDate: null,
+  projectFinishIndex: null,
+  coverage: { knownLeafCount: 0, totalLeafCount: 0 },
+  tasks: {},
+  summaries: {},
+  criticalTaskIds: [],
+  criticalDependencyIds: [],
+  diagnostics: [],
+};
 let tree: ProjectTree;
 let commands: CommandEnvelope[];
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -56,7 +78,13 @@ const json = (body: unknown, status = 200) =>
     }),
   );
 beforeEach(() => {
-  tree = { project: { ...project }, tasks: [], canUndo: false };
+  tree = {
+    project: { ...project },
+    tasks: [],
+    canUndo: false,
+    dependencies: [],
+    schedule: structuredClone(emptySchedule),
+  };
   commands = [];
   fetchMock = vi.fn((url: string, init?: RequestInit) => {
     if (url === '/api/auth/session')
@@ -73,6 +101,8 @@ beforeEach(() => {
           },
           tasks: [],
           canUndo: false,
+          dependencies: [],
+          schedule: structuredClone(emptySchedule),
         };
         return json(tree.project);
       }
@@ -384,7 +414,7 @@ describe('client HTTP interactions', () => {
       json({ authenticated: false, setupRequired: true }),
     );
     const view = render(<App />);
-    await screen.findByText(/admin:setup/);
+    await screen.findByText(/make admin-setup/);
     expect(screen.queryByLabelText('Пароль')).not.toBeInTheDocument();
     view.unmount();
     fetchMock.mockImplementationOnce(() =>
@@ -868,7 +898,13 @@ describe('client HTTP interactions', () => {
       screen.getByRole('button', { name: 'Отбросить изменения' }),
     );
     fetchMock.mockImplementationOnce(() =>
-      json({ project: other, tasks: [], canUndo: false }),
+      json({
+        project: other,
+        tasks: [],
+        canUndo: false,
+        dependencies: [],
+        schedule: structuredClone(emptySchedule),
+      }),
     );
     await user.click(
       screen.getByRole('button', { name: /Другой демо-проект/ }),
@@ -914,7 +950,13 @@ describe('client HTTP interactions', () => {
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
     fetchMock.mockImplementationOnce(() =>
-      json({ project: other, tasks: [], canUndo: false }),
+      json({
+        project: other,
+        tasks: [],
+        canUndo: false,
+        dependencies: [],
+        schedule: structuredClone(emptySchedule),
+      }),
     );
     await user.click(
       screen.getByRole('button', { name: /Другой демо-проект/ }),
@@ -1055,4 +1097,98 @@ describe('client HTTP interactions', () => {
       expect(screen.getByLabelText('Новый родитель')).toHaveValue(''),
     );
   });
+  describe.each(['create', 'move'] as const)(
+    'preserve-work confirmation for %s',
+    (action) => {
+      async function attempt(user: ReturnType<typeof userEvent.setup>) {
+        if (action === 'create') {
+          await user.click(
+            screen.getByRole('treeitem', { name: /Собственная работа,/ }),
+          );
+          await user.click(
+            screen.getByRole('button', { name: 'Добавить подзадачу' }),
+          );
+          await user.type(
+            screen.getByLabelText('Новая задача'),
+            'Новый ребёнок{Enter}',
+          );
+        } else {
+          screen.getByRole('treeitem', { name: /Переносимая задача,/ }).focus();
+          await user.keyboard('{Alt>}{ArrowRight}{/Alt}');
+        }
+      }
+      function fixture(
+        kind: 'done' | 'auto' | 'deadline' | 'linked' | 'empty' | 'summary',
+      ) {
+        const parent = task(1, 'Собственная работа');
+        if (kind === 'done') parent.status = 'done';
+        if (kind === 'auto') {
+          parent.planMode = 'auto';
+          parent.durationDays = 3;
+        }
+        if (kind === 'deadline') parent.deadline = '2026-10-20';
+        tree.tasks = [parent, task(2, 'Переносимая задача', null, 1)];
+        if (kind === 'linked')
+          tree.dependencies = [
+            {
+              id: id(9),
+              projectId: project.id,
+              predecessorId: id(1),
+              successorId: id(2),
+            },
+          ];
+        if (kind === 'summary') {
+          parent.deadline = '2026-10-20';
+          tree.tasks.push(task(3, 'Существующий ребёнок', id(1)));
+        }
+      }
+      it.each(['done', 'auto', 'deadline', 'linked'] as const)(
+        'confirms undated %s work and sends preserveWork',
+        async (kind) => {
+          fixture(kind);
+          await open();
+          await attempt(userEvent.setup());
+          await waitFor(() => expect(commands).toHaveLength(1));
+          expect(window.confirm).toHaveBeenCalledWith(
+            expect.stringContaining('сохранить'),
+          );
+          expect(commands[0]!.command).toMatchObject({
+            type: action === 'create' ? 'task.create' : 'task.move',
+            parentId: id(1),
+            preserveWork: true,
+          });
+        },
+      );
+      it.each(['done', 'linked'] as const)(
+        'cancels conversion of undated %s work without sending a mutation',
+        async (kind) => {
+          fixture(kind);
+          const before = structuredClone(tree);
+          vi.mocked(window.confirm).mockReturnValueOnce(false);
+          await open();
+          await attempt(userEvent.setup());
+          expect(window.confirm).toHaveBeenCalledWith(
+            expect.stringContaining('сохранить'),
+          );
+          expect(commands).toEqual([]);
+          expect(tree).toEqual(before);
+          if (action === 'create')
+            expect(screen.getByLabelText('Новая задача')).toHaveValue(
+              'Новый ребёнок',
+            );
+        },
+      );
+      it.each(['empty', 'summary'] as const)(
+        'does not confirm conversion for %s parent',
+        async (kind) => {
+          fixture(kind);
+          await open();
+          await attempt(userEvent.setup());
+          await waitFor(() => expect(commands).toHaveLength(1));
+          expect(window.confirm).not.toHaveBeenCalled();
+          expect(commands[0]!.command).not.toHaveProperty('preserveWork');
+        },
+      );
+    },
+  );
 });

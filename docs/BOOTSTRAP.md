@@ -67,7 +67,9 @@ Doctor проверяет корень, exact Node patch из `.nvmrc`, npm, Git
 
 Отдельный workflow kit проверяет документацию и Git privacy с Gitleaks. Application workflow выполняет exact npm ci, typecheck, lint, реальные unit/integration tests, build, format/package checks и Chromium E2E. Оба используют read-only permissions и закреплённые SHA actions; uploads, release/deploy отсутствуют. Не применять `pull_request_target` для запуска кода из fork. Не использовать production self-hosted runner для чужих PR.
 
-## Запуск и проверки приложения S0/S1
+## Запуск и проверки приложения S0–S2
+
+Для основных операций есть Makefile: `make help` показывает справку. Первый локальный запуск: `make install`, `make build`, `make admin-setup`, `make dev`. Make использует внешний каталог `~/.local/share/leaf-dev` по умолчанию; заданный `LEAF_DATA_DIR` из окружения или аргументов имеет приоритет. Прямые npm-команды ниже по-прежнему требуют явного `LEAF_DATA_DIR` для запуска приложения и работы с БД.
 
 ```sh
 npm ci --strict-allow-scripts --no-audit --no-fund
@@ -80,9 +82,9 @@ npm run test:e2e
 
 E2E запускает реальные собранные серверные процессы, поэтому сначала нужен `npm run build` (он входит в verify). Тесты создают и удаляют собственные внешние синтетические базы и аккаунты; приложение не добавляет default account. Browser results и снимки сохраняются во временном каталоге ОС вне checkout, traces/video выключены. CI ничего не загружает как artifact.
 
-Для локальной разработки задайте абсолютный внешний каталог `LEAF_DATA_DIR`, выполните build, `npm run admin:setup` в интерактивном терминале и `npm run dev`. Вход — на http://127.0.0.1:5173. API по умолчанию на 3000; `LEAF_PORT` меняет серверный порт и Vite proxy. `LEAF_PUBLIC_ORIGIN` в dev по умолчанию равен origin Vite. SIGINT/SIGTERM останавливает оба дочерних процесса. Настройка аккаунта не принимает пароль из args/env и не выводит его.
+Для локальной разработки задайте абсолютный внешний каталог `LEAF_DATA_DIR`, выполните build, `npm run admin:setup` в интерактивном терминале и `npm run dev`. Вход — на http://127.0.0.1:5173. API по умолчанию на 3000; `LEAF_PORT` меняет серверный порт и Vite proxy; `LEAF_DEV_PORT` меняет порт Vite и вычисляемый dev origin. `LEAF_PUBLIC_ORIGIN` в dev по умолчанию равен origin Vite. SIGINT/SIGTERM останавливает оба дочерних процесса. Настройка аккаунта не принимает пароль из args/env и не выводит его.
 
-`npm run db:migrate` применяет встроенную начальную миграцию. `npm run db:backup -- /absolute/external/new-snapshot.sqlite` создаёт согласованный SQLite snapshot через native backup API при работающем сервере, с правами 0600; существующий destination и symlink отклоняются. Backup содержит аккаунт и задачи и остаётся приватным. Restore, JSON import/export и upgrade from previous schema пока не реализованы (S5). Контейнерный запуск описан в DEPLOYMENT.
+`npm run db:migrate` последовательно применяет встроенные миграции 001 и 002. Миграция S2 сохраняет исходные даты и аккаунт, очищая только устаревший формат истории операций/отмены; проверена на синтетической базе S1. Перед обновлением рабочей базы остановить сервер и сохранить backup. `npm run db:backup -- /absolute/external/new-snapshot.sqlite` создаёт согласованный SQLite snapshot через native backup API при работающем сервере, с правами 0600; существующий destination и symlink отклоняются. Backup содержит аккаунт и задачи и остаётся приватным. Restore, JSON import/export и полноценная процедура upgrade/restore остаются S5; переход schema 001 → 002 покрыт отдельными синтетическими integration tests. Контейнерный запуск описан в DEPLOYMENT.
 
 ## Готовность S0
 

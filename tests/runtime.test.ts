@@ -122,6 +122,29 @@ describe('safe runtime configuration', () => {
     expect(args.status).toBe(1);
     expect(args.stderr).not.toContain('synthetic-argument');
   });
+  it('requires an interactive terminal for password reset and refuses password arguments', () => {
+    const dir = scratch();
+    for (const suffix of [[], ['synthetic-forbidden-argument']]) {
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          'src/server/admin.ts',
+          '--reset-password',
+          ...suffix,
+        ],
+        {
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH, LEAF_DATA_DIR: dir },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).not.toContain('synthetic-forbidden-argument');
+      expect(existsSync(join(dir, 'leaf.sqlite'))).toBe(false);
+    }
+  });
   it('serves only static allowlist root and SPA routes; never API fallback', async () => {
     const dir = scratch();
     const staticRoot = join(dir, 'public');

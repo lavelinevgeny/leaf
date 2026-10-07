@@ -17,6 +17,18 @@ function derive(password: string, salt: Buffer): Promise<Buffer> {
 function sessionHash(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
+async function passwordHash(password: string): Promise<string> {
+  if (password.length < 12 || password.length > 1024)
+    throw new DomainError(
+      'INVALID_PASSWORD',
+      'Пароль должен содержать от 12 до 1024 символов.',
+    );
+  const salt = randomBytes(16);
+  const key = await derive(password, salt);
+  return ['scrypt', N, r, p, salt.toString('hex'), key.toString('hex')].join(
+    ':',
+  );
+}
 export class Auth {
   private readonly attempts = new Map<
     string,
@@ -33,27 +45,13 @@ export class Auth {
     return Boolean(this.db.prepare('SELECT id FROM account WHERE id=1').get());
   }
   async setup(password: string): Promise<void> {
-    if (password.length < 12 || password.length > 1024)
-      throw new DomainError(
-        'INVALID_PASSWORD',
-        'Пароль должен содержать от 12 до 1024 символов.',
-      );
     if (this.hasAccount())
       throw new DomainError(
         'ACCOUNT_EXISTS',
         'Локальная учётная запись уже настроена.',
         409,
       );
-    const salt = randomBytes(16);
-    const key = await derive(password, salt);
-    const encoded = [
-      'scrypt',
-      N,
-      r,
-      p,
-      salt.toString('hex'),
-      key.toString('hex'),
-    ].join(':');
+    const encoded = await passwordHash(password);
     this.db
       .transaction(() => {
         if (this.hasAccount())
@@ -65,6 +63,30 @@ export class Auth {
         this.db
           .prepare('INSERT INTO account(id,passwordHash) VALUES (1,?)')
           .run(encoded);
+      })
+      .immediate();
+  }
+  async resetPassword(password: string): Promise<void> {
+    if (!this.hasAccount())
+      throw new DomainError(
+        'ACCOUNT_NOT_FOUND',
+        'Сначала создайте локальную учётную запись.',
+        409,
+      );
+    const encoded = await passwordHash(password);
+    this.db
+      .transaction(() => {
+        const updated = this.db
+          .prepare('UPDATE account SET passwordHash=? WHERE id=1')
+          .run(encoded);
+        if (updated.changes !== 1)
+          throw new DomainError(
+            'ACCOUNT_NOT_FOUND',
+            'Сначала создайте локальную учётную запись.',
+            409,
+          );
+        this.db.prepare('DELETE FROM sessions').run();
+        this.db.prepare('DELETE FROM undo_snapshots').run();
       })
       .immediate();
   }
@@ -118,6 +140,13 @@ export class Auth {
       const token = randomBytes(32).toString('base64url');
       this.db
         .transaction(() => {
+          // A reset in another process must also invalidate a login that was
+          // already deriving the old password when the reset committed.
+          const current = this.db
+            .prepare('SELECT passwordHash FROM account WHERE id=1')
+            .get() as { passwordHash: string } | undefined;
+          if (current?.passwordHash !== account.passwordHash)
+            throw new DomainError('INVALID_LOGIN', 'Не удалось войти.', 401);
           this.db
             .prepare('DELETE FROM sessions WHERE expiresAt<=?')
             .run(timestamp);

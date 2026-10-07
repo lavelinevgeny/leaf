@@ -15,3 +15,4 @@
 !src/**/*.css
 !migrations/
 !migrations/001-initial.sql
+!migrations/002-scheduling.sql

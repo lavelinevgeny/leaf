@@ -11,10 +11,11 @@ import { openDatabase } from '../src/server/database.js';
 it('dev proxies a custom server port, enforces browser origin and stops both children gracefully', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'leaf-dev-test-'));
   let socket: Server | undefined;
+  let frontendSocket: Server | undefined;
   let child: ChildProcess | undefined;
   let exit: Promise<number | null> | undefined;
   let port = 0;
-  const devOrigin = 'http://127.0.0.1:5173';
+  let devOrigin = '';
   try {
     const password = randomBytes(24).toString('base64url');
     const db = openDatabase(join(directory, 'leaf.sqlite'));
@@ -32,16 +33,33 @@ it('dev proxies a custom server port, enforces browser origin and stops both chi
     if (!address || typeof address === 'string')
       throw new Error('No test port');
     port = address.port;
+    frontendSocket = createServer();
+    await new Promise<void>((resolve, reject) => {
+      frontendSocket!.once('error', reject);
+      frontendSocket!.listen(0, '127.0.0.1', resolve);
+    });
+    const frontendAddress = frontendSocket.address();
+    if (!frontendAddress || typeof frontendAddress === 'string')
+      throw new Error('No frontend test port');
+    const frontendPort = frontendAddress.port;
+    devOrigin = `http://127.0.0.1:${frontendPort}`;
+    await new Promise<void>((resolve, reject) =>
+      frontendSocket!.close((error) => (error ? reject(error) : resolve())),
+    );
     await new Promise<void>((resolve, reject) =>
       socket!.close((error) => (error ? reject(error) : resolve())),
     );
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      LEAF_DATA_DIR: directory,
+      LEAF_PORT: String(port),
+      LEAF_DEV_PORT: String(frontendPort),
+    };
+    // Exercise the launcher's default origin for this disposable frontend port.
+    delete environment.LEAF_PUBLIC_ORIGIN;
     const current = spawn(process.execPath, ['scripts/dev.mjs'], {
       stdio: 'ignore',
-      env: {
-        ...process.env,
-        LEAF_DATA_DIR: directory,
-        LEAF_PORT: String(port),
-      },
+      env: environment,
     });
     child = current;
     let failed = false;
@@ -97,6 +115,10 @@ it('dev proxies a custom server port, enforces browser origin and stops both chi
     ).toBe(403);
   } finally {
     try {
+      if (frontendSocket?.listening)
+        await new Promise<void>((resolve, reject) =>
+          frontendSocket!.close((error) => (error ? reject(error) : resolve())),
+        );
       if (socket?.listening)
         await new Promise<void>((resolve, reject) =>
           socket!.close((error) => (error ? reject(error) : resolve())),

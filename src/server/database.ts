@@ -18,18 +18,23 @@ export function openDatabase(databasePath: string): Database.Database {
     db.exec(
       'CREATE TABLE IF NOT EXISTS migrations (version INTEGER PRIMARY KEY) STRICT',
     );
-    const version = db
-      .prepare('SELECT MAX(version) AS version FROM migrations')
-      .get() as { version: number | null };
-    if ((version.version ?? 0) > 1)
+    const versions = db
+      .prepare('SELECT version FROM migrations ORDER BY version')
+      .all() as { version: number }[];
+    const migrations = ['001-initial.sql', '002-scheduling.sql'];
+    if (
+      versions.some((row, index) => row.version !== index + 1) ||
+      versions.length > migrations.length
+    )
       throw new Error('Unsupported database schema');
-    if (version.version === null) {
-      // Migration is an application build input; never accept a runtime SQL path.
+    for (let index = versions.length; index < migrations.length; index++) {
+      // Only reviewed application build inputs are valid migration sources.
+      const name = migrations[index]!;
       const migrationPath = fileURLToPath(
-        new URL('../../migrations/001-initial.sql', import.meta.url),
+        new URL(`../../migrations/${name}`, import.meta.url),
       );
       const fallbackPath = fileURLToPath(
-        new URL('../../../migrations/001-initial.sql', import.meta.url),
+        new URL(`../../../migrations/${name}`, import.meta.url),
       );
       let migration: string;
       try {
@@ -40,7 +45,7 @@ export function openDatabase(databasePath: string): Database.Database {
       }
       db.transaction(() => {
         db.exec(migration);
-        db.prepare('INSERT INTO migrations(version) VALUES (?)').run(1);
+        db.prepare('INSERT INTO migrations(version) VALUES (?)').run(index + 1);
       }).immediate();
     }
     return db;

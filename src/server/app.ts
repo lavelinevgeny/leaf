@@ -8,6 +8,7 @@ import {
   createProjectSchema,
   loginSchema,
   renameProjectSchema,
+  scheduleResponseSchema,
   uuidSchema,
 } from '../shared/contracts.js';
 import { Auth, SESSION_SECONDS } from './auth.js';
@@ -164,6 +165,16 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       const session = requireSession(request);
       const { id } = projectParamsSchema.parse(request.params);
       return app.repository.getTree(id, session);
+    });
+    app.get('/api/projects/:id/schedule', (request) => {
+      requireSession(request);
+      const { id } = projectParamsSchema.parse(request.params);
+      const parsed = scheduleResponseSchema.safeParse(
+        app.repository.getSchedule(id),
+      );
+      if (!parsed.success)
+        throw new Error('Invalid internal schedule response');
+      return parsed.data;
     });
     app.post('/api/projects/:id/commands', (request) => {
       const session = requireSession(request);

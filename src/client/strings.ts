@@ -10,7 +10,8 @@ export const strings = {
   logout: 'Выйти',
   login: 'Войти',
   password: 'Пароль',
-  setup: 'Для первого входа выполните npm run admin:setup в терминале сервера.',
+  setup:
+    'Аккаунт ещё не создан. Для локального запуска выполните make admin-setup в терминале из каталога проекта. Для Docker Compose выполните docker compose exec leaf npm run admin:setup на хосте. Задайте пароль и обновите страницу.',
   tasks: 'Задачи',
   task: 'Задача',
   subtasks: 'Подзадачи',

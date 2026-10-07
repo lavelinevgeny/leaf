@@ -8,6 +8,7 @@ import type {
   RenameProject,
   Task,
 } from '../shared/contracts.js';
+import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import { api, ApiError } from './api.js';
 import { ProjectSidebar } from './ProjectSidebar.js';
 import { QuickAdd, type AddContext } from './QuickAdd.js';
@@ -341,9 +342,10 @@ export function App() {
     const current = treeRef.current;
     const parent = current?.tasks.find((task) => task.id === parentId);
     if (
+      current &&
       parent &&
-      !current?.tasks.some((task) => task.parentId === parent.id) &&
-      (parent.inputStart || parent.inputFinish)
+      !current.tasks.some((task) => task.parentId === parent.id) &&
+      requiresWorkPreservation(parent, current.dependencies)
     )
       return window.confirm(strings.preserveConfirm) ? true : null;
     return false;
