@@ -30,6 +30,12 @@ The owner explicitly approved publication of the existing commit identity email.
 
 ## Verification
 
+### Publication scan correction — 2026-10-07
+
+A scanner-only synthetic token staged and then removed from the working copy passed preflight because only the local guard inspected the index. Add a separate Gitleaks staged scan. Exercise the real publication subprocesses through an importable preflight runner, with host setup and recursive suite execution isolated in tests; preserve the index and stop before downstream readers when workspace privacy fails.
+
+Snapshot `.gitleaks.toml` from the index for staged/history/pending-message scans, and from the working tree for workspace scans. Require a regular, unmerged index entry; never fall back to an unstaged policy. Pass the snapshot and an empty ignore-file directory explicitly to Gitleaks. Validate the scanner configuration even for an empty staged diff. Distinguish findings from scanner errors with a dedicated internal finding exit code, mapping them to wrapper exits 1 and 2. Remove snapshots in `finally`, including message refusals and scanner errors. No scanner output or credential data is persisted.
+
 `test:kit` covers guard regressions, historical approvals, nested tags, real Gitleaks positive/negative controls, output suppression and hooks. `doctor`, `preflight` and `agent:sandbox` report distinct outcomes. Agent behavior scenarios are maintained separately and are not counted as executed model evaluations.
 
 Rollback changes scripts/configuration and removes the new commit-msg hook from the local setup through a reviewed change. It must not remove scanner safeguards or approvals to allow publication; legacy assets remain readable.

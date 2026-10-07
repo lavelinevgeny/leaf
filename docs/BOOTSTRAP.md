@@ -41,6 +41,15 @@ go install github.com/zricethezav/gitleaks/v8@v8.30.1
 
 Pre-commit проверяет staged blobs локальным guard и полные изменённые index blobs через Gitleaks stdin. Commit-msg проверяет pending Git message локальными правилами и Gitleaks. Pre-push проверяет текущий index и всю достижимую историю, затем Gitleaks file history и metadata stdin, включая nested annotated tags. При отсутствии Gitleaks операция блокируется, а не пропускается. На большом существующем репозитории полный history scan может занять время — безопасность не выключать ради скорости.
 
+Проверки staged/history/commit message используют снимок `.gitleaks.toml` из index. Перед самым первым коммитом или preflight прочитать и проверить публичную конфигурацию, затем добавить её в index явно:
+
+```sh
+npm run security:workspace
+git add -- .gitleaks.toml
+```
+
+Отсутствующая, конфликтующая или symlink-конфигурация в index блокирует проверку. Незастейдженные правила не подменяют правила публикации. Workspace scan использует отдельный снимок рабочей конфигурации, чтобы проверить ещё не подготовленные к коммиту файлы. Снимки создаются вне checkout с ограниченными правами и удаляются после успеха, находки или ошибки scanner.
+
 ## Единый локальный preflight
 
 ```sh
@@ -48,7 +57,7 @@ npm run doctor
 npm run preflight
 ```
 
-Doctor проверяет корень, Node major из `.nvmrc`, npm, Gitleaks 8.30.1+, configured hooks с executable bits и public safety profiles. Он не читает auth/config агента в home и не проверяет login. Preflight запускает workspace guard до остальных читающих проверок, затем проверяет kit, реальные scanner/hook tests, незакоммиченные public text files, index, историю и metadata. Index не изменяется; новая незастейдженная правка тоже проверяется. Private workspace path блокирует preflight без чтения содержимого.
+Doctor проверяет корень, Node major из `.nvmrc`, npm, Gitleaks 8.30.1+, configured hooks с executable bits и public safety profiles. Он не читает auth/config агента в home и не проверяет login. Preflight запускает workspace guard до остальных читающих проверок, затем проверяет kit, реальные scanner/hook tests, незакоммиченные public text files, index guard, полные изменённые staged blobs через Gitleaks, историю и metadata. Index не изменяется; новая незастейдженная правка тоже проверяется. Private workspace path блокирует preflight без чтения содержимого.
 
 Это локальный барьер. `agent:sandbox` отдельно проверяет OS isolation Codex, а удалённые настройки подтверждает владелец. После появления runtime `.env`/БД держать их за пределами agent checkout; обычные коммиты проверять через index/history commands.
 

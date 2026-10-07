@@ -32,7 +32,7 @@
 
 ## Проверяемые профили и запуск
 
-Перед работой: `npm run doctor`. Перед подготовкой публикации: `npm run preflight`. Эти команды не меняют index, Git identity или remote. Local kit tests используют временную синтетику, их можно выполнять без повторного согласования; для полного suite обязателен Gitleaks.
+Перед работой: `npm run doctor`. Перед подготовкой публикации: `npm run preflight`. Эти команды не меняют index, Git identity или remote. Preflight отдельно проверяет workspace secrets и полные изменённые staged blobs: рабочий файл и index могут различаться. Scanner policy для staged/history/commit message берётся из index; перед самым первым запуском подготовить проверенную `.gitleaks.toml` по BOOTSTRAP. Local kit tests используют временную синтетику, их можно выполнять без повторного согласования; для полного suite обязателен Gitleaks.
 
 Claude: shared settings включают strict sandbox (`enabled`, `failIfUnavailable`, запрет unsandboxed retry), запреты private reads и blockReadsOutsideWorkingDirectories. Сеть subprocess по умолчанию без разрешённых доменов. Проверить effective settings через `/sandbox` и `/permissions` в актуальном Claude Code; проверить synthetic denied files через Read и Bash/Node, отказ сети и разрешённое редактирование public files. Shared settings могут зависеть от managed policy и версии. Агентные `.env.example` также закрыты консервативным `.env.*` deny; public примеры для чтения можно размещать как `config/env.example`.
 

@@ -4,7 +4,7 @@
 
 Стартовый комплект распакован и проверен в корне локального Git-репозитория; исходный ZIP удалён после побайтовой сверки распакованных файлов. Основная ветка — `main`, установлен локальный `core.hooksPath=.githooks`. Создан начальный коммит. Production-кода leaf пока нет. Три выбранных референса включены и просмотрены; последний коллаж подзадач исключён. Kit checks и их тесты отделены от будущих application tests. Исходный отчёт подготовки комплекта — в VALIDATION; результаты инициализации приведены ниже.
 
-Обвязка проверена в `chore/harden-agent-harness`. На 2026-10-07 реальная synthetic OS probe Codex проходит; комплект имеет 45 проходящих тестов, полный local preflight прошёл на текущих публичных файлах. Владелец разрешил публичный Git identity email в полях автора/коммиттера; согласованный review manifest включён в подготовленные изменения. Повторный аудит выявил пробел Gitleaks-проверки индекса в preflight; результаты и рекомендации приведены ниже. Внешняя публикация не выполнялась.
+Обвязка проверена в `chore/harden-agent-harness`. На 2026-10-07 реальная synthetic OS probe Codex проходит; комплект имеет 51 проходящий тест, полный local preflight прошёл на текущих публичных файлах. Владелец разрешил публичный Git identity email в полях автора/коммиттера; согласованный review manifest сохранён в репозитории. Пробел Gitleaks-проверки индекса в preflight исправлен; правила scanner для проверок публикации берутся из index. Результаты аудита и исправлений приведены ниже. Внешняя публикация не выполнялась.
 
 | Этап | Статус |
 |---|---|
@@ -18,7 +18,7 @@
 
 ## Следующая задача
 
-Ближайшая рекомендуемая доработка обвязки: добавить Gitleaks для staged blobs в preflight и регрессионный тест расхождения index/working tree. Перед публикацией отдельно проверить серверную защиту. Продуктовая задача S0 остаётся отдельным поручением: проверить и зафиксировать версии среды и зависимостей, создать lockfile, клиент/сервер и настоящие команды запуска, сборки и тестирования. Затем перейти к сквозному сценарию S1. Не объявлять комплектацию документации реализованным приложением.
+Перед публикацией отдельно подтвердить серверную защиту и удалённый CI. Следующая проверка агентной среды: effective Claude sandbox/permissions и пять model scenarios на выбранных версиях CLI/model, с сохранением только безопасных итогов. Продуктовая задача S0 остаётся отдельным поручением: проверить и зафиксировать версии среды и зависимостей, создать lockfile, клиент/сервер и настоящие команды запуска, сборки и тестирования. Затем перейти к сквозному сценарию S1. Не объявлять комплектацию документации реализованным приложением.
 
 ## REPO-INIT — 2026-10-06
 
@@ -150,6 +150,25 @@
 5. В S0 добавить настоящие typecheck/lint/unit/integration/build и lockfile; затем relevant E2E. Перед распространением выбрать лицензию. Эти задачи не выполнены аудитом.
 
 Не выполнены: model/API calls, Claude runtime smoke, end-to-end Codex launcher, удалённый CI и server settings, application tests/build/E2E/Docker. Не менялись Git identity, история, remotes или security settings; push/deployment/publication не выполнялись. Личные данные не использовались. Отсутствие находок означает только прохождение покрываемых правил: имена, телефоны и изображения требуют отдельного ручного privacy-review.
+
+## HARNESS-FIX — 2026-10-07
+
+Результат: исправлены локальные проверки публикации по итогам аудита. Изменённые области: `scripts/preflight.mjs`, `scripts/run-gitleaks.mjs`, `scripts/harness.test.mjs`, START_HERE, BOOTSTRAP, PRIVACY, AGENT_WORKFLOW, ADR 001 и этот журнал. Продуктовые требования и реализация приложения не изменялись.
+
+- Preflight теперь отдельно запускает Gitleaks для полных изменённых staged blobs. Синтетический scanner-only token в index блокируется даже после очистки working tree; чистая копия проходит, незакоммиченные workspace secrets остаются blocking. Проверено сохранение index и ранняя остановка после отказа workspace guard.
+- Staged/history/commit-message scans используют снимок `.gitleaks.toml` из index; workspace scan — снимок working policy. Отсутствующие или nonregular index entries блокируются. Незастейдженная конфигурация не подменяет publication policy. Даже пустой staged diff проверяет scanner configuration.
+- Temporary policy snapshots создаются с ограниченными правами вне tracked inputs и удаляются после успеха, находки, отказа message guard или scanner error. Ignore-file directory задаётся явно; raw stdout/stderr не выводится. Dedicated scanner finding code различает wrapper exit 1 (находка) и exit 2 (ошибка), оба блокируют операцию.
+- Bootstrap теперь описывает явное добавление проверенной scanner policy в index перед самым первым preflight/commit. Новых зависимостей, установки пакетов и изменений личной конфигурации нет.
+
+Проверено:
+
+- Четыре новые регрессии сначала воспроизвели ошибки, затем прошли; дополнительная регрессия пустого index diff также сначала упала и прошла после исправления. Все fixtures синтетические, временные копии удалены, значения positive controls не выводились.
+- `npm run preflight` — прошло полностью: doctor, public workspace guard, kit (26 Markdown files / 47 local links), 51/51 tests без пропусков, Gitleaks workspace и staged, index guard, history/metadata guard и Gitleaks history/metadata.
+- `npm run agent:sandbox` — прошло: public read/write, private/outside read denial, network denial в отдельной synthetic OS probe.
+- `git diff --check` — прошло. Синтаксис служебных скриптов проверен; application checks отсутствуют вместе с приложением.
+- Перед коммитом `security:staged` проверил 9 изменённых index blobs; `security:history` и `git diff --cached --check` прошли. После обновления handoff повторно прошли `check:kit`, `security:workspace` и синтаксис всех 18 `.mjs`.
+
+Не выполнены: model/API calls, effective Claude runtime smoke, end-to-end Codex model launch, remote CI/server settings, app build/tests/E2E/Docker. Эти результаты не подменяются kit tests. Git identity, история и remotes не менялись; push/deployment/publication не выполнялись. Scanner policy в index остаётся reviewable и требует owner review при изменении; snapshots не защищают от намеренного переписывания trusted hooks или правил. Ручной privacy-review изображений и прочих персональных данных сохраняется.
 
 ## Шаблон записи handoff
 

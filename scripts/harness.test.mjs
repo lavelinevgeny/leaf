@@ -11,6 +11,7 @@ import { parseAssetManifest, validateCurrentAssets } from './public-assets.mjs';
 import { inspectEnvironment } from './doctor.mjs';
 import { codexConfigArgs } from './agent-profile.mjs';
 import { checkCodexSandbox } from './agent-sandbox.mjs';
+import { runPreflight } from './preflight.mjs';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull };
@@ -32,6 +33,7 @@ function repo(t) {
   git(dir, 'config', '--local', 'user.email', 'fixture@example.test');
   for (const name of fs.readdirSync(path.join(project, 'scripts')).filter((name) => name.endsWith('.mjs') && !name.endsWith('.test.mjs'))) write(dir, `scripts/${name}`, fs.readFileSync(path.join(project, 'scripts', name)));
   for (const name of ['.gitleaks.toml', '.nvmrc', '.claude/settings.json', 'config/agents/codex-permissions.json', '.githooks/pre-commit', '.githooks/commit-msg', '.githooks/pre-push']) write(dir, name, fs.readFileSync(path.join(project, name)));
+  git(dir, 'add', '--', '.gitleaks.toml');
   return dir;
 }
 function node(dir, script, args = [], overrides = {}) {
@@ -96,6 +98,104 @@ test('real Gitleaks blocks full staged blobs and suppresses values', (t) => {
   const result = node(dir, 'run-gitleaks.mjs', ['--staged']);
   assert.equal(result.status, 1, 'Real scanner must be installed and detect the synthetic positive control.');
   assert.equal((result.stdout + result.stderr).includes(token()), false);
+});
+
+test('preflight rejects scanner-only staged secrets after the working copy is cleaned', (t) => {
+  const dir = repo(t);
+  write(dir, 'demo.txt', 'Synthetic clean baseline');
+  git(dir, 'add', '--', '.');
+  committed(dir);
+  const marker = 'xo' + 'xb-' + '123456789012-123456789012-' + createHash('sha256').update('synthetic preflight index fixture').digest('hex').slice(0, 24);
+  write(dir, 'demo.txt', marker);
+  git(dir, 'add', '--', 'demo.txt');
+  write(dir, 'demo.txt', 'Synthetic clean working copy');
+  assert.deepEqual(runGuard(dir, '--tracked').findings, [], 'Positive control must require the real scanner.');
+  const tree = git(dir, 'write-tree');
+  const outputs = [];
+  const execute = () => runPreflight({ cwd: dir, log: (message) => outputs.push(message), run: (command, args, options) => {
+    // Isolate publication checks from host setup and recursive suite execution.
+    // All privacy/scanner subprocesses below use real Git inputs and Gitleaks.
+    if (['scripts/doctor.mjs', 'scripts/check-kit.mjs', '--test'].includes(args[0])) return { status: 0 };
+    const result = spawnSync(command, args, { ...options, env, stdio: 'pipe', encoding: 'utf8' });
+    outputs.push(result.stdout + result.stderr);
+    return result;
+  } });
+  assert.equal(execute(), 1, 'Preflight must reject a secret present only in the index.');
+  assert.equal(git(dir, 'write-tree'), tree, 'Preflight must preserve the index.');
+  git(dir, 'add', '--', 'demo.txt');
+  assert.equal(execute(), 0, 'Clean working files, index and history must pass.');
+  write(dir, 'draft.txt', marker);
+  assert.equal(execute(), 1, 'Uncommitted workspace secrets must remain blocked.');
+  assert.equal(outputs.join('\n').includes(marker), false, 'Neither positive control may print a value.');
+});
+
+test('publication scans use indexed scanner policy when the working configuration is invalid', (t) => {
+  const dir = repo(t);
+  write(dir, 'demo.txt', 'Synthetic task A');
+  git(dir, 'add', '--', 'demo.txt');
+  committed(dir);
+  write(dir, '.gitleaks.toml', '[synthetic invalid TOML');
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--history']).status, 0, 'Working configuration must not replace the indexed history policy.');
+  write(dir, '.git/COMMIT_EDITMSG', 'Synthetic clean commit message');
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--message', path.join(dir, '.git/COMMIT_EDITMSG')]).status, 0, 'Pending messages must use the indexed policy too.');
+  write(dir, 'next.txt', token());
+  git(dir, 'add', '--', 'next.txt');
+  write(dir, 'next.txt', 'Synthetic clean working copy');
+  const result = node(dir, 'run-gitleaks.mjs', ['--staged']);
+  assert.equal(result.status, 1, 'Indexed rules must detect the staged positive control.');
+  assert.equal((result.stdout + result.stderr).includes(token()), false);
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--workspace']).status, 2, 'Workspace scanning must validate its own working configuration.');
+});
+
+test('publication scans refuse an absent or nonregular indexed scanner configuration', (t) => {
+  const dir = repo(t);
+  git(dir, 'reset', '-q', '--', '.gitleaks.toml');
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--staged']).status, 2);
+  fs.unlinkSync(path.join(dir, '.gitleaks.toml'));
+  write(dir, 'scanner-policy.txt', fs.readFileSync(path.join(project, '.gitleaks.toml')));
+  fs.symlinkSync('scanner-policy.txt', path.join(dir, '.gitleaks.toml'));
+  git(dir, 'add', '--', '.gitleaks.toml');
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--history']).status, 2);
+});
+
+test('scanner policy snapshots are removed after findings and scanner failures', (t) => {
+  const dir = repo(t);
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'leaf-scanner-cleanup-test-'));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  write(dir, 'demo.txt', token());
+  git(dir, 'add', '--', 'demo.txt');
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--staged'], { TMPDIR: scratch }).status, 1);
+  assert.deepEqual(fs.readdirSync(scratch), []);
+  write(dir, '.git/COMMIT_EDITMSG', token());
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--message', path.join(dir, '.git/COMMIT_EDITMSG')], { TMPDIR: scratch }).status, 1);
+  assert.deepEqual(fs.readdirSync(scratch), []);
+  write(dir, '.gitleaks.toml', '[synthetic invalid TOML');
+  git(dir, 'add', '--', '.gitleaks.toml');
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--staged'], { TMPDIR: scratch }).status, 2);
+  assert.deepEqual(fs.readdirSync(scratch), []);
+});
+
+test('staged scanning validates indexed rules even when no blobs changed', (t) => {
+  const dir = repo(t);
+  committed(dir);
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--staged']).status, 0);
+  write(dir, '.gitleaks.toml', '[synthetic invalid TOML');
+  git(dir, 'add', '--', '.gitleaks.toml');
+  committed(dir, 'Synthetic invalid scanner configuration');
+  assert.equal(node(dir, 'run-gitleaks.mjs', ['--staged']).status, 2, 'Empty staged diff must not hide a broken scanner configuration.');
+});
+
+test('preflight stops before downstream checks when the workspace privacy guard refuses input', (t) => {
+  const dir = repo(t);
+  write(dir, 'data/demo.txt', 'Synthetic private fixture');
+  const calls = [];
+  const result = runPreflight({ cwd: dir, log: () => {}, run: (command, args, options) => {
+    calls.push(args);
+    if (args[0] === 'scripts/doctor.mjs') return { status: 0 };
+    return spawnSync(command, args, { ...options, env, stdio: 'pipe', encoding: 'utf8' });
+  } });
+  assert.equal(result, 1);
+  assert.deepEqual(calls, [['scripts/doctor.mjs'], ['scripts/security-check.mjs', '--workspace']]);
 });
 
 test('real Gitleaks detects metadata secrets with clean file history', (t) => {

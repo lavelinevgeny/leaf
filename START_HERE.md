@@ -74,7 +74,7 @@ npm run doctor
 npm run preflight
 ```
 
-`doctor` проверяет конфигурацию и инструменты. `preflight` проверяет комплект, тесты, public workspace, index, историю и Git metadata; он не меняет index. Проверка настоящего Codex sandbox: `npm run agent:sandbox`. Профили и ограничения описаны в AGENT_WORKFLOW.
+`doctor` проверяет конфигурацию и инструменты. `preflight` проверяет комплект, тесты, public workspace, index guard, staged secrets через Gitleaks, историю и Git metadata; он не меняет index. Перед первым preflight подготовить проверенную `.gitleaks.toml` в index по BOOTSTRAP. Проверка настоящего Codex sandbox: `npm run agent:sandbox`. Профили и ограничения описаны в AGENT_WORKFLOW.
 
 Установка хуков — явное действие, не скрытый postinstall. Не отключай их при ошибках. Публикация / push / выпуск образа требуют отдельного разрешения владельца. Доступ к репозиторию не равен разрешению публиковать его содержимое.
 
