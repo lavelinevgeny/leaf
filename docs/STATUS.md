@@ -1,5 +1,13 @@
 # Статус разработки
 
+## Review metadata C17 CPM annex — 2026-10-08
+
+Current substantive candidate [technical annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил два новых независимых APPROVED: Spec и Standards/executability. Private unavailable input/admission и initial frozen projection проверены отдельно; прежние approvals29f193e остаются историческими. В annex footer и ADR008 записаны факты review/source boundary. Substantive body и все fenced snippets побайтово сохранены относительно approved bfa0f8e.
+
+На закреплённом Node24.21.0/npm11.19.0 прошли byte comparison substantive prefix/41 fenced blocks, `check:kit` (42 Markdown files, 154 local links), diff checks и staged privacy guard/Gitleaks на трёх scoped docs. Обычные hooks включены. Неизменённые oracle/snippet/application tests повторно не запускались.
+
+Это metadata-only revision, без application changes или CPM implementation. Actual Task5 integration/checks/review ещё завершаются; Task7 требует Task5 GREEN. Approval плана не переносится на иной изменённый body или будущую реализацию. Следующий шаг — Task5 GREEN и independent review его implementation, затем исполнение approved annex.
+
 ## C17 input amendment technical CPM annex — 2026-10-08
 
 Обновлён [technical annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) под согласованный Task4 contract: server-private `PrivateSnapshotV2.legacyIntervalUnavailable` передаётся в `OptionalInput.unavailableTaskIds`. Marked leaf с валидной сохранённой парой остаётся unknown: не входит в real/coverage/full summary/CPM и Hknown, сохраняет source notes/minima и raw FS-проверку. Документ задаёт private→pure passage, public field picking, explicit validated acknowledgement, original-done guard, undo/reopen/preserveWork regressions и ordinary unmarked done control. Публичные source/status/duration и DTO не расширяются provenance.

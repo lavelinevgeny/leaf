@@ -2970,4 +2970,8 @@ Substantive candidate `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` получил 
 
 ## C17 amendment review status — 2026-10-08
 
-Изменённый private/pure input, marked-leaf admission, stable initial frozen projection и новые runnable regressions требуют двух independent reviews на новый точный SHA. APPROVED29f193e и metadata889cb6a относятся к прежнему substantive body. Task4 source pin f5e92ab получил два APPROVED; его future Task5 integration остаётся обязательным вместе с Task5 GREEN. SQL registry/production execution не разрешены этим annex.
+Текущий substantive candidate `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил два независимых verdicts: Spec — **APPROVED**, Standards/executability — **APPROVED**. Оба reviews отдельно проверили изменённый private/pure input, marked-leaf admission, stable initial frozen projection и новые runnable regressions; прежние verdicts не унаследованы.
+
+APPROVED `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` и metadata `889cb6afe777b6d9e6071f76a729a344906f90cb` остаются историческими. Эта последующая запись меняет только review metadata: substantive body и все fenced snippets побайтово сохранены относительно approved bfa0f8e. Verdicts относятся к указанному substantive SHA, без переноса на изменённые типы/формулы/snippets или будущую implementation.
+
+Task4 source pin f5e92ab также получил два APPROVED; его actual Task5 integration и Task5 GREEN ещё обязательны до CPM Task7. CPM code не реализован. SQL registry/production execution не разрешены этим annex.
