@@ -1,6 +1,6 @@
 # Технические источники
 
-Проверено при подготовке комплекта: 2026-10-06. Это ссылки на первичные публичные документы, а не часть пользовательских требований. Агент проверяет актуальные версии перед установкой; неизвестные patch-версии не выдумывает.
+Проверено при подготовке комплекта: 2026-10-06. Рекомендации для инструкций агентов и sandbox повторно сверены 2026-10-07. Это ссылки на первичные публичные документы, а не часть пользовательских требований. Агент проверяет актуальные версии перед установкой; неизвестные patch-версии не выдумывает.
 
 | ID | Источник | Для чего |
 |---|---|---|
@@ -18,5 +18,9 @@
 | S12 | [Gitleaks](https://github.com/gitleaks/gitleaks), [release v8.30.1](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1), [go.mod](https://raw.githubusercontent.com/gitleaks/gitleaks/v8.30.1/go.mod) | Stdin/history scans, redaction и точный module path dev-инструмента. |
 | S13 | [OWASP: Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) | Параметры хеширования проверить при реализации входа. |
 | S14 | [actions/checkout v6.1.0 commit](https://github.com/actions/checkout/commit/d23441a48e516b6c34aea4fa41551a30e30af803), [setup-node v6.5.0 commit](https://github.com/actions/setup-node/commit/249970729cb0ef3589644e2896645e5dc5ba9c38) | Закреплённые внешние Actions в комплекте. |
+| S15 | [Codex permission profiles](https://learn.chatgpt.com/docs/permissions), [Claude strict sandbox](https://code.claude.com/docs/en/sandboxing) | Явные public safety profiles и отдельная проверка фактической OS isolation. |
+| S16 | [Codex sandbox](https://learn.chatgpt.com/docs/sandboxing) | Linux/Bubblewrap prerequisites и ограничения runtime; S15/S16 повторно сверены 2026-10-07. |
+| S17 | [OpenAI: Rethinking skills and prompts for GPT-6 Astra](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra) | Компактные инструкции, контекст по задаче, конкретные границы разрешений и критерии завершения. |
+| S18 | [Claude Code: best practices](https://code.claude.com/docs/en/best-practices) | Краткая общая политика, проверяемые результаты и отличие инструкций от исполняемых hooks. |
 
 Выбор React/Vite/Fastify/SQLite и правила leaf — инженерные рекомендации этого комплекта. Они не означают, что приложение уже построено, прошло тестирование или получило независимый аудит. Изображения взяты только из выбранных в разговоре сгенерированных концепций; оригинальный screenshot сайта Quire в архив не включён.

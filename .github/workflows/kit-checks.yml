@@ -22,14 +22,6 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - name: Validate kit
-        run: npm run check:kit
-      - name: Test repository guard
-        run: npm run test:kit
-      - name: Check tracked content and reachable history
-        run: |
-          node scripts/security-check.mjs --tracked
-          node scripts/security-check.mjs --history
       - name: Install pinned Gitleaks source release
         env:
           GOTOOLCHAIN: auto
@@ -37,8 +29,10 @@ jobs:
           go version
           go install github.com/zricethezav/gitleaks/v8@v8.30.1
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Scan history with redaction
-        run: node scripts/run-gitleaks.mjs --history
+      - name: Install local repository hooks
+        run: npm run hooks:install
+      - name: Verify kit, guard, real scanner and Git metadata
+        run: npm run preflight
 # This validates the starter kit, NOT the future application.
 # S0 must add real typecheck/lint/unit/integration/build jobs; S3 adds E2E.
 # No deployments, registry pushes, secrets or pull_request_target execution.

@@ -10,7 +10,11 @@
   },
   "scripts": {
     "check:kit": "node scripts/check-kit.mjs",
-    "test:kit": "node --test scripts/security.test.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "preflight": "node scripts/preflight.mjs",
+    "agent:sandbox": "node scripts/agent-sandbox.mjs",
+    "agent:codex": "node scripts/run-agent.mjs",
+    "test:kit": "node --test scripts/security.test.mjs scripts/harness.test.mjs",
     "security:workspace": "node scripts/security-check.mjs --workspace",
     "security:staged": "node scripts/security-check.mjs --staged && node scripts/run-gitleaks.mjs --staged",
     "security:history": "node scripts/security-check.mjs --tracked && node scripts/security-check.mjs --history && node scripts/run-gitleaks.mjs --history",

@@ -1,0 +1,50 @@
+{
+  "description": "Public workspace and explicit runtime files; private inputs and subprocess network denied",
+  "extends": ":workspace",
+  "filesystem": {
+    ":root": "deny",
+    ":minimal": "read",
+    ":slash_tmp": "deny",
+    ":tmpdir": "write",
+    "glob_scan_max_depth": 8,
+    ":workspace_roots": {
+      ".": "write",
+      "**/.env": "deny",
+      "**/.env.*": "deny",
+      "**/*.db*": "deny",
+      "**/*.sqlite*": "deny",
+      "**/*.pem": "deny",
+      "**/*.key": "deny",
+      "data": "deny",
+      ".data": "deny",
+      "secrets": "deny",
+      ".private": "deny",
+      ".local": "deny",
+      "backups": "deny",
+      "exports": "deny",
+      "uploads": "deny",
+      "logs": "deny",
+      "**/.codex/**": "deny",
+      "screenshots": "deny",
+      "artifacts": "deny",
+      "test-results": "deny",
+      "playwright-report": "deny",
+      "*/**/data/**": "deny",
+      "*/**/.data/**": "deny",
+      "*/**/secrets/**": "deny",
+      "*/**/.private/**": "deny",
+      "*/**/.local/**": "deny",
+      "*/**/backups/**": "deny",
+      "*/**/exports/**": "deny",
+      "*/**/uploads/**": "deny",
+      "*/**/logs/**": "deny",
+      "*/**/screenshots/**": "deny",
+      "*/**/artifacts/**": "deny",
+      "*/**/test-results/**": "deny",
+      "*/**/playwright-report/**": "deny"
+    }
+  },
+  "network": {
+    "enabled": false
+  }
+}

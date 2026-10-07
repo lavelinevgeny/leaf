@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { checkFixtures } from './check-fixtures.mjs';
+import { parseAssetManifest, validateCurrentAssets } from './public-assets.mjs';
+import { readWorkspaceFile } from './repository-files.mjs';
+import { parseMetadataReviews } from './git-metadata-reviews.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 function walk(dir) {
@@ -16,12 +18,9 @@ try {
   assert.equal(pkg.name, 'leaf');
   assert.equal(pkg.private, true, 'Prevent accidental npm publication');
   assert.ok(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8').includes('@AGENTS.md'));
-  const assets = JSON.parse(fs.readFileSync(path.join(root, 'config/public-assets.json'), 'utf8')).assets;
-  for (const asset of assets) {
-    const absolute = path.resolve(root, asset.path);
-    assert.ok(absolute.startsWith(`${root}${path.sep}`), 'Asset outside root');
-    assert.equal(createHash('sha256').update(fs.readFileSync(absolute)).digest('hex'), asset.sha256, `Changed reference: ${asset.path}`);
-  }
+  const manifest = parseAssetManifest(readWorkspaceFile(root, 'config/public-assets.json'));
+  validateCurrentAssets(root, manifest);
+  parseMetadataReviews(readWorkspaceFile(root, 'config/public-git-metadata.json'));
   const references = fs.readdirSync(path.join(root, 'design/references')).sort();
   assert.deepEqual(references, ['01-main-screen.png', '02-task-panel.png', '03-dependencies.png']);
   const markdown = [
@@ -41,8 +40,14 @@ try {
     }
   }
   const fixtures = checkFixtures(root);
+  const agentScenarios = JSON.parse(readWorkspaceFile(root, 'fixtures/agents/scenarios.json'));
+  assert.equal(agentScenarios.syntheticOnly, true);
+  assert.ok(Array.isArray(agentScenarios.scenarios) && agentScenarios.scenarios.length === 5);
+  assert.equal(new Set(agentScenarios.scenarios.map((scenario) => scenario.id)).size, 5);
+  for (const scenario of agentScenarios.scenarios) assert.ok(typeof scenario.id === 'string' && typeof scenario.prompt === 'string' && scenario.prompt.length && Array.isArray(scenario.acceptance) && scenario.acceptance.length && scenario.acceptance.every((criterion) => typeof criterion === 'string' && criterion.length));
   console.log(`Kit checked: ${markdown.length} Markdown files, ${links} local links, 3 approved references, ${fixtures.cpm} CPM and ${fixtures.calendar} calendar examples.`);
   console.log('This checks the repository kit, not an implemented leaf application.');
+  console.log('Five model smoke scenarios validated as data, not executed against a model.');
 } catch (error) {
   console.error(`Kit check failed: ${error.message}`);
   process.exitCode = 1;

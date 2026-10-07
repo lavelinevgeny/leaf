@@ -16,15 +16,14 @@
 
 ```sh
 npm run check:kit
-npm run test:kit
 npm run security:workspace
 ```
 
-`security:workspace` нужен для чистого комплекта до появления локального `.env`/базы; затем для коммитов использовать index/history checks. Служебные тесты создают временные локальные Git-репозитории с синтетическими значениями и удаляют их.
+`security:workspace` нужен для чистого комплекта до появления локального `.env`/базы; затем для коммитов использовать index/history checks. После установки Gitleaks запустить `npm run test:kit`; весь suite требует настоящий scanner, ничего не пропускает. Служебные тесты создают временные локальные Git-репозитории с синтетическими значениями и удаляют их.
 
 ## Хуки и полноценный secret scanner
 
-В комплекте `.githooks/pre-commit` и `pre-push`. Установка явная:
+В комплекте `.githooks/pre-commit`, `commit-msg` и `pre-push`. Установка явная:
 
 ```sh
 npm run hooks:install
@@ -40,16 +39,27 @@ go install github.com/zricethezav/gitleaks/v8@v8.30.1
 
 Добавить каталог Go bin в личный PATH, не записывая персональные пути в репозиторий. Альтернатива — официальный release binary с checksum. Go не нужен приложению leaf, только этому способу установки dev-инструмента. Не скачивать и не выполнять случайный shell installer.
 
-Pre-commit проверяет staged blobs локальным guard и staged diff через Gitleaks stdin. Pre-push проверяет текущий index и всю достижимую историю, затем Gitleaks history. При отсутствии Gitleaks операция блокируется, а не пропускается. На большом существующем репозитории полный history scan может занять время — безопасность не выключать ради скорости.
+Pre-commit проверяет staged blobs локальным guard и полные изменённые index blobs через Gitleaks stdin. Commit-msg проверяет pending Git message локальными правилами и Gitleaks. Pre-push проверяет текущий index и всю достижимую историю, затем Gitleaks file history и metadata stdin, включая nested annotated tags. При отсутствии Gitleaks операция блокируется, а не пропускается. На большом существующем репозитории полный history scan может занять время — безопасность не выключать ради скорости.
+
+## Единый локальный preflight
+
+```sh
+npm run doctor
+npm run preflight
+```
+
+Doctor проверяет корень, Node major из `.nvmrc`, npm, Gitleaks 8.30.1+, configured hooks с executable bits и public safety profiles. Он не читает auth/config агента в home и не проверяет login. Preflight запускает workspace guard до остальных читающих проверок, затем проверяет kit, реальные scanner/hook tests, незакоммиченные public text files, index, историю и metadata. Index не изменяется; новая незастейдженная правка тоже проверяется. Private workspace path блокирует preflight без чтения содержимого.
+
+Это локальный барьер. `agent:sandbox` отдельно проверяет OS isolation Codex, а удалённые настройки подтверждает владелец. После появления runtime `.env`/БД держать их за пределами agent checkout; обычные коммиты проверять через index/history commands.
 
 ## Защита на сервере Git
 
-Владелец включает доступные secret scanning / push protection и проверяет настройки для репозитория. CI — повторная защита, а не барьер перед первой утечкой. Включить ruleset/защиту основной ветки: обязательные проверки, запрет force-push, review важных изменений. Однопользовательский репозиторий может применять owner review, но это не заменяет проверок.
+Владелец включает доступные secret scanning / push protection и проверяет настройки для репозитория. CI — повторная защита, а не барьер перед первой утечкой. Включить ruleset/защиту основной ветки: обязательные проверки, запрет force-push, review важных изменений. Требовать успешный job `kit`; изменения `.github/workflows/`, `.githooks/`, `scripts/`, `.gitleaks.toml`, agent settings и asset manifest должны проходить review владельца. Привязку CODEOWNERS к реальному аккаунту выполняет владелец; шаблон с выдуманным account не создаётся. Однопользовательский репозиторий может применять owner review, но это не заменяет проверок.
 
 Имеющийся workflow проверяет kit и Git privacy, затем запускает Gitleaks. Он использует read-only permissions, закреплённые SHA actions и не выполняет release/deploy. После S0 добавить app CI: typecheck, lint, unit/integration, build; после UI — E2E. Не применять `pull_request_target` для запуска кода из fork. Не использовать production self-hosted runner для чужих PR.
 
 ## Готовность S0
 
-`dev`, `build`, `start`, `lint`, `typecheck`, application tests, migration and backup commands должны быть реализованы и проверены. Обновить README и STATUS. Не прописывать `npm run test --if-present` и не ставить green badge незапускаемому приложению. Поднять контейнер только на loopback; никаких облачных аккаунтов, API-ключей или remote deployment для bootstrap не нужно.
+`verify` должен выполнять реальные typecheck, lint, unit/integration и build; добавить соответствующий application CI job. Не подменять его kit tests. `dev`, `build`, `start`, `lint`, `typecheck`, application tests, migration and backup commands должны быть реализованы и проверены. Обновить README и STATUS. Не прописывать `npm run test --if-present` и не ставить green badge незапускаемому приложению. Поднять контейнер только на loopback; никаких облачных аккаунтов, API-ключей или remote deployment для bootstrap не нужно.
 
-Ручная настройка Git author identity — отдельно в личной конфигурации. Для публичного репозитория владелец может выбрать GitHub noreply; реальные email из локальных настроек не копировать в docs. Guard проверяет tracked content, не отменяет публикацию авторов и сообщений существующих коммитов.
+Ручная настройка Git author identity — отдельно в личной конфигурации. Для публичного репозитория владелец может выбрать GitHub noreply; реальные email из локальных настроек не копировать в docs. Guard теперь проверяет metadata существующих коммитов/тегов, но не отменяет их публикацию и не решает за владельца, какие identity допустимы. `EMAIL_REVIEW_REQUIRED` требует решения владельца. История и Git identity не меняются автоматически.

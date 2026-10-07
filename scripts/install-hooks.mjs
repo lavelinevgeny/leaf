@@ -19,12 +19,12 @@ try {
   const existing = git(['config', '--get', 'core.hooksPath'], true);
   if (existing && path.resolve(gitRoot, existing) !== path.join(gitRoot, '.githooks')) throw new Error('An existing hooksPath is configured. Integrate manually; it was not overwritten.');
   if (!existing) {
-    for (const hook of ['pre-commit', 'pre-push']) {
+    for (const hook of ['pre-commit', 'commit-msg', 'pre-push']) {
       const defaultPath = git(['rev-parse', '--git-path', `hooks/${hook}`]);
       if (fs.existsSync(defaultPath)) throw new Error(`An existing ${hook} hook is present. Integrate manually; it was not overwritten.`);
     }
   }
-  for (const hook of ['pre-commit', 'pre-push']) fs.chmodSync(path.join(gitRoot, '.githooks', hook), 0o755);
+  for (const hook of ['pre-commit', 'commit-msg', 'pre-push']) fs.chmodSync(path.join(gitRoot, '.githooks', hook), 0o755);
   git(['config', '--local', 'core.hooksPath', '.githooks']);
   console.log('Local hooks installed. Gitleaks is required. No remote, credentials, identity or global Git settings were changed.');
 } catch (error) {

@@ -113,3 +113,65 @@ test('workspace scanner detects ignored-name files before first git init', (t) =
   write(dir, '.env', 'SYNTHETIC=1');
   assert.ok(runGuard(dir, '--workspace').findings.some((x) => x.rule === 'ENV_FILE'));
 });
+
+test('ASCII PDF and disguised PDF require exact asset approval', () => {
+  const data = Buffer.from('%PDF-1.4\n% Synthetic document\n%%EOF\n');
+  for (const name of ['design/demo.pdf', 'notes.txt']) {
+    assert.ok(scanBytes(name, data).includes('UNREVIEWED_ASSET'));
+    const assets = [{ path: name, sha256: createHash('sha256').update(data).digest('hex') }];
+    assert.deepEqual(scanBytes(name, data, assets), []);
+  }
+  assert.ok(scanBytes('design/demo.pdf', Buffer.from('Synthetic text')).includes('UNREVIEWED_ASSET'));
+});
+
+test('workspace private files and directories are rejected without reading', (t) => {
+  const dir = tempRepo(t);
+  write(dir, '.env.audit', 'SYNTHETIC=1');
+  write(dir, 'data/private.txt', 'Synthetic task A');
+  const originalRead = fs.readFileSync;
+  const originalList = fs.readdirSync;
+  let privateReads = 0;
+  fs.readFileSync = function (name, ...args) {
+    if (String(name) === path.join(dir, '.env.audit')) privateReads++;
+    return originalRead.call(this, name, ...args);
+  };
+  fs.readdirSync = function (name, ...args) {
+    if (String(name) === path.join(dir, 'data')) privateReads++;
+    return originalList.call(this, name, ...args);
+  };
+  let result;
+  try { result = runGuard(dir, '--workspace'); }
+  finally { fs.readFileSync = originalRead; fs.readdirSync = originalList; }
+  assert.equal(privateReads, 0);
+  assert.ok(result.findings.some((x) => x.rule === 'ENV_FILE'));
+  assert.ok(result.findings.some((x) => x.rule === 'PRIVATE_DIRECTORY'));
+});
+
+test('commit and annotated tag metadata are scanned without returning values', (t) => {
+  const dir = tempRepo(t);
+  write(dir, 'demo.txt', 'Synthetic task A');
+  git(dir, 'add', '--', 'demo.txt');
+  git(dir, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', `synthetic ${sampleToken()}`);
+  git(dir, '-c', 'tag.gpgsign=false', 'tag', '-a', 'demo', '-m', `synthetic ${sampleToken()}`);
+  const result = runGuard(dir, '--history');
+  assert.ok(result.findings.some((x) => x.path.startsWith('git:commit:') && x.rule === 'GITHUB_TOKEN'));
+  assert.ok(result.findings.some((x) => x.path.startsWith('git:tag:') && x.rule === 'GITHUB_TOKEN'));
+  assert.equal(JSON.stringify(result).includes(sampleToken()), false);
+});
+
+test('private author email requires review even when file content is clean', (t) => {
+  const dir = tempRepo(t);
+  git(dir, 'config', '--local', 'user.email', 'fixture@' + 'mail.invalid');
+  write(dir, 'demo.txt', 'Synthetic task A');
+  git(dir, 'add', '--', 'demo.txt');
+  commit(dir);
+  assert.ok(runGuard(dir, '--history').findings.some((x) => x.rule === 'EMAIL_REVIEW_REQUIRED'));
+});
+
+test('workspace manifest symlink is rejected before dereferencing', (t) => {
+  const dir = tempRepo(t);
+  write(dir, 'private-manifest.json', JSON.stringify({ assets: [] }));
+  fs.mkdirSync(path.join(dir, 'config'));
+  fs.symlinkSync('../private-manifest.json', path.join(dir, 'config/public-assets.json'));
+  assert.throws(() => runGuard(dir, '--workspace'), /regular|symlink/i);
+});

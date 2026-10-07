@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "note": "New binary assets require human privacy review and a new exact SHA-256 entry. Never add a directory-wide exemption.",
   "assets": [
     {
@@ -17,5 +17,6 @@
       "sha256": "3dc66d31f059e0940e58f151a3153b9c2f223ba5bad8f69ad00232aff28ed86f",
       "review": "Selected generated UI concept; illustrative identities removed where present; no production data."
     }
-  ]
+  ],
+  "historicalAssets": []
 }
