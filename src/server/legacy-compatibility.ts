@@ -3,13 +3,14 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
   projectTreeV2Schema,
+  frozenPendingScheduleV2Schema,
   taskV2Schema,
   type ProjectTreeV2,
   type SourceFields,
 } from '../shared/contracts.js';
 import { canonical } from '../shared/canonical.js';
-import { calculateSchedule } from '../domain/scheduling.js';
-import { realInterval } from '../domain/planning.js';
+import { projectLegacyPendingSchedule } from './legacy-pending-projection.js';
+import { realInterval } from './legacy-pending-source.js';
 import {
   privateSnapshotV2Schema,
   type PrivateSnapshotV2,
@@ -275,19 +276,23 @@ export function adaptLegacyTree(
     context,
     resolutions,
   );
-  const schedule = calculateSchedule({
-    calendarType: snapshot.project.calendarType,
-    tasks: snapshot.tasks,
-    dependencies: snapshot.dependencies,
-    unavailableTaskIds: snapshot.legacyIntervalUnavailable,
-  });
+  const pendingParsed = frozenPendingScheduleV2Schema.safeParse(
+    projectLegacyPendingSchedule({
+      calendarType: snapshot.project.calendarType,
+      tasks: snapshot.tasks,
+      dependencies: snapshot.dependencies,
+      unavailableTaskIds: snapshot.legacyIntervalUnavailable,
+    }),
+  );
+  if (!pendingParsed.success)
+    throw new Error('Invalid frozen legacy schedule response');
   return projectTreeV2Schema.parse({
+    contractVersion: 2,
     project: snapshot.project,
     tasks: snapshot.tasks,
     dependencies: snapshot.dependencies,
-    contractVersion: 2,
     canUndo: parsed.data.canUndo,
-    schedule,
+    schedule: pendingParsed.data,
   });
 }
 

@@ -91,7 +91,22 @@ it('returns strict target projection and atomically rejects mismatched source al
   expect(schedule.json()).toMatchObject({
     contractVersion: 2,
     revision: tree.project.revision,
-    schedule: { analysisStatus: 'pending-policy', criticalTaskIds: [] },
+    schedule: {
+      analysisStatus: 'ready',
+      criticalTaskIds: [id],
+      criticalDependencyIds: [],
+      horizonFinishDate: '2026-10-06',
+      partialAnalysis: null,
+      tasks: {
+        [id]: {
+          startDate: '2026-10-05',
+          finishDate: '2026-10-06',
+          calendarSpanDays: 2,
+          projectFloat: 0,
+          constraintFloat: 0,
+        },
+      },
+    },
   });
   for (const field of ['deadline', 'notBefore', 'planMode', 'completedStart'])
     expect(loaded.body).not.toContain(field);

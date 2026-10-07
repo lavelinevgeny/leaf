@@ -1,21 +1,24 @@
+// Frozen pending projection from f5e92abf7d2cb9655cfe11e6173f70ae375df857; server-only migration compatibility.
+import type { FrozenPendingScheduleV2 as OptionalResult } from '../shared/contracts.js';
 import {
   dateToIndex,
   indexToDate,
   isWorkingDay,
   nextWorkingDay,
   workingDaysInclusive,
-} from './calendar.js';
-import { realInterval, validateSourceInput } from './planning.js';
+} from './legacy-calendar.js';
+import { realInterval, validateSourceInput } from './legacy-pending-source.js';
 import type {
   ConditionalDisplay,
-  OptionalInput,
+  LegacyPendingInput,
   OptionalTask,
   RealTask,
-} from './scheduling-types.js';
-import { analyzeExplicitDates } from './explicit-cpm.js';
-import type { ExplicitProjection, LiveResult } from './scheduling-types.js';
-import type { CalendarType, SchedulingDependency } from './scheduling-types.js';
-import { DomainError } from './tree.js';
+} from './legacy-pending-types.js';
+import type {
+  CalendarType,
+  SchedulingDependency,
+} from './legacy-pending-types.js';
+import { DomainError } from '../domain/tree.js';
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const sorted = (ids: Iterable<string>): string[] =>
@@ -25,6 +28,74 @@ const blankReal = (): RealTask => ({
   finishDate: null,
   calendarSpanDays: null,
 });
+
+// This inactive validator replaces the legacy one at the Task 5 checkpoint.
+// Its narrow inputs keep optional tasks independent of legacy planning fields.
+export function validateOptionalDependency(
+  tasks: readonly Pick<OptionalTask, 'id' | 'parentId'>[],
+  dependencies: readonly SchedulingDependency[],
+  predecessorId: string,
+  successorId: string,
+): void {
+  const ids = new Set(tasks.map((task) => task.id));
+  if (!ids.has(predecessorId) || !ids.has(successorId))
+    throw new DomainError(
+      'INVALID_DEPENDENCY_ENDPOINT',
+      'Обе работы должны принадлежать проекту.',
+    );
+  if (predecessorId === successorId)
+    throw new DomainError(
+      'DEPENDENCY_SELF',
+      'Работа не может зависеть от самой себя.',
+    );
+  if (
+    tasks.some(
+      (task) =>
+        task.parentId === predecessorId || task.parentId === successorId,
+    )
+  )
+    throw new DomainError(
+      'DEPENDENCY_SUMMARY',
+      'Связи разрешены только между конечными работами.',
+    );
+  if (
+    dependencies.some(
+      (edge) =>
+        edge.predecessorId === predecessorId &&
+        edge.successorId === successorId,
+    )
+  )
+    throw new DomainError('DEPENDENCY_DUPLICATE', 'Связь уже существует.');
+  const outgoing = new Map<string, string[]>();
+  for (const edge of dependencies) {
+    const next = outgoing.get(edge.predecessorId) ?? [];
+    next.push(edge.successorId);
+    outgoing.set(edge.predecessorId, next);
+  }
+  const previous = new Map<string, string | null>([[successorId, null]]);
+  const queue = [successorId];
+  for (let index = 0; index < queue.length; index++) {
+    const current = queue[index]!;
+    if (current === predecessorId) {
+      const path = [current];
+      let cursor = previous.get(current);
+      while (cursor != null) {
+        path.push(cursor);
+        cursor = previous.get(cursor);
+      }
+      path.reverse();
+      throw new DomainError(
+        'DEPENDENCY_CYCLE',
+        `Цикл зависимостей: ${[predecessorId, ...path].join(' → ')}`,
+      );
+    }
+    for (const next of outgoing.get(current) ?? [])
+      if (!previous.has(next)) {
+        previous.set(next, current);
+        queue.push(next);
+      }
+  }
+}
 
 export function conditionalFinish(
   anchor: string,
@@ -111,9 +182,9 @@ const minimum = (a: string | null, b: string | null): string | null =>
 const maximum = (a: string | null, b: string | null): string | null =>
   a === null ? b : b === null ? a : compare(a, b) > 0 ? a : b;
 
-export function projectExplicitSchedule(
-  input: OptionalInput,
-): ExplicitProjection {
+export function projectLegacyPendingSchedule(
+  input: LegacyPendingInput,
+): OptionalResult {
   const tasks = [...input.tasks].sort((a, b) => compare(a.id, b.id));
   const dependencies = [...input.dependencies].sort(
     (a, b) =>
@@ -121,12 +192,15 @@ export function projectExplicitSchedule(
       compare(a.predecessorId, b.predecessorId) ||
       compare(a.successorId, b.successorId),
   );
-  const result: ExplicitProjection = {
+  const result: OptionalResult = {
+    analysisStatus: 'pending-policy',
     feasibility: 'feasible',
     coverage: { knownLeafCount: 0, totalLeafCount: 0 },
     tasks: {},
     summaries: {},
     display: {},
+    criticalTaskIds: [],
+    criticalDependencyIds: [],
     diagnostics: [],
   };
   let infeasible = false;
@@ -146,7 +220,8 @@ export function projectExplicitSchedule(
     if (severity === 'error') infeasible = true;
     else incomplete = true;
   };
-  const finishResult = (): ExplicitProjection => {
+  const finishResult = (): OptionalResult => {
+    // Pending feasibility checks source/FS only; Task 7 supplies C16 analysis.
     result.feasibility = infeasible
       ? 'infeasible'
       : incomplete
@@ -286,7 +361,6 @@ export function projectExplicitSchedule(
   const unavailable = new Set(input.unavailableTaskIds ?? []);
   for (const id of unavailable)
     if (!taskMap.has(id)) diagnostic('INVALID_UNAVAILABLE_TASK', [id]);
-  if (infeasible) return finishResult();
   const unavailableLeaves = leaves.filter((id) => unavailable.has(id));
   if (unavailableLeaves.length)
     diagnostic(
@@ -312,7 +386,7 @@ export function projectExplicitSchedule(
         knownStartMin.set(id, task.inputStart);
       }
     } catch {
-      diagnostic('INVALID_INTERVAL', [id], [], 'incomplete');
+      diagnostic('INVALID_INTERVAL', [id]);
       invalidDisplay.add(id);
       continue;
     }
@@ -320,7 +394,7 @@ export function projectExplicitSchedule(
       task.durationDays !== null &&
       (!Number.isSafeInteger(task.durationDays) || task.durationDays < 1)
     ) {
-      diagnostic('INVALID_DURATION', [id], [], 'incomplete');
+      diagnostic('INVALID_DURATION', [id]);
       invalidDisplay.add(id);
       continue;
     }
@@ -328,7 +402,7 @@ export function projectExplicitSchedule(
       if (task.inputFinish !== null)
         isWorkingDay(task.inputFinish, input.calendarType);
     } catch {
-      diagnostic('INVALID_INTERVAL', [id], [], 'incomplete');
+      diagnostic('INVALID_INTERVAL', [id]);
       invalidDisplay.add(id);
       continue;
     }
@@ -344,15 +418,9 @@ export function projectExplicitSchedule(
         validateSourceInput(task, input.calendarType);
       } catch (error) {
         if (!(error instanceof DomainError)) throw error;
-        diagnostic(error.code, [id], [], 'incomplete');
+        diagnostic(error.code, [id]);
       }
     }
-    if (
-      real === null &&
-      !unavailable.has(id) &&
-      (task.inputStart === null || task.inputFinish === null)
-    )
-      diagnostic('UNKNOWN_INTERVAL', [id], [], 'incomplete');
   }
 
   for (const id of hierarchyOrder) {
@@ -423,12 +491,7 @@ export function projectExplicitSchedule(
         !isWorkingDay(predecessor.inputFinish, input.calendarType) ||
         !isWorkingDay(successor.inputStart, input.calendarType)
       ) {
-        diagnostic(
-          'INVALID_PRECEDENCE_BOUNDARY',
-          taskIds,
-          [edge.id],
-          'incomplete',
-        );
+        diagnostic('NON_WORKING_DATE', taskIds, [edge.id]);
         continue;
       }
       // The technical origin is never a project input or a display anchor.
@@ -444,17 +507,8 @@ export function projectExplicitSchedule(
         diagnostic('EXPLICIT_PRECEDENCE_CONFLICT', taskIds, [edge.id]);
     } catch (error) {
       if (!(error instanceof RangeError)) throw error;
-      diagnostic(
-        'INVALID_PRECEDENCE_BOUNDARY',
-        taskIds,
-        [edge.id],
-        'incomplete',
-      );
+      diagnostic('INVALID_INTERVAL', taskIds, [edge.id]);
     }
   }
   return finishResult();
-}
-
-export function calculateSchedule(input: OptionalInput): LiveResult {
-  return analyzeExplicitDates(input, projectExplicitSchedule(input));
 }

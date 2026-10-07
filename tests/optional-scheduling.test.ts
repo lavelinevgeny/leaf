@@ -6,14 +6,20 @@ import {
   conditionalFinish,
 } from '../src/domain/scheduling.js';
 import type {
-  OptionalResult,
+  LiveResult,
   OptionalTask,
+  RealTask,
+  OptionalSummary,
 } from '../src/domain/scheduling-types.js';
 import type {
   CalendarType,
   SchedulingDependency,
 } from '../src/domain/scheduling-types.js';
-import { scheduleResultV2Schema } from '../src/shared/contracts.js';
+import {
+  liveScheduleResultV2Schema,
+  frozenPendingScheduleV2Schema,
+  type FrozenPendingScheduleV2,
+} from '../src/shared/contracts.js';
 
 const t = (
   id: string,
@@ -38,7 +44,29 @@ const schedule = (
   tasks: readonly OptionalTask[],
   dependencies: readonly SchedulingDependency[] = [],
   calendarType: CalendarType = 'weekdays',
-): OptionalResult => calculateSchedule({ calendarType, tasks, dependencies });
+): LiveResult => calculateSchedule({ calendarType, tasks, dependencies });
+const realOnly = (value: RealTask): RealTask => ({
+  startDate: value.startDate,
+  finishDate: value.finishDate,
+  calendarSpanDays: value.calendarSpanDays,
+});
+const summaryOnly = (value: OptionalSummary): OptionalSummary => ({
+  ...realOnly(value),
+  knownLeafCount: value.knownLeafCount,
+  totalLeafCount: value.totalLeafCount,
+});
+const realTaskMap = (result: LiveResult) =>
+  Object.fromEntries(
+    Object.entries(result.tasks).map(([id, value]) => [id, realOnly(value)]),
+  );
+const unknownDiagnostics = (ids: readonly string[]) =>
+  ids.map((id) => ({
+    code: 'UNKNOWN_INTERVAL',
+    taskIds: [id],
+    dependencyIds: [],
+    messageKey: 'scheduling.UNKNOWN_INTERVAL',
+  }));
+
 const unknown = {
   startDate: null,
   finishDate: null,
@@ -57,7 +85,7 @@ describe('optional real intervals and summaries', () => {
     const before = structuredClone(tasks);
     const result = schedule(tasks);
     expect(result.coverage).toEqual({ knownLeafCount: 2, totalLeafCount: 3 });
-    expect(result.summaries.P).toEqual({
+    expect(summaryOnly(result.summaries.P!)).toEqual({
       ...unknown,
       knownLeafCount: 2,
       totalLeafCount: 3,
@@ -68,8 +96,9 @@ describe('optional real intervals and summaries', () => {
       finishDate: '2026-10-07',
       clipped: false,
     });
-    expect(result.tasks.C).toEqual(unknown);
-    expect(result.analysisStatus).toBe('pending-policy');
+    expect(realOnly(result.tasks.C!)).toEqual(unknown);
+    expect(result.analysisStatus).toBe('incomplete');
+    expect(result.diagnostics).toEqual(unknownDiagnostics(['C']));
     expect(result.criticalTaskIds).toEqual([]);
     expect(result.criticalDependencyIds).toEqual([]);
     expect(tasks).toEqual(before);
@@ -90,7 +119,7 @@ describe('optional real intervals and summaries', () => {
     const tasks = n02();
     tasks[3] = t('C', 'P', '2026-10-07', '2026-10-09', 3);
     const result = schedule(tasks);
-    expect(result.summaries.P).toEqual({
+    expect(summaryOnly(result.summaries.P!)).toEqual({
       startDate: '2026-10-05',
       finishDate: '2026-10-12',
       calendarSpanDays: 6,
@@ -98,13 +127,13 @@ describe('optional real intervals and summaries', () => {
       totalLeafCount: 3,
     });
     expect(result.display).toEqual({});
-    expect(result.tasks.C).toEqual({
+    expect(realOnly(result.tasks.C!)).toEqual({
       startDate: '2026-10-07',
       finishDate: '2026-10-09',
       calendarSpanDays: 3,
     });
     tasks[2]!.inputFinish = null;
-    expect(schedule(tasks).summaries.P).toEqual({
+    expect(summaryOnly(schedule(tasks).summaries.P!)).toEqual({
       ...unknown,
       knownLeafCount: 2,
       totalLeafCount: 3,
@@ -122,15 +151,20 @@ describe('optional real intervals and summaries', () => {
     ];
     const before = structuredClone(tasks);
     const result = schedule(tasks);
-    expect(result.tasks.A).toEqual(unknown);
-    expect(result.tasks.B).toEqual(unknown);
-    expect(result.tasks.C).toEqual({
+    expect(realOnly(result.tasks.A!)).toEqual(unknown);
+    expect(realOnly(result.tasks.B!)).toEqual(unknown);
+    expect(realOnly(result.tasks.C!)).toEqual({
       startDate: '2026-10-05',
       finishDate: '2026-10-07',
       calendarSpanDays: 3,
     });
     expect(result.coverage).toEqual({ knownLeafCount: 1, totalLeafCount: 3 });
-    expect(result.feasibility).toBe('feasible');
+    expect(result.feasibility).toBe('incomplete');
+    expect(result.diagnostics).toEqual(unknownDiagnostics(['A', 'B']));
+    expect(result.tasks.C).toMatchObject({
+      projectFloat: null,
+      constraintFloat: null,
+    });
     expect(tasks).toEqual(before);
   });
 
@@ -145,14 +179,14 @@ describe('optional real intervals and summaries', () => {
       const tasks = [t('P'), t('A', 'P', start, finish, duration)];
       const before = structuredClone(tasks);
       const result = schedule(tasks);
-      expect(result.tasks.A).toEqual(unknown);
-      expect(result.summaries.P).toEqual({
+      expect(realOnly(result.tasks.A!)).toEqual(unknown);
+      expect(summaryOnly(result.summaries.P!)).toEqual({
         ...unknown,
         knownLeafCount: 0,
         totalLeafCount: 1,
       });
       expect(result.coverage).toEqual({ knownLeafCount: 0, totalLeafCount: 1 });
-      expect(result.feasibility).toBe('infeasible');
+      expect(result.feasibility).toBe('incomplete');
       expect(result.diagnostics).toEqual([
         {
           code,
@@ -165,10 +199,12 @@ describe('optional real intervals and summaries', () => {
     },
   );
 
-  it('keeps the empty pending result free of forecasts and CPM values', () => {
+  it('keeps the empty LIVE result ready without a forecast', () => {
     expect(schedule([])).toEqual({
-      analysisStatus: 'pending-policy',
+      analysisStatus: 'ready',
       feasibility: 'feasible',
+      horizonFinishDate: null,
+      partialAnalysis: null,
       coverage: { knownLeafCount: 0, totalLeafCount: 0 },
       tasks: {},
       summaries: {},
@@ -202,6 +238,8 @@ describe('conditional display groups and calendars', () => {
       expect(result.summaries[id]!.finishDate).toBeNull();
     }
     expect(result.coverage).toEqual({ knownLeafCount: 0, totalLeafCount: 3 });
+    expect(result.analysisStatus).toBe('incomplete');
+    expect(result.diagnostics).toEqual(unknownDiagnostics(['A', 'B', 'C']));
     tasks[2]!.inputStart = null;
     expect(schedule(tasks).display).toEqual({});
   });
@@ -213,7 +251,7 @@ describe('conditional display groups and calendars', () => {
       t('D', 'P', '2026-10-09'),
     ];
     const result = schedule(tasks);
-    expect(result.tasks.B).toEqual(unknown);
+    expect(realOnly(result.tasks.B!)).toEqual(unknown);
     expect(result.display.B).toEqual({
       kind: 'conditional',
       startDate: '2026-10-09',
@@ -221,6 +259,7 @@ describe('conditional display groups and calendars', () => {
       clipped: false,
     });
     expect(tasks[1]!.inputFinish).toBe('2026-10-02');
+    expect(result.diagnostics).toEqual(unknownDiagnostics(['B', 'D']));
   });
 
   it.each([
@@ -242,8 +281,8 @@ describe('conditional display groups and calendars', () => {
         finishDate: '2026-10-05',
         clipped: false,
       });
-      expect(result.tasks.A).toEqual(unknown);
-      expect(result.summaries.P).toEqual({
+      expect(realOnly(result.tasks.A!)).toEqual(unknown);
+      expect(summaryOnly(result.summaries.P!)).toEqual({
         ...unknown,
         knownLeafCount: 0,
         totalLeafCount: 2,
@@ -255,6 +294,7 @@ describe('conditional display groups and calendars', () => {
           dependencyIds: [],
           messageKey: `scheduling.${code}`,
         },
+        ...unknownDiagnostics(['B']),
       ]);
       expect(tasks).toEqual(before);
     },
@@ -273,7 +313,10 @@ describe('conditional display groups and calendars', () => {
     ]);
     expect(result.display).toEqual({});
     expect(result.summaries.P!.startDate).toBeNull();
-    expect(result.tasks.RootMissing).toEqual(unknown);
+    expect(realOnly(result.tasks.RootMissing!)).toEqual(unknown);
+    expect(result.diagnostics).toEqual(
+      unknownDiagnostics(['A', 'C', 'D', 'RootKnown', 'RootMissing']),
+    );
   });
 
   it.each([
@@ -305,9 +348,9 @@ describe('conditional display groups and calendars', () => {
       finishDate: '2026-10-12',
       clipped: false,
     });
-    expect(result.tasks.A).toEqual(unknown);
-    expect(result.tasks.B).toEqual(unknown);
-    expect(result.diagnostics).toEqual([]);
+    expect(realOnly(result.tasks.A!)).toEqual(unknown);
+    expect(realOnly(result.tasks.B!)).toEqual(unknown);
+    expect(result.diagnostics).toEqual(unknownDiagnostics(['A', 'B']));
   });
 
   it.each(['weekdays', 'all-days'] as const)(
@@ -356,7 +399,7 @@ describe('explicit FS preparation', () => {
       const result = schedule(tasks, [e('AB', 'A', 'B')], calendar);
       expect(result.feasibility).toBe(feasibility);
       expect(result.diagnostics.map((item) => item.code)).toEqual(codes);
-      expect(result.tasks.B).toEqual({
+      expect(realOnly(result.tasks.B!)).toEqual({
         startDate: start,
         finishDate: start,
         calendarSpanDays: 1,
@@ -374,10 +417,10 @@ describe('explicit FS preparation', () => {
       ],
       [e('AB', 'A', 'B')],
     );
-    expect(result.feasibility).toBe('feasible');
+    expect(result.feasibility).toBe('incomplete');
     expect(result.coverage).toEqual({ knownLeafCount: 0, totalLeafCount: 2 });
-    expect(result.tasks).toEqual({ A: unknown, B: unknown });
-    expect(result.diagnostics).toEqual([]);
+    expect(realTaskMap(result)).toEqual({ A: unknown, B: unknown });
+    expect(result.diagnostics).toEqual(unknownDiagnostics(['A', 'B']));
   });
 
   it('reports unknown precedence without removing a known successor interval', () => {
@@ -386,12 +429,13 @@ describe('explicit FS preparation', () => {
       [e('AB', 'A', 'B')],
     );
     expect(result.feasibility).toBe('incomplete');
-    expect(result.tasks.B).toEqual({
+    expect(realOnly(result.tasks.B!)).toEqual({
       startDate: '2026-10-12',
       finishDate: '2026-10-13',
       calendarSpanDays: 2,
     });
     expect(result.diagnostics).toEqual([
+      ...unknownDiagnostics(['A']),
       {
         code: 'UNKNOWN_PRECEDENCE',
         taskIds: ['A', 'B'],
@@ -412,7 +456,7 @@ describe('explicit FS preparation', () => {
       [e('UB', 'U', 'B'), e('AB', 'A', 'B')],
     );
     expect(result.feasibility).toBe('infeasible');
-    expect(result.summaries.P).toEqual({
+    expect(summaryOnly(result.summaries.P!)).toEqual({
       startDate: '2026-10-09',
       finishDate: '2026-10-12',
       calendarSpanDays: 2,
@@ -426,6 +470,7 @@ describe('explicit FS preparation', () => {
         dependencyIds: ['AB'],
         messageKey: 'scheduling.EXPLICIT_PRECEDENCE_CONFLICT',
       },
+      ...unknownDiagnostics(['U']),
       {
         code: 'UNKNOWN_PRECEDENCE',
         taskIds: ['B', 'U'],
@@ -446,14 +491,15 @@ describe('explicit FS preparation', () => {
         [t('A', null, aStart, aFinish), t('B', null, bStart, bFinish)],
         [e('AB', 'A', 'B')],
       );
-      expect(result.feasibility).toBe('infeasible');
+      expect(result.feasibility).toBe('incomplete');
       expect(result.diagnostics).toEqual([
         {
-          code: 'NON_WORKING_DATE',
+          code: 'INVALID_PRECEDENCE_BOUNDARY',
           taskIds: ['A', 'B'],
           dependencyIds: ['AB'],
-          messageKey: 'scheduling.NON_WORKING_DATE',
+          messageKey: 'scheduling.INVALID_PRECEDENCE_BOUNDARY',
         },
+        ...unknownDiagnostics(['A', 'B']),
       ]);
       expect(result.coverage.knownLeafCount).toBe(0);
     },
@@ -465,11 +511,19 @@ describe('explicit FS preparation', () => {
       t('A', 'P', '2026-10-09', '2026-10-09'),
       t('B', 'P', null, null, 3),
     ];
-    expect(schedule(tasks).diagnostics).toEqual([]);
+    expect(schedule(tasks).diagnostics).toEqual(unknownDiagnostics(['B']));
     const result = schedule(tasks, [e('AB', 'A', 'B')]);
     expect(result.display.B!.finishDate).toBe('2026-10-13');
     expect(result.feasibility).toBe('incomplete');
-    expect(result.diagnostics[0]!.code).toBe('UNKNOWN_PRECEDENCE');
+    expect(result.diagnostics).toEqual([
+      ...unknownDiagnostics(['B']),
+      {
+        code: 'UNKNOWN_PRECEDENCE',
+        taskIds: ['A', 'B'],
+        dependencyIds: ['AB'],
+        messageKey: 'scheduling.UNKNOWN_PRECEDENCE',
+      },
+    ]);
   });
 });
 
@@ -488,8 +542,15 @@ describe('iteration, determinism and target DTO compatibility', () => {
       const result = schedule(tasks.reverse());
       expect(result.coverage).toEqual({ knownLeafCount: 1, totalLeafCount: 2 });
       expect(Object.keys(result.summaries)).toHaveLength(depth);
+      expect(result.analysisStatus).toBe('incomplete');
+      expect(result.diagnostics).toEqual(unknownDiagnostics(['B']));
+      expect(
+        Object.values(result.summaries).every(
+          (s) => s.containsCritical === null,
+        ),
+      ).toBe(true);
       for (const summary of Object.values(result.summaries))
-        expect(summary).toEqual({
+        expect(summaryOnly(summary)).toEqual({
           ...unknown,
           knownLeafCount: 1,
           totalLeafCount: 2,
@@ -536,9 +597,9 @@ describe('iteration, determinism and target DTO compatibility', () => {
     ).toBe(JSON.stringify(expected));
   });
 
-  it('matches the strict pending DTO at compile time and parses real/display/diagnostic maps', () => {
-    expectTypeOf<OptionalResult>().toEqualTypeOf<
-      z.infer<typeof scheduleResultV2Schema>
+  it('matches the strict LIVE DTO at compile time and parses real/display/diagnostic maps', () => {
+    expectTypeOf<LiveResult>().toEqualTypeOf<
+      z.infer<typeof liveScheduleResultV2Schema>
     >();
     const p = '00000000-0000-4000-8000-000000000001';
     const a = '00000000-0000-4000-8000-000000000002';
@@ -548,7 +609,7 @@ describe('iteration, determinism and target DTO compatibility', () => {
       [t(p), t(a, p, '2026-10-05', '2026-10-06'), t(b, p)],
       [e(edgeId, a, b)],
     );
-    expect(scheduleResultV2Schema.parse(result)).toEqual(result);
+    expect(liveScheduleResultV2Schema.parse(result)).toEqual(result);
   });
 });
 
@@ -583,6 +644,15 @@ describe('narrow optional graph validation', () => {
         e('New', predecessor, successor),
       ]);
       expect(result.feasibility).toBe('infeasible');
+      expect(result.horizonFinishDate).toBeNull();
+      expect(result.partialAnalysis).toBeNull();
+      expect(result.criticalTaskIds).toEqual([]);
+      expect(result.criticalDependencyIds).toEqual([]);
+      expect(
+        Object.values(result.tasks).every(
+          (t) => t.projectFloat === null && t.constraintFloat === null,
+        ),
+      ).toBe(true);
       expect(
         result.diagnostics.some((item) => item.code === diagnosticCode),
       ).toBe(true);
@@ -635,15 +705,9 @@ describe('narrow optional graph validation', () => {
         [first!, second!, parent!].map((task) => Object.freeze(task)),
       );
       const before = structuredClone(tasks);
-      const expected: OptionalResult = {
-        analysisStatus: 'pending-policy',
-        feasibility: 'infeasible',
+      const expected: LiveResult = {
         coverage: { knownLeafCount: 0, totalLeafCount: 0 },
-        tasks: {},
-        summaries: {},
         display: {},
-        criticalTaskIds: [],
-        criticalDependencyIds: [],
         diagnostics: [
           {
             code: 'DUPLICATE_TASK_ID',
@@ -652,6 +716,14 @@ describe('narrow optional graph validation', () => {
             messageKey: 'scheduling.DUPLICATE_TASK_ID',
           },
         ],
+        analysisStatus: 'infeasible',
+        feasibility: 'infeasible',
+        tasks: {},
+        summaries: {},
+        horizonFinishDate: null,
+        partialAnalysis: null,
+        criticalTaskIds: [],
+        criticalDependencyIds: [],
       };
       for (const order of [
         [0, 1, 2],
@@ -681,15 +753,9 @@ describe('narrow optional graph validation', () => {
       ),
     );
     const before = structuredClone({ tasks: graphTasks, dependencies });
-    const expected: OptionalResult = {
-      analysisStatus: 'pending-policy',
-      feasibility: 'infeasible',
+    const expected: LiveResult = {
       coverage: { knownLeafCount: 0, totalLeafCount: 3 },
-      tasks: { A: unknown, B: unknown, C: unknown },
-      summaries: {},
       display: {},
-      criticalTaskIds: [],
-      criticalDependencyIds: [],
       diagnostics: [
         {
           code: 'DUPLICATE_DEPENDENCY',
@@ -704,6 +770,18 @@ describe('narrow optional graph validation', () => {
           messageKey: 'scheduling.DUPLICATE_DEPENDENCY_ID',
         },
       ],
+      analysisStatus: 'infeasible',
+      feasibility: 'infeasible',
+      tasks: {
+        A: { ...unknown, projectFloat: null, constraintFloat: null },
+        B: { ...unknown, projectFloat: null, constraintFloat: null },
+        C: { ...unknown, projectFloat: null, constraintFloat: null },
+      },
+      summaries: {},
+      horizonFinishDate: null,
+      partialAnalysis: null,
+      criticalTaskIds: [],
+      criticalDependencyIds: [],
     };
     for (const order of [
       [0, 1, 2],
@@ -741,4 +819,65 @@ describe('narrow optional graph validation', () => {
       expect(result.diagnostics.some((item) => item.code === code)).toBe(true);
     },
   );
+});
+
+it('retains N02 real projection while asserting live incomplete fields', () => {
+  const r = schedule(n02());
+  expect(r.analysisStatus).toBe('incomplete');
+  expect(r.feasibility).toBe('incomplete');
+  expect(realOnly(r.tasks.C!)).toEqual({
+    startDate: null,
+    finishDate: null,
+    calendarSpanDays: null,
+  });
+  expect(summaryOnly(r.summaries.P!)).toEqual({
+    startDate: null,
+    finishDate: null,
+    calendarSpanDays: null,
+    knownLeafCount: 2,
+    totalLeafCount: 3,
+  });
+  expect(r.summaries.P!.containsCritical).toBeNull();
+  expect(r.diagnostics).toEqual(unknownDiagnostics(['C']));
+});
+it('retains complete N02 dates with independently expected live floats', () => {
+  const tasks = n02();
+  tasks[3] = t('C', 'P', '2026-10-07', '2026-10-09', 3);
+  const r = schedule(tasks);
+  if (r.analysisStatus !== 'ready') throw new Error('Expected ready');
+  expect(r.tasks.A).toMatchObject({ projectFloat: 4, constraintFloat: 4 });
+  expect(r.tasks.B).toMatchObject({ projectFloat: 0, constraintFloat: 0 });
+  expect(r.tasks.C).toMatchObject({ projectFloat: 1, constraintFloat: 1 });
+  expect(r.criticalTaskIds).toEqual(['B']);
+  expect(r.criticalDependencyIds).toEqual([]);
+  expect(r.summaries.P!.containsCritical).toBe(true);
+});
+it('replaces empty current pending with empty live and preserves frozen pending literally', () => {
+  const live = {
+    analysisStatus: 'ready',
+    feasibility: 'feasible',
+    coverage: { knownLeafCount: 0, totalLeafCount: 0 },
+    tasks: {},
+    summaries: {},
+    display: {},
+    horizonFinishDate: null,
+    partialAnalysis: null,
+    criticalTaskIds: [],
+    criticalDependencyIds: [],
+    diagnostics: [],
+  };
+  expect(schedule([])).toEqual(live);
+  const frozen: FrozenPendingScheduleV2 = {
+    analysisStatus: 'pending-policy',
+    feasibility: 'feasible',
+    coverage: { knownLeafCount: 0, totalLeafCount: 0 },
+    tasks: {},
+    summaries: {},
+    display: {},
+    criticalTaskIds: [],
+    criticalDependencyIds: [],
+    diagnostics: [],
+  };
+  expect(frozenPendingScheduleV2Schema.parse(frozen)).toEqual(frozen);
+  expect(liveScheduleResultV2Schema.safeParse(frozen).success).toBe(false);
 });
