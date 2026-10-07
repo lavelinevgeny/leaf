@@ -25,6 +25,8 @@ migrations/               # SQL schema changes, never database dumps
 
 ## Данные
 
+Таблица описывает реализованную модель S2–S3. По [C15](DECISIONS.md) отдельное поле `deadline` исключено из целевой модели; API и хранение ещё требуют совместимой адаптации. Наличие поля в таблице не означает требование сохранять дедлайн в продукте.
+
 | Сущность | Основные поля |
 |---|---|
 | Project | id, title, archivedAt, startDate?, calendarType, timezone, revision, createdAt, updatedAt |

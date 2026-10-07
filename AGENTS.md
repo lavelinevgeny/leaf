@@ -8,8 +8,9 @@ Read `START_HERE.md` first, then follow the current owner task; S0 starts only w
 - First usable release MUST include a visible arbitrary-depth task tree, optional dates, Gantt, dependencies and recalculated critical paths. Foundation milestones are not a substitute.
 - Approved references: only the three PNGs listed in `design/README.md`. Main screen = light Quire-like layout; task panel = compact right sidebar (option 1); dependencies = visual graph (option 2).
 - The final subtask comparison image was explicitly excluded. No subtask-detail layout is approved. Do not recover it or treat it as a requirement.
-- Written product rules override incidental mockup fields, labels, dates, status colors and drawing errors. No dummy Gantt bars for undated tasks. Hierarchy is NOT precedence.
+- Written product rules override incidental mockup fields, labels, dates, status colors and drawing errors. C13–C14 allow muted Gantt bars for subtasks without a start, anchored to a known minimum date in their parent group, using supplied duration or one display day. Under working default D13 these visual values are not persisted or used as real dates in summaries/CPM. Hierarchy is NOT precedence.
 - `docs/DECISIONS.md` separates confirmed requirements from working defaults. Do not silently promote suggestions into owner decisions.
+- C15 excludes a separate deadline from the target model and UI; the optional finish date remains. Existing S2–S3 deadline fields are legacy implementation awaiting compatible adaptation.
 
 ## Architecture and scope
 
