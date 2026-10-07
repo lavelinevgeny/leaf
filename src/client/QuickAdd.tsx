@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Task } from '../shared/contracts.js';
 import { orderedChildren } from './tree-view.js';
 import { strings } from './strings.js';
@@ -13,7 +13,8 @@ interface Props {
   onCreate: (title: string, context: AddContext) => Promise<boolean>;
   busy: boolean;
   blocked: boolean;
-  confirmed: { operationId: string; title: string } | null;
+  title: string;
+  onTitle: (title: string) => void;
 }
 export function QuickAdd({
   tasks,
@@ -22,22 +23,15 @@ export function QuickAdd({
   onCreate,
   busy,
   blocked,
-  confirmed,
+  title,
+  onTitle,
 }: Props) {
-  const [title, setTitle] = useState('');
   const [editing, setEditing] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const parent = tasks.find((task) => task.id === context.parentId);
-  useEffect(() => {
-    if (confirmed)
-      setTitle((value) =>
-        value.trim() === confirmed.title.trim() ? '' : value,
-      );
-  }, [confirmed]);
   async function submit() {
     if (!title.trim() || busy || blocked) return;
     if (await onCreate(title, context)) {
-      setTitle('');
       input.current?.focus();
     }
   }
@@ -60,7 +54,7 @@ export function QuickAdd({
           maxLength={300}
           disabled={busy || blocked}
           onFocus={() => setEditing(true)}
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={(event) => onTitle(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault();
@@ -89,6 +83,18 @@ export function QuickAdd({
           {strings.parent}: {parent?.title ?? strings.root}
         </span>
         <span>{strings.quickHint}</span>
+        {title && (
+          <>
+            <span role="status">{strings.quickDirty}</span>
+            <button
+              type="button"
+              disabled={busy || blocked}
+              onClick={() => onTitle('')}
+            >
+              {strings.clearQuick}
+            </button>
+          </>
+        )}
       </div>
     </form>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../shared/contracts.js';
 import { TaskTree, type TreeAction } from './TaskTree.js';
 import { subtreeIds } from './tree-view.js';
@@ -56,9 +56,22 @@ export function TaskPanel({
   const [saved, setSaved] = useState(false);
   const [tab, setTab] = useState<'details' | 'subtasks'>('details');
   const [moveParent, setMoveParent] = useState(task.parentId ?? '');
+  const previousParent = useRef(task.parentId);
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
   const summary = tasks.some((child) => child.parentId === task.id);
   const excluded = removed ? new Set<string>() : subtreeIds(tasks, task.id);
+  useEffect(() => {
+    const parentChanged = previousParent.current !== task.parentId;
+    setMoveParent((preview) =>
+      parentChanged ||
+      (preview &&
+        (!tasks.some((candidate) => candidate.id === preview) ||
+          excluded.has(preview)))
+        ? (task.parentId ?? '')
+        : preview,
+    );
+    previousParent.current = task.parentId;
+  }, [task.parentId, tasks, removed]);
   useEffect(() => {
     onDirty(dirty);
   }, [dirty, onDirty]);

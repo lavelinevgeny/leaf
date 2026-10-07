@@ -439,9 +439,22 @@ describe('client HTTP interactions', () => {
     expect(
       screen.queryByRole('treeitem', { name: /Старый снимок,/ }),
     ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+    expect(commands).toHaveLength(0);
+    tree = {
+      ...tree,
+      project: { ...project, revision: 6 },
+      tasks: [task(1, 'Задача A')],
+    };
+    await user.click(
+      screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
+    );
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(commands).toHaveLength(1));
-    expect(commands[0]?.expectedRevision).toBe(5);
+    expect(commands[0]?.expectedRevision).toBe(6);
   });
   it('provides keyboard moves and excludes descendants from the parent picker', async () => {
     tree.tasks = [
@@ -664,5 +677,144 @@ describe('client HTTP interactions', () => {
       headers: { 'Content-Type': 'application/json' },
     });
     expect(screen.queryByRole('tree')).not.toBeInTheDocument();
+  });
+  it('retains unsent quick text and parent preview across A→B→A, guards logout/unload and permits explicit discard', async () => {
+    const other = {
+      ...project,
+      id: '44444444-4444-4444-8444-444444444444',
+      title: 'Другой демо-проект',
+    };
+    tree.tasks = [task(1, 'Задача A')];
+    const treeA = { ...tree, tasks: [...tree.tasks] };
+    fetchMock.mockImplementationOnce(() =>
+      json({ authenticated: true, setupRequired: false }),
+    );
+    fetchMock.mockImplementationOnce(() => json([project, other]));
+    await open();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Новая задача'), 'Черновик A');
+    await user.tab();
+    expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    fetchMock.mockImplementationOnce(() =>
+      json({ project: other, tasks: [], canUndo: false }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: /Другой демо-проект/ }),
+    );
+    await screen.findByRole('heading', { name: other.title });
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('');
+    await user.type(screen.getByLabelText('Новая задача'), 'Черновик B');
+    fetchMock.mockImplementationOnce(() => json(treeA));
+    await user.click(screen.getByRole('button', { name: /Демо-проект/ }));
+    await screen.findByRole('heading', { name: project.title });
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик A');
+    expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    expect(commands).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Выйти' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/быстр/i);
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === '/api/auth/logout'),
+    ).toBe(false);
+    await user.click(
+      screen.getByRole('button', { name: 'Отбросить быстрые черновики' }),
+    );
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('');
+    const cleanUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(cleanUnload);
+    expect(cleanUnload.defaultPrevented).toBe(false);
+    expect(commands).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Выйти' }));
+    await screen.findByLabelText('Пароль');
+  });
+  it('keeps conflict recovery and blocks saving after a failed reload until a validated fresh snapshot arrives', async () => {
+    tree.project.revision = 4;
+    tree.tasks = [task(1, 'Задача A')];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await user.type(
+      screen.getByLabelText('Описание'),
+      'Черновик после конфликта',
+    );
+    fetchMock.mockImplementationOnce(() =>
+      json({ code: 'REVISION_CONFLICT', message: 'Проект изменён.' }, 409),
+    );
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    fetchMock.mockImplementationOnce(() =>
+      Promise.reject(new TypeError('synthetic offline')),
+    );
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Загрузить актуальный проект',
+      }),
+    );
+    await screen.findByText(/Нет связи с сервером/);
+    expect(
+      screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+    expect(screen.getByLabelText('Описание')).toHaveValue(
+      'Черновик после конфликта',
+    );
+    expect(
+      screen.getByRole('treeitem', { name: /Задача A,/ }),
+    ).toBeInTheDocument();
+    expect(commands).toHaveLength(0);
+    // A schema-invalid success is not a validated snapshot and cannot lift the conflict.
+    fetchMock.mockImplementationOnce(() =>
+      json({
+        project: { ...project, revision: 7 },
+        tasks: [],
+        canUndo: 'invalid',
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+    );
+    await screen.findByText('Не удалось выполнить запрос.');
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+    tree = { ...tree, project: { ...project, revision: 8 } };
+    await user.click(
+      screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
+    );
+    expect(screen.getByLabelText('Описание')).toHaveValue(
+      'Черновик после конфликта',
+    );
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await screen.findByText('Сохранено');
+    expect(commands[0]?.expectedRevision).toBe(8);
+  });
+  it('synchronizes the parent picker after a same-task server move and undo', async () => {
+    tree.tasks = [task(1, 'Задача A'), task(2, 'Задача B', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
+    expect(screen.getByLabelText('Новый родитель')).toHaveValue('');
+    tree = {
+      ...tree,
+      tasks: [task(1, 'Задача A'), task(2, 'Задача B', id(1))],
+    };
+    await user.click(
+      screen.getByRole('button', { name: 'Вложить в предыдущую задачу' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText('Новый родитель')).toHaveValue(id(1)),
+    );
+    tree = {
+      ...tree,
+      tasks: [task(1, 'Задача A'), task(2, 'Задача B', null, 1)],
+    };
+    await user.click(
+      screen.getByRole('button', { name: 'Отменить последнее изменение' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText('Новый родитель')).toHaveValue(''),
+    );
   });
 });

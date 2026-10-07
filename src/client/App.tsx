@@ -25,6 +25,10 @@ type Mutation =
       knownIds: string[];
     }
   | { kind: 'rename'; projectId: string; envelope: RenameProject };
+interface QuickDraft {
+  title: string;
+  context: AddContext;
+}
 function asError(error: unknown) {
   return error instanceof ApiError
     ? error
@@ -43,27 +47,31 @@ export function App() {
   const [tree, setTree] = useState<ProjectTree | null>(null);
   const [selected, setSelected] = useState<Task | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [context, setContext] = useState<AddContext>({ parentId: null });
+  const [quickDrafts, setQuickDrafts] = useState<Record<string, QuickDraft>>(
+    {},
+  );
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState('');
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<Mutation | null>(null);
   const [rename, setRename] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [createUncertain, setCreateUncertain] = useState(false);
-  const [confirmedCreate, setConfirmedCreate] = useState<{
-    operationId: string;
-    title: string;
-  } | null>(null);
   const treeRef = useRef(tree);
   const pendingRef = useRef<Mutation | null>(null);
   const lock = useRef(false);
   const loadSequence = useRef(0);
   const dirtyRef = useRef(false);
   const currentProject = useRef<string | null>(null);
-  const conflict = error?.status === 409;
+  const context = (tree && quickDrafts[tree.project.id]?.context) || {
+    parentId: null,
+  };
+  const hasQuickDrafts = Object.values(quickDrafts).some(
+    (draft) => draft.title !== '',
+  );
   const uncertain = !!pending && !!error?.uncertain;
   const panelRetry =
     uncertain &&
@@ -74,13 +82,31 @@ export function App() {
     dirtyRef.current = value;
     setDirty(value);
   }, []);
+  function updateQuick(
+    projectId: string,
+    update: (draft: QuickDraft) => QuickDraft,
+  ) {
+    setQuickDrafts((previous) => ({
+      ...previous,
+      [projectId]: update(
+        previous[projectId] ?? { title: '', context: { parentId: null } },
+      ),
+    }));
+  }
+  function setContext(next: AddContext) {
+    if (currentProject.current)
+      updateQuick(currentProject.current, (draft) => ({
+        ...draft,
+        context: next,
+      }));
+  }
   function apply(next: ProjectTree) {
-    if (currentProject.current !== next.project.id) return;
+    if (currentProject.current !== next.project.id) return false;
     if (
       treeRef.current?.project.id === next.project.id &&
       treeRef.current.project.revision > next.project.revision
     )
-      return;
+      return false;
     treeRef.current = next;
     setTree(next);
     setProjects((previous) =>
@@ -94,6 +120,7 @@ export function App() {
           (dirtyRef.current ? previous : null))
         : null,
     );
+    return true;
   }
   function canNavigate(allowRename = false) {
     if (
@@ -122,37 +149,44 @@ export function App() {
       treeRef.current = null;
       setCollapsed(new Set());
       setRename(null);
-      setConfirmedCreate(null);
     }
     try {
       const next = await api.tree(id);
       if (sequence !== loadSequence.current) return;
-      apply(next);
-      if (preserveDraft)
-        setContext((previous) => {
-          const parentId =
-            previous.parentId &&
-            next.tasks.some((task) => task.id === previous.parentId)
-              ? previous.parentId
-              : null;
-          return {
-            parentId,
-            ...(previous.afterId &&
-            next.tasks.some(
-              (task) =>
-                task.id === previous.afterId && task.parentId === parentId,
-            )
-              ? { afterId: previous.afterId }
-              : {}),
-          };
-        });
-      if (!preserveDraft)
-        setContext({
+      if (!apply(next)) {
+        setError(new ApiError('STALE_SNAPSHOT', strings.staleSnapshot));
+        return;
+      }
+      setConflict(false);
+      setQuickDrafts((previous) => {
+        const saved = previous[id];
+        const after = orderedChildren(next.tasks, null).at(-1);
+        const preview = saved?.context ?? {
           parentId: null,
-          ...(orderedChildren(next.tasks, null).at(-1)
-            ? { afterId: orderedChildren(next.tasks, null).at(-1)!.id }
-            : {}),
-        });
+          ...(after ? { afterId: after.id } : {}),
+        };
+        const parentId =
+          preview.parentId &&
+          next.tasks.some((task) => task.id === preview.parentId)
+            ? preview.parentId
+            : null;
+        return {
+          ...previous,
+          [id]: {
+            title: saved?.title ?? '',
+            context: {
+              parentId,
+              ...(preview.afterId &&
+              next.tasks.some(
+                (task) =>
+                  task.id === preview.afterId && task.parentId === parentId,
+              )
+                ? { afterId: preview.afterId }
+                : {}),
+            },
+          },
+        };
+      });
       pendingRef.current = null;
       setPending(null);
     } catch (failure) {
@@ -204,6 +238,7 @@ export function App() {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (
         dirty ||
+        hasQuickDrafts ||
         pending ||
         busy ||
         (rename !== null && rename !== tree?.project.title)
@@ -214,7 +249,7 @@ export function App() {
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
-  }, [dirty, pending, busy, rename, tree]);
+  }, [dirty, hasQuickDrafts, pending, busy, rename, tree]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && selected) {
@@ -258,12 +293,12 @@ export function App() {
             task.title === added.title.trim() &&
             task.parentId === added.parentId,
         );
-        if (created)
-          setContext({ parentId: created.parentId, afterId: created.id });
-        setConfirmedCreate({
-          title: added.title,
-          operationId: job.envelope.operationId,
-        });
+        updateQuick(job.projectId, (draft) => ({
+          title: draft.title.trim() === added.title.trim() ? '' : draft.title,
+          context: created
+            ? { parentId: created.parentId, afterId: created.id }
+            : draft.context,
+        }));
         if (added.parentId)
           setCollapsed((previous) => {
             const expanded = new Set(previous);
@@ -277,6 +312,7 @@ export function App() {
     } catch (failure) {
       const failed = asError(failure);
       setError(failed);
+      if (failed.status === 409) setConflict(true);
       if (!failed.uncertain) {
         pendingRef.current = null;
         setPending(null);
@@ -473,6 +509,10 @@ export function App() {
     }
   }
   async function logout() {
+    if (hasQuickDrafts) {
+      setNotice(strings.unsavedQuick);
+      return;
+    }
     if (!canNavigate()) return;
     lock.current = true;
     setBusy(true);
@@ -485,6 +525,7 @@ export function App() {
       treeRef.current = null;
       currentProject.current = null;
       setSelected(null);
+      setQuickDrafts({});
     } catch (failure) {
       setError(asError(failure));
     } finally {
@@ -495,13 +536,32 @@ export function App() {
   const errorView = (
     <>
       {notice && (
-        <p role="alert" className="error-message">
-          {notice}
-        </p>
+        <div role="alert" className="error-message">
+          <p>{notice}</p>
+          {notice === strings.unsavedQuick && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuickDrafts((previous) =>
+                  Object.fromEntries(
+                    Object.entries(previous).map(([id, draft]) => [
+                      id,
+                      { ...draft, title: '' },
+                    ]),
+                  ),
+                );
+                setNotice('');
+              }}
+            >
+              {strings.discardQuickDrafts}
+            </button>
+          )}
+        </div>
       )}
-      {error && (
+      {(error || conflict) && (
         <div className="error-message" role="alert">
-          <p>{conflict ? strings.conflict : error.message}</p>
+          <p>{conflict ? strings.conflict : error?.message}</p>
+          {conflict && error && error.status !== 409 && <p>{error.message}</p>}
           {conflict && tree && (
             <button
               type="button"
@@ -709,7 +769,10 @@ export function App() {
                 onCreate={createTask}
                 busy={busy || loading}
                 blocked={!!pending || conflict || dirty}
-                confirmed={confirmedCreate}
+                title={quickDrafts[tree.project.id]?.title ?? ''}
+                onTitle={(title) =>
+                  updateQuick(tree.project.id, (draft) => ({ ...draft, title }))
+                }
               />
             </>
           )}
