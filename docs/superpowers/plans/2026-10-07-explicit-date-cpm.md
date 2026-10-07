@@ -230,6 +230,15 @@ export const liveScheduleResultV2Schema = z.discriminatedUnion('analysisStatus',
 export const scheduleResultV2Schema = z.union([
   frozenPendingScheduleV2Schema, liveScheduleResultV2Schema,
 ]);
+export const liveProjectTreeV2Schema = snapshotV2Schema.extend({
+  contractVersion: z.literal(2), canUndo: z.boolean(), schedule: liveScheduleResultV2Schema,
+});
+export const liveScheduleResponseV2Schema = z.strictObject({
+  contractVersion: z.literal(2), projectId: uuidSchema,
+  revision: countCpmSchema, schedule: liveScheduleResultV2Schema,
+});
+export type LiveProjectTreeV2 = z.infer<typeof liveProjectTreeV2Schema>;
+export type LiveScheduleResponseV2 = z.infer<typeof liveScheduleResponseV2Schema>;
 export const projectTreeV2Schema = snapshotV2Schema.extend({
   contractVersion: z.literal(2), canUndo: z.boolean(), schedule: scheduleResultV2Schema,
 });
@@ -391,6 +400,11 @@ export const readyFixtures: ReadyFixture[] = [
     dependencies:[edge('AB','A','B')] },
     horizon:'2026-10-13',floats:[['A',0,0],['B',0,0]],
     critical:['A','B'],criticalEdges:['AB'] },
+  { id: 'P10-all-days', input: { calendarType: 'all-days', tasks: [
+    leaf('A','2026-10-09','2026-10-09'),leaf('B','2026-10-12','2026-10-13') ],
+    dependencies:[edge('AB','A','B')] },
+    horizon:'2026-10-13',floats:[['A',2,2],['B',0,0]],
+    critical:['B'],criticalEdges:[] },
   { id: 'N06', input: { calendarType: 'all-days', tasks: [
     leaf('A','2026-10-05','2026-10-06'),leaf('B','2026-10-10','2026-10-10'),
     leaf('C','2026-10-05','2026-10-14') ],dependencies:[edge('AB','A','B')] },
@@ -430,7 +444,7 @@ export const readyFixtures: ReadyFixture[] = [
 `tests/explicit-cpm.test.ts` начинается следующим runnable кодом; каждый дополнительный test в этом разделе добавляется в тот же файл.
 
 ```ts
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { calculateSchedule, projectExplicitSchedule } from '../src/domain/scheduling.js';
 import { analyzeExplicitDates, buildCpmGraph, analyzeDatedGraph,
   toWorkingInterval } from '../src/domain/explicit-cpm.js';
@@ -506,6 +520,58 @@ it.each([
     {code:'UNKNOWN_PRECEDENCE',taskIds:['B','U'],dependencyIds:['UB'],messageKey:'scheduling.UNKNOWN_PRECEDENCE'},
   ]);
   expect(r.criticalTaskIds).toEqual([]); expect(r.criticalDependencyIds).toEqual([]);
+});
+
+it('F03 plus unknown U publishes tight partial edges without global criticality', () => {
+  const input:OptionalInput={calendarType:'all-days',tasks:[
+    leaf('A','2026-10-05','2026-10-06'),leaf('B','2026-10-07','2026-10-09'),
+    leaf('C','2026-10-10','2026-10-11'),leaf('U',null,null)],
+    dependencies:[edge('AB','A','B'),edge('BC','B','C'),edge('AC','A','C')]};
+  const r=calculateSchedule(input);
+  expect(r.analysisStatus).toBe('incomplete');
+  if(r.analysisStatus!=='incomplete') throw new Error('Expected incomplete');
+  expect(r.coverage).toEqual({knownLeafCount:3,totalLeafCount:4});
+  expect(r.criticalTaskIds).toEqual([]);expect(r.criticalDependencyIds).toEqual([]);
+  expect(r.partialAnalysis).toEqual({
+    labelKey:'scheduling.PARTIAL_ANALYSIS',knownHorizonFinishDate:'2026-10-11',
+    coverage:{analyzedLeafCount:3,blockedLeafCount:1},
+    tasks:{A:{knownHorizonFloat:0},B:{knownHorizonFloat:0},C:{knownHorizonFloat:0}},
+    partialCriticalTaskIds:['A','B','C'],partialCriticalDependencyIds:['AB','BC'],
+    partialCriticalSummaryIds:[],
+  });
+  expect(Object.values(r.tasks).every(t=>t.projectFloat===null&&t.constraintFloat===null)).toBe(true);
+  expect(r.diagnostics).toEqual([{code:'UNKNOWN_INTERVAL',taskIds:['U'],
+    dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL'}]);
+});
+
+it('wide unknown leaves use bounded diagnostic lookup work without timing assertions',()=>{
+  const n=10000;
+  const tasks=Array.from({length:n},(_,i)=>leaf('U'+String(i).padStart(5,'0'),null,null));
+  const input:OptionalInput={calendarType:'all-days',tasks,dependencies:[]};
+  const projection={
+    feasibility:'incomplete' as const,coverage:{knownLeafCount:0,totalLeafCount:n},
+    tasks:Object.fromEntries(tasks.map(t=>[t.id,{startDate:null,finishDate:null,calendarSpanDays:null}])),
+    summaries:{},display:{},diagnostics:tasks.map(t=>({code:'UNKNOWN_INTERVAL',
+      taskIds:[t.id],dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL'})),
+  };
+  const originalSome=Array.prototype.some;
+  let inspections=0;
+  const spy=vi.spyOn(Array.prototype,'some').mockImplementation(function(
+    this:unknown[],predicate:(value:unknown,index:number,array:unknown[])=>unknown,thisArg?:unknown,
+  ){
+    return originalSome.call(this,(value,index,array)=>{
+      inspections++;return predicate.call(thisArg,value,index,array);
+    });
+  });
+  let r:ReturnType<typeof analyzeExplicitDates>;
+  try{r=analyzeExplicitDates(input,projection);}finally{spy.mockRestore();}
+  expect(inspections).toBeLessThanOrEqual(20*n);
+  expect(r.analysisStatus).toBe('incomplete');
+  expect(r.diagnostics).toEqual(projection.diagnostics);
+  expect(Object.keys(r.tasks)).toHaveLength(n);
+  expect(r.coverage).toEqual({knownLeafCount:0,totalLeafCount:n});
+  if(r.analysisStatus!=='incomplete') throw new Error('Expected incomplete');
+  expect(r.partialAnalysis).toBeNull();
 });
 
 it('P09 conflict plus unknown suppresses all floats and partial IDs', () => {
@@ -860,7 +926,21 @@ it('infeasible strictly suppresses partial and accepts null ordinary floats',()=
 });
 ```
 
-Дополнить rejected record keys malformed UUID, summary containsCritical=true в incomplete, null ready float, partial count mismatch, partial critical unknown ID, removed legacy fields inside project/task/commands; command strict forms из Task 5 уже должны отклонять их. Не превращать frozen pending с feasibility=feasible/coverage1/2 в новый incomplete.
+В том же contract test file добавить следующие strict record/count/summary cases. Removed legacy project/task/command fields продолжают проверять accepted Task5 strict suites; frozen pending с feasibility=feasible/coverage1/2 остаётся прежним.
+
+```ts
+it.each([
+  {...ready,tasks:{bad:{...ready.tasks[A]}}},
+  {...ready,tasks:{[A]:{...ready.tasks[A],projectFloat:null}}},
+  {...incomplete,summaries:{[A]:{startDate:null,finishDate:null,calendarSpanDays:null,
+    knownLeafCount:1,totalLeafCount:2,containsCritical:true}}},
+  {...incomplete,partialAnalysis:{...incomplete.partialAnalysis,
+    coverage:{analyzedLeafCount:2,blockedLeafCount:0}}},
+  {...incomplete,partialAnalysis:{...incomplete.partialAnalysis,partialCriticalTaskIds:[U]}},
+])('rejects malformed record keys and incompatible live analysis fields',value=>{
+  expect(scheduleResultV2Schema.safeParse(value).success).toBe(false);
+});
+```
 
 - [ ] **Step 2: Run RED.** `npm test -- tests/explicit-cpm-contracts.test.ts`: FAIL missing exports/ready union; конкретные strict cases падают до реализации.
 - [ ] **Step 3: Install complete schema/type block из раздела контракта.** Сохранить исходный pending schema побайтово по полям/validators; new schema aliases не влияют на source patch. Под exactOptionalPropertyTypes source patch передаёт лишь определённые присутствующие значения: `if (changes.inputStart !== undefined) patch.inputStart = changes.inputStart`; аналогично finish/duration. Не добавлять explicit undefined и unsafe cast.
@@ -970,7 +1050,7 @@ export function analyzeDatedGraph(
 
 ### Task C: Live composition поверх реальной проекции
 
-**Files:** Modify `src/domain/scheduling.ts`, `src/domain/explicit-cpm.ts`; tests из B. B/C — один testable deliverable и один writer/commit.
+**Files:** Modify `src/domain/scheduling.ts`, `src/domain/explicit-cpm.ts`, `tests/optional-scheduling.test.ts`; tests из B. B/C — один testable deliverable и один writer/commit.
 
 **Interfaces:** Consumes `projectExplicitSchedule(input): ExplicitProjection`, B graph/backward functions. Produces единственный `calculateSchedule(input): LiveResult`. Source/date/display maps сохраняют семантику Task 5; projection не является вторым выбираемым scheduler.
 
@@ -988,6 +1068,118 @@ export function calculateSchedule(input: OptionalInput): LiveResult {
 ```
 
 - [ ] **Step 3: Add complete result composition.** В `explicit-cpm.ts` импортировать `validateSourceInput`/`realInterval` из planning и DomainError из tree. Следующий код добавляется после graph/backward functions. Он нормализует unknown diagnostics без подавления доказанного конфликта; strict parsing остаётся на server boundary, потому что pure domain tests допускают symbolic IDs.
+
+В `projectExplicitSchedule` accepted Task2 body сохраняет iterative graph/summary/display aggregation. Применить **конкретные** source/FS изменения ниже к leaf/edge loops (идентификаторы task/id/edge/diagnostic уже определены в Task2 body):
+
+```ts
+// Every leaf source error is incomplete, not a proved scheduling conflict.
+diagnostic('INVALID_INTERVAL', [id], [], 'incomplete'); // invalid start or finish syntax
+diagnostic('INVALID_DURATION', [id], [], 'incomplete'); // invalid saved duration
+// In the full-pair validateSourceInput catch:
+diagnostic(error.code, [id], [], 'incomplete');
+// Missing pair branch after the full-pair validation branch:
+if(real === null && (task.inputStart === null || task.inputFinish === null))
+  diagnostic('UNKNOWN_INTERVAL', [id], [], 'incomplete');
+// FS required-bound validation, replacing NON_WORKING_DATE and caught INVALID_INTERVAL:
+diagnostic('INVALID_PRECEDENCE_BOUNDARY', taskIds, [edge.id], 'incomplete');
+// Keep UNKNOWN_PRECEDENCE when a required edge bound is absent.
+// Keep EXPLICIT_PRECEDENCE_CONFLICT with default error severity when f > successor s.
+// Graph diagnostics keep error severity and existing early return before source loops.
+```
+
+`INVALID_INTERVAL`/`INVALID_DURATION` source checks continue once after recording the error, retaining existing valid start anchor and invalidDisplay behavior. Не добавлять UNKNOWN_INTERVAL после этих continue; full invalid pair получает только error.code. Source errors не меняют `infeasible`, поэтому все FS edges продолжают проверяться. Result initializer/finishResult используют ExplicitProjection и не содержат analysisStatus/global IDs.
+
+### Адаптация существующего Task2 test suite после live switch
+
+`tests/optional-scheduling.test.ts` сохраняет **все** существующие source/summary/display/FS/graph/calendar/immutability cases принятого Task2 `f0412fd`. Task5 уже перенёс imports в active modules; TaskC добавляет live classification, сохраняя independent literal expected реальных полей. Existing `schedule` helper возвращает LiveResult и вызывает единственный calculateSchedule. Сравнения старых real maps используют явное выделение полей, не урезание production response.
+
+```ts
+// Imports in tests/optional-scheduling.test.ts after Task5:
+import {calculateSchedule,conditionalFinish} from '../src/domain/scheduling.js';
+import {validateDependency} from '../src/domain/planning.js';
+import type {LiveResult,RealTask,OptionalSummary,OptionalTask,CalendarType,
+  SchedulingDependency} from '../src/domain/scheduling-types.js';
+import {frozenPendingScheduleV2Schema,liveScheduleResultV2Schema,
+  type FrozenPendingScheduleV2} from '../src/shared/contracts.js';
+const schedule=(
+  tasks:readonly OptionalTask[],dependencies:readonly SchedulingDependency[]=[],
+  calendarType:CalendarType='weekdays',
+):LiveResult=>calculateSchedule({calendarType,tasks,dependencies});
+const realOnly=(value:RealTask):RealTask=>({
+  startDate:value.startDate,finishDate:value.finishDate,calendarSpanDays:value.calendarSpanDays,
+});
+const summaryOnly=(value:OptionalSummary):OptionalSummary=>({
+  ...realOnly(value),knownLeafCount:value.knownLeafCount,totalLeafCount:value.totalLeafCount,
+});
+const realTaskMap=(result:LiveResult)=>Object.fromEntries(
+  Object.entries(result.tasks).map(([id,value])=>[id,realOnly(value)]),
+);
+const unknownDiagnostics=(ids:readonly string[])=>ids.map(id=>({
+  code:'UNKNOWN_INTERVAL',taskIds:[id],dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL',
+}));
+```
+
+Точные substitutions в existing assertions: `expect(result.tasks.A).toEqual(unknown)` → `expect(realOnly(result.tasks.A!)).toEqual(unknown)`; все другие full real task equality и `result.tasks` map equality аналогично через realOnly/realTaskMap. Summary equality использует summaryOnly, включая loop глубины; исходные literal даты/counts/span/display expectations сохраняются. Narrow graph validator называется validateDependency после Task5; заменить только импорт/вызов validateOptionalDependency. Result type equality проверяет LiveResult ↔ live schema; OptionalResult ↔ union остаётся в contract suite TaskA.
+
+Обязательные замены status/diagnostic expectations задаёт следующая literal таблица; остальные assertions/fixtures не удалять и не skip:
+
+| Existing test | Live expected adjustment |
+|---|---|
+| N02 missing C | incomplete/incomplete, UNKNOWN_INTERVAL C, ordinary floats null, summary containsCritical null |
+| Full N02 | ready; A float4/4, B0/0, C1/1, critical B only; real span6 unchanged |
+| No inferred boundary / done C | incomplete; UNKNOWN_INTERVAL A/B; C remains real/done with ordinary null floats |
+| Saved invalid source table | incomplete with the existing INVALID_INTERVAL or DURATION_MISMATCH code only |
+| Empty pending result | exact live empty ready object below; frozen empty pending remains separately parsed |
+| N03 missing intervals | UNKNOWN_INTERVAL A/B/C sorted; same display/anchor |
+| Finish-only B/start-only D | UNKNOWN_INTERVAL B/D; same finish note/display |
+| Invalid one-sided finish/duration | preserved INVALID_INTERVAL or INVALID_DURATION, plus UNKNOWN_INTERVAL B; no second source diagnostic on A |
+| Root/branch anchor exclusions | UNKNOWN_INTERVAL A/C/D/RootKnown/RootMissing sorted; display still empty |
+| Weekend source/display | incomplete; UNKNOWN_INTERVAL A/B; no FS-bound diagnostic without edges |
+| Known finish-only/start-only FS | incomplete; UNKNOWN_INTERVAL A/B and no UNKNOWN_PRECEDENCE |
+| Unknown A→known B | UNKNOWN_INTERVAL A plus existing UNKNOWN_PRECEDENCE AB |
+| Conflict A→B plus U→B | EXPLICIT_PRECEDENCE_CONFLICT AB, UNKNOWN_INTERVAL U, UNKNOWN_PRECEDENCE UB |
+| Nonworking required FS bound | incomplete; INVALID_PRECEDENCE_BOUNDARY AB, UNKNOWN_INTERVAL A/B |
+| Conditional B with no edge / with AB | UNKNOWN_INTERVAL B / UNKNOWN_INTERVAL B plus UNKNOWN_PRECEDENCE AB |
+| Deep missing B | incomplete; UNKNOWN_INTERVAL B; every summary containsCritical null while real fields/counts unchanged |
+| Graph malformed/cycle/duplicate snapshots | infeasible live shape (null horizon/partial and ordinary analysis); original graph diagnostics/coverage/real blank maps preserved, no additional source diagnostics |
+
+Следующие runnable tests добавляются в тот же suite; `t`/`n02`/`e` уже определены принятым файлом Task2, а helper names выше заменяют существующие imports/schedule.
+
+```ts
+it('retains N02 real projection while asserting live incomplete fields',()=>{
+  const r=schedule(n02());
+  expect(r.analysisStatus).toBe('incomplete');expect(r.feasibility).toBe('incomplete');
+  expect(realOnly(r.tasks.C!)).toEqual({startDate:null,finishDate:null,calendarSpanDays:null});
+  expect(summaryOnly(r.summaries.P!)).toEqual({startDate:null,finishDate:null,calendarSpanDays:null,
+    knownLeafCount:2,totalLeafCount:3});
+  expect(r.summaries.P!.containsCritical).toBeNull();
+  expect(r.diagnostics).toEqual(unknownDiagnostics(['C']));
+});
+it('retains complete N02 dates with independently expected live floats',()=>{
+  const tasks=n02();tasks[3]=t('C','P','2026-10-07','2026-10-09',3);
+  const r=schedule(tasks);
+  if(r.analysisStatus!=='ready') throw new Error('Expected ready');
+  expect(r.tasks.A).toMatchObject({projectFloat:4,constraintFloat:4});
+  expect(r.tasks.B).toMatchObject({projectFloat:0,constraintFloat:0});
+  expect(r.tasks.C).toMatchObject({projectFloat:1,constraintFloat:1});
+  expect(r.criticalTaskIds).toEqual(['B']);expect(r.criticalDependencyIds).toEqual([]);
+  expect(r.summaries.P!.containsCritical).toBe(true);
+});
+it('replaces empty current pending with empty live and preserves frozen pending literally',()=>{
+  const live={analysisStatus:'ready',feasibility:'feasible',coverage:{knownLeafCount:0,totalLeafCount:0},
+    tasks:{},summaries:{},display:{},horizonFinishDate:null,partialAnalysis:null,
+    criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[]};
+  expect(schedule([])).toEqual(live);
+  const frozen:FrozenPendingScheduleV2={analysisStatus:'pending-policy',feasibility:'feasible',
+    coverage:{knownLeafCount:0,totalLeafCount:0},tasks:{},summaries:{},display:{},
+    criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[]};
+  expect(frozenPendingScheduleV2Schema.parse(frozen)).toEqual(frozen);
+  expect(liveScheduleResultV2Schema.safeParse(frozen).success).toBe(false);
+});
+```
+
+Graph expected literals заменяют pending fields на live `analysisStatus:'infeasible'`/`horizonFinishDate:null`/`partialAnalysis:null`; каждая task запись дополняется null projectFloat/constraintFloat, summary — containsCritical:null. Это новые строгие expected snapshots, а не вызов calculator для expected.
+
 
 ```ts
 const graphErrors=new Set(['DUPLICATE_TASK_ID','INVALID_PARENT','TREE_CYCLE',
@@ -1018,14 +1210,23 @@ export function analyzeExplicitDates(
   const diagnostics=projection.diagnostics.map(d=>({
     ...d,taskIds:[...d.taskIds].sort(),dependencyIds:[...d.dependencyIds].sort(),
   }));
+  const diagnosticKeys=new Set(diagnostics.map(d=>JSON.stringify([d.code,d.taskIds,d.dependencyIds])));
+  const sourceErrorIds=new Set(diagnostics.filter(d=>
+    ['INVALID_INTERVAL','DURATION_MISMATCH','INVALID_DURATION'].includes(d.code)&&
+    d.taskIds.length===1&&d.dependencyIds.length===0).map(d=>d.taskIds[0]!));
   const add=(code:string,id:string) => {
-    if(!diagnostics.some(d=>d.code===code&&d.taskIds.length===1&&d.taskIds[0]===id&&d.dependencyIds.length===0))
-      diagnostics.push({code,taskIds:[id],dependencyIds:[],messageKey:'scheduling.'+code});
+    const key=JSON.stringify([code,[id],[]]);
+    if(diagnosticKeys.has(key)) return;
+    diagnosticKeys.add(key);
+    diagnostics.push({code,taskIds:[id],dependencyIds:[],messageKey:'scheduling.'+code});
   };
-  for(const id of Object.keys(projection.tasks).sort()) {
+  if(!diagnostics.some(d=>graphErrors.has(d.code))) for(const id of Object.keys(projection.tasks).sort()) {
+    if(sourceErrorIds.has(id)) continue;
     const t=taskById.get(id)!;
     if(realInterval(t,input.calendarType)!==null) continue;
-    if(t.inputStart===null||t.inputFinish===null) add('UNKNOWN_INTERVAL',id);
+    if(t.inputStart===null||t.inputFinish===null){
+      add('UNKNOWN_INTERVAL',id);
+    }
     else {
       try { validateSourceInput(t,input.calendarType); }
       catch(error) {
@@ -1089,7 +1290,9 @@ export function analyzeExplicitDates(
 }
 ```
 
-Projection must emit exactly one source diagnostic per unknown/invalid leaf. It must never add UNKNOWN_INTERVAL alongside INVALID_INTERVAL/DURATION_MISMATCH for the same full invalid pair. The constructor's add deduplicates same diagnosis; copy diagnostic sort keys use ordinal string comparison. Legacy-specific saved diagnosis can coexist but never supplies a real interval. A partial missing pair retaining finish-only source is unknown even if display is known.
+Projection must emit exactly one source diagnostic per unknown/invalid leaf. It must never add UNKNOWN_INTERVAL alongside INVALID_INTERVAL/DURATION_MISMATCH/INVALID_DURATION for the same invalid source. The constructor builds canonical diagnosticKeys once and deduplicates each add with Set.has; it never scans the growing diagnostics array per leaf. The 10000 independent unknown-leaf test instruments Array.some callback work (at most 20N), so a quadratic deduplication loop fails without a timing-only oracle. Copy diagnostic sort keys use ordinal string comparison. Legacy-specific saved diagnosis can coexist but never supplies a real interval. A partial missing pair retaining finish-only source is unknown even if display is known.
+
+C17 handoff boundary: Task4/5 должны сохранить reviewed durable unknown outcome для unavailable historical done lock, включая active/undo snapshot, даже если retained source выглядит как допустимая пара. Текущий source-only OptionalTask сам не различает provenance такого legacy исхода. Не считать сохранённую пару восстановленным lock и не менять source/status ради этого различия; неоднозначный migration case fail closed до reviewed representation. Если решение Task4 меняет exact Task5 scheduling input, сначала обновить этот annex и снова получить два independent reviews, затем подключать CPM. P06/N06-done описывают обычные explicit done интервалы, не восстановление historical lock.
 
 - [ ] **Step 4: Run GREEN.** `npm test -- tests/explicit-cpm-contracts.test.ts tests/explicit-cpm.test.ts tests/calendar.test.ts tests/optional-scheduling.test.ts`; after Task 5 suite name is still `optional-scheduling.test.ts` unless integrator moved it explicitly. Then `npm run typecheck`, `npm run lint`, `npm run test:unit` and independent oracle. No skip/empty suites.
 - [ ] **Step 5: Commit B/C together.** Stage `src/domain/explicit-cpm.ts`, `src/domain/scheduling.ts`, fixture/tests and package unit list; staged guard/Gitleaks and normal hooks; commit `feat: analyze explicit task intervals and partial components`. Two independent reviews of this SHA include literal floats/IDs/diagnostics, immutability, complexity and negative-origin invariance.
@@ -1101,6 +1304,40 @@ Projection must emit exactly one source diagnostic per unknown/invalid leaf. It 
 **Interfaces:** Consumes Task 5 Repository: `createProject(title): Project`, `getTree(projectId,sessionId): ProjectTreeV2`, `applyCommand(projectId,CommandEnvelopeV2,sessionId): ProjectTreeV2`, `replayLegacy(projectId,body:unknown,sessionId): ProjectTreeV2` and `openDatabase(path)` for newly created/schema3 synthetic DB. Existing `change` transaction parses response before commit and caches exact result. Command body/header contract remains V2.
 
 - [ ] **Step 1: Write independently expected P04→P05→undo→restart test.** Новый test file целиком создаёт disposable DB; не читает application runtime. Exact task/dependency IDs создаёт Repository; ожидаемые множества берутся по literal titles/from-to mapping, не из calculator.
+
+Current server paths используют **live-only** validators. В `repository.ts` импортировать live schemas/types и union projectTreeV2Schema. Existing safe wrapper сохраняет internal Error (HTTP500), не выбрасывает ZodError для HTTP400:
+
+```ts
+function validatedTreeResponse(value:unknown):LiveProjectTreeV2 {
+  const parsed=liveProjectTreeV2Schema.safeParse(value);
+  if(!parsed.success) throw new Error('Invalid internal tree response');
+  return parsed.data;
+}
+function validatedScheduleResponse(value:unknown):LiveScheduleResponseV2 {
+  const parsed=liveScheduleResponseV2Schema.safeParse(value);
+  if(!parsed.success) throw new Error('Invalid internal schedule response');
+  return parsed.data;
+}
+function validatedCachedTreeResponse(value:unknown):ProjectTreeV2 {
+  const parsed=projectTreeV2Schema.safeParse(value);
+  if(!parsed.success) throw new Error('Invalid internal cached tree response');
+  return parsed.data;
+}
+// Replace only this method inside the existing Repository class:
+class Repository {
+private calculate(snapshot:Snapshot):LiveScheduleResultV2 {
+  const parsed=liveScheduleResultV2Schema.safeParse(calculateSchedule({
+    calendarType:snapshot.project.calendarType,tasks:snapshot.tasks,
+    dependencies:snapshot.dependencies,
+  }));
+  if(!parsed.success) throw new Error('Invalid internal schedule response');
+  return parsed.data;
+}
+}
+```
+
+`private calculate` — method fragment внутри существующего Repository class, не top-level function. `getTree` и current mutation response вызывают validatedTreeResponse; `getSchedule`/route используют validatedScheduleResponse. New operation response сохраняется только после этих live validators в той же transaction. `findOperation`/`replayLegacy` проверяют digest и вызывают validatedCachedTreeResponse без solver; union применяется только к stored historical replies/client parsing. Fresh pending result никогда не проходит current precommit boundary.
+
 
 ```ts
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
@@ -1175,6 +1412,40 @@ it('P04/P05 changes critical branch, retries exact outcome, undoes once and surv
   expect(spy).not.toHaveBeenCalled();
   expect(repository.getTree(before.project.id,session).project.revision).toBe(latestRevision);
 });
+it('live calendar change preserves sources, recalculates P10 once and undoes once',()=>{
+  const project=repository.createProject('Synthetic calendar CPM');
+  let before=repository.getTree(project.id,session);
+  before=step(before,{type:'project.schedule',changes:{calendarType:'weekdays'}});
+  for(const title of ['A','B']) before=step(before,{type:'task.create',title,parentId:null});
+  const by=ids(before);
+  before=step(before,{type:'task.edit',taskId:by.A!,
+    changes:{inputStart:'2026-10-09',inputFinish:'2026-10-09'}});
+  before=step(before,{type:'task.edit',taskId:by.B!,
+    changes:{inputStart:'2026-10-12',inputFinish:'2026-10-13'}});
+  before=step(before,{type:'dependency.create',predecessorId:by.A!,successorId:by.B!});
+  const ab=before.dependencies[0]!.id;
+  assertFloats(before,[['A',0,0],['B',0,0]]);
+  expect(before.schedule.criticalTaskIds).toEqual([by.A!,by.B!].sort());
+  expect(before.schedule.criticalDependencyIds).toEqual([ab]);
+  const sources=before.tasks.map(t=>({id:t.id,inputStart:t.inputStart,
+    inputFinish:t.inputFinish,durationDays:t.durationDays,status:t.status}));
+  const after=step(before,{type:'project.schedule',changes:{calendarType:'all-days'}});
+  expect(after.project.revision).toBe(before.project.revision+1);
+  expect(after.project.calendarType).toBe('all-days');
+  expect(after.tasks.map(t=>({id:t.id,inputStart:t.inputStart,inputFinish:t.inputFinish,
+    durationDays:t.durationDays,status:t.status}))).toEqual(sources);
+  assertFloats(after,[['A',2,2],['B',0,0]]);
+  expect(after.schedule.criticalTaskIds).toEqual([by.B!]);
+  expect(after.schedule.criticalDependencyIds).toEqual([]);
+  const undone=step(after,{type:'undo'});
+  expect(undone.project.revision).toBe(after.project.revision+1);
+  expect(undone.project.calendarType).toBe('weekdays');
+  expect(undone.tasks).toEqual(before.tasks);
+  expect(undone.dependencies).toEqual(before.dependencies);
+  expect(undone.schedule).toEqual(before.schedule);
+  assertFloats(undone,[['A',0,0],['B',0,0]]);
+});
+
 it('frozen pending target reply survives CPM wiring and restart unchanged',()=>{
   const before=p04(),by=ids(before),operationId=randomUUID();
   const envelope={contractVersion:2 as const,expectedRevision:before.project.revision,
@@ -1208,12 +1479,258 @@ it('frozen pending target reply survives CPM wiring and restart unchanged',()=>{
 
 DTO parser проверяет strict response fields before commit, а cached parse принимает union без solver; update synthetic operation не меняет payload/archive и выполняется только в собственном test DB.
 
-Добавить failure injection как literal typed invalid live result, вызывая `vi.spyOn(scheduling,'calculateSchedule').mockReturnValueOnce`: result infeasible с `partialAnalysis` object запрещённым strict schema. Перед вызовом сохранить `getTree` и counts tasks/dependencies/operations/undo_snapshots/revision; `task.edit` title+source должен бросить safe500 и полностью восстановить все counts/source/title/revision. Inject typed invalid через `unknown` допускается только test assertion boundary для simulation invalid internal response, не application cast. Добавить done test N06: изменение source done отклонено; status doing+finish в одном envelope меняет constraint float, undo возвращает done исходную pair; не материализует дату unknown done.
+В тот же `tests/explicit-cpm-repository.test.ts` добавить concrete fault tests и done semantics (setup/step/p04 уже определены выше):
 
-- [ ] **Step 2: Add HTTP tests.** В existing `tests/scheduling-api.test.ts` Task 5 `headers()` уже содержит X-Leaf-Contract-Version=2; `send` уже содержит contractVersion2. Seed P04 теми же literal `task.edit` commands; POST B.finish11 даёт ready/float P05, GET /schedule той же revision — идентичный schedule, POST undo — P04. P09+U POST source edit сохраняется одной revision и возвращает infeasible с обеими diagnostics, normal/partial IDs пусты; invalid new triple возвращает400 и no writes. Header426, origin/session checks и strict V2 input из Task5 сохраняются.
-- [ ] **Step 3: Preserve frozen legacy replay.** Повторить M08 durable test из Task5 через `replayLegacy` после CPM подключения/restart: frozen pending revision9 остаётся pending, source finish6 октября и cached response bytes прежние; latest revision10 ready не подставляется. Corrupt digest/parser даёт safe500/no writes, никакого fallback recalculation. Не выполнять migration 003 повторно и не менять archive.
+```ts
+function rawState(projectId:string) {
+  return {
+    project:db.prepare('SELECT * FROM projects WHERE id=?').get(projectId),
+    tasks:db.prepare('SELECT * FROM tasks WHERE projectId=? ORDER BY id').all(projectId),
+    dependencies:db.prepare('SELECT * FROM dependencies WHERE projectId=? ORDER BY id').all(projectId),
+    operations:db.prepare('SELECT * FROM operations WHERE projectId=? ORDER BY operationId').all(projectId),
+    undo:db.prepare('SELECT * FROM undo_snapshots WHERE projectId=? ORDER BY sequence').all(projectId),
+  };
+}
+it.each(['pending','infeasible-with-partial'] as const)('rolls back invalid fresh %s outcome',kind=>{
+  const before=p04(),by=ids(before),state=rawState(before.project.id);
+  const injected=kind==='pending'?{
+    analysisStatus:'pending-policy',feasibility:'feasible',coverage:{knownLeafCount:0,totalLeafCount:0},
+    tasks:{},summaries:{},display:{},criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[],
+  }:{
+    analysisStatus:'infeasible',feasibility:'infeasible',coverage:{knownLeafCount:0,totalLeafCount:0},
+    tasks:{},summaries:{},display:{},horizonFinishDate:null,criticalTaskIds:[],criticalDependencyIds:[],
+    diagnostics:[],partialAnalysis:{labelKey:'scheduling.PARTIAL_ANALYSIS',knownHorizonFinishDate:'2026-10-11',
+      coverage:{analyzedLeafCount:0,blockedLeafCount:0},tasks:{},partialCriticalTaskIds:[],
+      partialCriticalDependencyIds:[],partialCriticalSummaryIds:[]},
+  };
+  const spy=vi.spyOn(scheduling,'calculateSchedule').mockReturnValueOnce(
+    injected as unknown as ReturnType<typeof scheduling.calculateSchedule>);
+  expect(()=>step(before,{type:'task.edit',taskId:by.A!,changes:{
+    title:'Rejected synthetic edit',inputFinish:'2026-10-07',
+  }})).toThrow('Invalid internal schedule response');
+  spy.mockRestore();
+  expect(rawState(before.project.id)).toEqual(state);
+  expect(repository.getTree(before.project.id,session)).toEqual(before);
+});
+it('done keeps structural float and only explicit return permits source edit with undo',()=>{
+  const project=repository.createProject('Synthetic done CPM');
+  let t=repository.getTree(project.id,session);
+  t=step(t,{type:'project.schedule',changes:{calendarType:'all-days'}});
+  for(const title of ['A','B','C'])t=step(t,{type:'task.create',title,parentId:null});
+  const by=ids(t);
+  for(const [name,inputStart,inputFinish] of [
+    ['A','2026-10-05','2026-10-06'],['B','2026-10-10','2026-10-10'],
+    ['C','2026-10-05','2026-10-14'],
+  ] as const)t=step(t,{type:'task.edit',taskId:by[name]!,changes:{inputStart,inputFinish}});
+  t=step(t,{type:'dependency.create',predecessorId:by.A!,successorId:by.B!});
+  const done=step(t,{type:'task.edit',taskId:by.B!,changes:{status:'done'}});
+  assertFloats(done,[['A',7,3],['B',4,0],['C',0,0]]);
+  const state=rawState(project.id);
+  expect(()=>step(done,{type:'task.edit',taskId:by.B!,changes:{inputFinish:'2026-10-11'}}))
+    .toThrowError(expect.objectContaining({code:'DONE_PLANNING'}));
+  expect(rawState(project.id)).toEqual(state);
+  const working=step(done,{type:'task.edit',taskId:by.B!,changes:{status:'doing',inputFinish:'2026-10-11'}});
+  expect(working.project.revision).toBe(done.project.revision+1);
+  assertFloats(working,[['A',6,3],['B',3,3],['C',0,0]]);
+  const undone=step(working,{type:'undo'});
+  expect(undone.tasks).toEqual(done.tasks);expect(undone.schedule).toEqual(done.schedule);
+});
+```
+
+- [ ] **Step 2: Add HTTP tests.** Task5 headers()/send() уже содержат transport/body version2; создать runnable cases ниже.
+
+В существующий `tests/scheduling-api.test.ts` (Task5 setup app/directory/headers/tree/send/step) добавить imports `Database` из better-sqlite3 и `projectTreeV2Schema`/`scheduleResponseV2Schema` из shared/contracts; then append:
+
+```ts
+import Database from 'better-sqlite3';
+import {projectTreeV2Schema,scheduleResponseV2Schema} from '../src/shared/contracts.js';
+function apiState(projectId:string) {
+  const read=new Database(join(directory,'synthetic.sqlite'),{readonly:true});
+  try{return {
+    project:read.prepare('SELECT * FROM projects WHERE id=?').get(projectId),
+    tasks:read.prepare('SELECT * FROM tasks WHERE projectId=? ORDER BY id').all(projectId),
+    dependencies:read.prepare('SELECT * FROM dependencies WHERE projectId=? ORDER BY id').all(projectId),
+    operations:read.prepare('SELECT * FROM operations WHERE projectId=? ORDER BY operationId').all(projectId),
+    undo:read.prepare('SELECT * FROM undo_snapshots WHERE projectId=? ORDER BY sequence').all(projectId),
+  };}finally{read.close();}
+}
+async function httpP10() {
+  let t=await step(tree(),{type:'project.schedule',changes:{calendarType:'weekdays'}});
+  for(const title of ['A','B'])t=await step(t,{type:'task.create',title,parentId:null});
+  const by=Object.fromEntries(t.tasks.map(x=>[x.title,x.id]));
+  t=await step(t,{type:'task.edit',taskId:by.A!,changes:{inputStart:'2026-10-09',inputFinish:'2026-10-09'}});
+  t=await step(t,{type:'task.edit',taskId:by.B!,changes:{inputStart:'2026-10-12',inputFinish:'2026-10-13'}});
+  t=await step(t,{type:'dependency.create',predecessorId:by.A!,successorId:by.B!});
+  return {t,by};
+}
+it('HTTP calendar command recalculates P10 in one revision and undo restores it',async()=>{
+  const {t:before,by}=await httpP10(),ab=before.dependencies[0]!.id;
+  if(before.schedule.analysisStatus!=='ready')throw new Error('Expected ready');
+  expect(before.schedule.tasks[by.A!]).toMatchObject({projectFloat:0,constraintFloat:0});
+  expect(before.schedule.tasks[by.B!]).toMatchObject({projectFloat:0,constraintFloat:0});
+  expect(before.schedule.criticalTaskIds).toEqual([by.A!,by.B!].sort());
+  expect(before.schedule.criticalDependencyIds).toEqual([ab]);
+  const after=await step(before,{type:'project.schedule',changes:{calendarType:'all-days'}});
+  expect(after.project.revision).toBe(before.project.revision+1);
+  expect(after.tasks).toEqual(before.tasks);
+  if(after.schedule.analysisStatus!=='ready')throw new Error('Expected ready');
+  expect(after.schedule.tasks[by.A!]).toMatchObject({projectFloat:2,constraintFloat:2});
+  expect(after.schedule.tasks[by.B!]).toMatchObject({projectFloat:0,constraintFloat:0});
+  expect(after.schedule.criticalTaskIds).toEqual([by.B!]);
+  expect(after.schedule.criticalDependencyIds).toEqual([]);
+  const get=await app.inject({url:'/api/projects/'+after.project.id+'/schedule',headers:headers()});
+  expect(get.statusCode).toBe(200);
+  expect(scheduleResponseV2Schema.parse(get.json()).schedule).toEqual(after.schedule);
+  const undone=await step(after,{type:'undo'});
+  expect(undone.project.revision).toBe(after.project.revision+1);
+  expect(undone.project.calendarType).toBe('weekdays');
+  expect(undone.tasks).toEqual(before.tasks);expect(undone.schedule).toEqual(before.schedule);
+});
+it('fresh pending injection gives internal500 and rolls back HTTP mutation and GETs',async()=>{
+  const {t:before,by}=await httpP10(),state=apiState(before.project.id);
+  const injected={analysisStatus:'pending-policy',feasibility:'feasible',
+    coverage:{knownLeafCount:0,totalLeafCount:0},tasks:{},summaries:{},display:{},
+    criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[]};
+  const spy=vi.spyOn(scheduling,'calculateSchedule');
+  spy.mockReturnValueOnce(injected as unknown as ReturnType<typeof scheduling.calculateSchedule>);
+  const response=await send(before,{type:'task.edit',taskId:by.A!,changes:{title:'Rejected internal edit'}});
+  expect(response.statusCode).toBe(500);
+  expect(response.json()).toEqual({code:'INTERNAL_ERROR',message:'Не удалось выполнить запрос.'});
+  expect(apiState(before.project.id)).toEqual(state);
+  for(const route of ['tree','schedule']){
+    spy.mockReturnValueOnce(injected as unknown as ReturnType<typeof scheduling.calculateSchedule>);
+    const get=await app.inject({url:'/api/projects/'+before.project.id+'/'+route,headers:headers()});
+    expect(get.statusCode).toBe(500);
+    expect(get.json()).toEqual({code:'INTERNAL_ERROR',message:'Не удалось выполнить запрос.'});
+    expect(apiState(before.project.id)).toEqual(state);
+  }
+  spy.mockRestore();
+});
+it('HTTP conflict plus unknown commits once while invalid user triple rolls back',async()=>{
+  let t=await step(tree(),{type:'project.schedule',changes:{calendarType:'all-days'}});
+  for(const title of ['A','B','U'])t=await step(t,{type:'task.create',title,parentId:null});
+  const by=Object.fromEntries(t.tasks.map(x=>[x.title,x.id]));
+  t=await step(t,{type:'task.edit',taskId:by.A!,changes:{inputStart:'2026-10-05',inputFinish:'2026-10-06'}});
+  t=await step(t,{type:'task.edit',taskId:by.B!,changes:{inputStart:'2026-10-07',inputFinish:'2026-10-09'}});
+  t=await step(t,{type:'dependency.create',predecessorId:by.A!,successorId:by.B!});
+  t=await step(t,{type:'dependency.create',predecessorId:by.B!,successorId:by.U!});
+  const previous=apiState(t.project.id);
+  const after=await step(t,{type:'task.edit',taskId:by.A!,changes:{inputFinish:'2026-10-07'}});
+  const ab=after.dependencies.find(e=>e.predecessorId===by.A&&e.successorId===by.B)!.id;
+  const bu=after.dependencies.find(e=>e.predecessorId===by.B&&e.successorId===by.U)!.id;
+  expect(after.project.revision).toBe(t.project.revision+1);
+  expect(apiState(t.project.id).operations).toHaveLength(previous.operations.length+1);
+  expect(apiState(t.project.id).undo).toHaveLength(previous.undo.length+1);
+  expect(after.schedule.analysisStatus).toBe('infeasible');
+  if(after.schedule.analysisStatus!=='infeasible')throw new Error('Expected infeasible');
+  expect(after.schedule.partialAnalysis).toBeNull();
+  expect(after.schedule.criticalTaskIds).toEqual([]);expect(after.schedule.criticalDependencyIds).toEqual([]);
+  expect(after.schedule.diagnostics).toEqual([
+    {code:'EXPLICIT_PRECEDENCE_CONFLICT',taskIds:[by.A!,by.B!].sort(),dependencyIds:[ab],messageKey:'scheduling.EXPLICIT_PRECEDENCE_CONFLICT'},
+    {code:'UNKNOWN_INTERVAL',taskIds:[by.U!],dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL'},
+    {code:'UNKNOWN_PRECEDENCE',taskIds:[by.B!,by.U!].sort(),dependencyIds:[bu],messageKey:'scheduling.UNKNOWN_PRECEDENCE'},
+  ]);
+  const state=apiState(t.project.id);
+  const rejected=await send(after,{type:'task.edit',taskId:by.A!,changes:{title:'Rejected user edit',durationDays:9}});
+  expect(rejected.statusCode).toBe(400);expect(apiState(t.project.id)).toEqual(state);
+});
+```
+
+Task5 V2 headers/body helpers остаются обязательными; setup авторизует только disposable synthetic SQLite. Existing header426/origin/session tests продолжают выполняться без изменения.
+
+- [ ] **Step 3: Preserve frozen legacy replay.** Добавить runnable durable regression ниже; принятый Task5 M08 продолжает выполняться.
+
+Concrete legacy replay regression добавить в `tests/explicit-cpm-repository.test.ts`. Дополнительные imports: `Database` from better-sqlite3, `readFileSync` from node:fs (добавить к existing fs import), `canonical` from shared/canonical и `prepareOptionalMigration` from server/optional-migration. Fixture выполняет только reviewed SQL в своём tmpdir; нет production upgrade acknowledgement bypass.
+
+```ts
+import Database from 'better-sqlite3';
+import {canonical} from '../src/shared/canonical.js';
+import {prepareOptionalMigration} from '../src/server/optional-migration.js';
+// Add readFileSync to the existing node:fs import.
+it('frozen legacy revision9 remains pending after live revision10 and restart without solver',()=>{
+  db.close();
+  const legacyPath=join(directory,'legacy-synthetic.sqlite');
+  db=new Database(legacyPath);db.pragma('foreign_keys=ON');
+  db.exec('CREATE TABLE migrations(version INTEGER PRIMARY KEY) STRICT');
+  for(const [file,version] of [['001-initial.sql',1],['002-scheduling.sql',2]] as const){
+    db.exec(readFileSync('migrations/'+file,'utf8'));
+    db.prepare('INSERT INTO migrations(version) VALUES (?)').run(version);
+  }
+  const projectId='11111111-1111-4111-8111-111111111111';
+  const taskId='22222222-2222-4222-8222-222222222222';
+  const operationId='33333333-3333-4333-8333-333333333333';
+  const timestamp='2026-10-07T00:00:00.000Z';
+  const legacyProject={id:projectId,title:'Synthetic legacy CPM',revision:9,
+    startDate:'2026-10-05',calendarType:'all-days',timezone:'UTC',createdAt:timestamp,updatedAt:timestamp};
+  const legacyTask={id:taskId,projectId,parentId:null,title:'Synthetic archived A',
+    description:'',sortOrder:0,status:'todo',inputStart:null,inputFinish:'2026-10-06',
+    createdAt:timestamp,updatedAt:timestamp,planMode:'unscheduled',durationDays:null,
+    notBefore:null,deadline:'2026-10-20',completedStart:null,completedFinish:null,
+    completedStartIndex:null,completedFinishIndex:null};
+  for(const [table,row] of [['projects',legacyProject],['tasks',legacyTask]] as const){
+    const fields=Object.keys(row);
+    db.prepare('INSERT INTO '+table+' ('+fields.join(',')+') VALUES ('+fields.map(()=>'?').join(',')+')')
+      .run(...Object.values(row));
+  }
+  const originalBody={expectedRevision:8,operationId,command:{type:'task.plan',taskId,
+    plan:{mode:'unscheduled',inputFinish:'2026-10-06',deadline:'2026-10-20'}}};
+  const originalPayload=canonical(originalBody);
+  const originalResponse=JSON.stringify({project:legacyProject,tasks:[legacyTask],
+    dependencies:[],canUndo:false,schedule:{feasibility:'feasible',originDate:'2026-10-05',
+      projectFinishIndex:null,coverage:{knownLeafCount:0,totalLeafCount:1},
+      tasks:{[taskId]:{ES:null,EF:null,LS:null,LF:null,projectFloat:null,constraintFloat:null,
+        startDate:null,finishDate:null,blockedReason:null}},summaries:{},
+      criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[]}});
+  db.prepare('INSERT INTO operations(operationId,projectId,sessionId,payload,response) VALUES (?,?,?,?,?)')
+    .run(operationId,projectId,session,originalPayload,originalResponse);
+  db.transaction(()=>{
+    prepareOptionalMigration(db,readFileSync('migrations/003-optional-scheduling.sql','utf8'),new Map());
+    db.prepare('INSERT INTO migrations(version) VALUES (3)').run();
+  }).immediate();
+  const archived=db.prepare('SELECT kind,recordKey,originalText,sha256 FROM scheduling_migration_archive WHERE projectId=? ORDER BY kind,recordKey')
+    .all(projectId) as {kind:string;recordKey:string;originalText:string;sha256:string}[];
+  expect(archived.find(x=>x.kind==='operation-payload')?.originalText).toBe(originalPayload);
+  expect(archived.find(x=>x.kind==='operation-response')?.originalText).toBe(originalResponse);
+  // Literal already accepted Task5 outcome; emulates persisted pre-CPM frozen reply.
+  const frozen=projectTreeV2Schema.parse({contractVersion:2,
+    project:{id:projectId,title:'Synthetic legacy CPM',revision:9,calendarType:'all-days',timezone:'UTC',
+      createdAt:timestamp,updatedAt:timestamp},
+    tasks:[{id:taskId,projectId,parentId:null,title:'Synthetic archived A',description:'',
+      sortOrder:0,status:'todo',inputStart:null,inputFinish:'2026-10-06',durationDays:null,
+      createdAt:timestamp,updatedAt:timestamp}],dependencies:[],canUndo:false,schedule:{
+      analysisStatus:'pending-policy',feasibility:'feasible',coverage:{knownLeafCount:0,totalLeafCount:1},
+      tasks:{[taskId]:{startDate:null,finishDate:null,calendarSpanDays:null}},summaries:{},display:{},
+      criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[]}});
+  const frozenText=JSON.stringify(frozen),digest=createHash('sha256').update(frozenText).digest('hex');
+  db.prepare('UPDATE operations SET response=?,responseContractVersion=2,responseSha256=? WHERE operationId=?')
+    .run(frozenText,digest,operationId);
+  db.close();db=openDatabase(legacyPath);repository=new Repository(db);
+  const current=repository.getTree(projectId,session);
+  const latest=step(current,{type:'task.edit',taskId,changes:{
+    title:'Synthetic current A',inputStart:'2026-10-05',inputFinish:'2026-10-06'}});
+  expect(latest.project.revision).toBe(10);expect(latest.schedule.analysisStatus).toBe('ready');
+  db.close();db=openDatabase(legacyPath);repository=new Repository(db);
+  const state=rawState(projectId),spy=vi.spyOn(scheduling,'calculateSchedule');
+  const replay=repository.replayLegacy(projectId,originalBody,session);
+  expect(replay).toEqual(frozen);expect(replay.project.revision).toBe(9);
+  expect(replay.schedule.analysisStatus).toBe('pending-policy');
+  expect(spy).not.toHaveBeenCalled();expect(rawState(projectId)).toEqual(state);
+  expect(db.prepare('SELECT payload FROM operations WHERE operationId=?').get(operationId))
+    .toEqual({payload:originalPayload});
+  expect(db.prepare('SELECT kind,recordKey,originalText,sha256 FROM scheduling_migration_archive WHERE projectId=? ORDER BY kind,recordKey')
+    .all(projectId)).toEqual(archived);
+  db.prepare('UPDATE operations SET responseSha256=? WHERE operationId=?').run('0'.repeat(64),operationId);
+  const corruptedState=rawState(projectId);
+  expect(()=>repository.replayLegacy(projectId,originalBody,session)).toThrow(/Invalid/);
+  expect(spy).not.toHaveBeenCalled();expect(rawState(projectId)).toEqual(corruptedState);
+  spy.mockRestore();
+});
+```
+
+Unknown original envelope, changed payload/session/project и digest/JSON corruption остаются в accepted Task5 replay suite; этот новый test выполняет конкретный live-vs-frozen переход после подключения CPM. Production migration/архивные resolution rules не меняются.
+
 - [ ] **Step 4: Run RED.** `npm test -- tests/explicit-cpm-repository.test.ts tests/scheduling-api.test.ts tests/optional-migration.test.ts` — перед server union/wiring FAIL wrong status/frozen parse/rollback.
-- [ ] **Step 5: Wire server parse before commit.** Live getTree/getSchedule используют current calculate; `change` parses `projectTreeV2Schema` до записи operation response/commit. Replay branch читает response/digest, парсит union и возвращает результат, без чтения current project schedule. Existing auth/session/revision/idempotency/undo bounds сохраняются.
+- [ ] **Step 5: Wire server parse before commit.** Live getTree/getSchedule/current mutation используют calculate с liveScheduleResultV2Schema и safe live tree/schedule validators выше. `change` проверяет liveProjectTreeV2Schema до записи operation response/commit; ошибки остаются safe internal500. Replay branch читает response/digest, парсит union через validatedCachedTreeResponse и возвращает результат, без чтения current project schedule. Existing auth/session/revision/idempotency/undo bounds сохраняются.
 - [ ] **Step 6: Run GREEN и commit.** `npm run test:integration`; `npm run typecheck`; `npm run lint`; staged checks и normal commit `feat: preserve atomic critical path analysis and frozen retries`; два independent reviews.
 
 Frozen reply test uses direct operation injection to emulate already accepted Task5 outcome. Migration/replay production policy is unchanged; actual historical projection test remains M08 from reviewed Task5 rather than inventing new C17 behavior.
@@ -1230,9 +1747,10 @@ Frozen reply test uses direct operation injection to emulate already accepted Ta
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import {cleanup,render,screen} from '@testing-library/react';
-import {afterEach,expect,it} from 'vitest';
+import {afterEach,expect,it,vi} from 'vitest';
 afterEach(cleanup);
 import {ScheduleStatus} from '../../src/client/ScheduleStatus.js';
+import {Dependencies} from '../../src/client/Dependencies.js';
 import {projectTreeV2Schema} from '../../src/shared/contracts.js';
 const A='22222222-2222-4222-8222-222222222222';
 const U='22222222-2222-4222-8222-222222222223';
@@ -1276,14 +1794,154 @@ it('conflict removes all partial labels and highlights',()=>{
 });
 ```
 
+Следующий положительный partial-edge fixture и test добавить в тот же client test file; imports Dependencies/vi определены выше.
+
+```tsx
+const B='22222222-2222-4222-8222-222222222224';
+const C='22222222-2222-4222-8222-222222222225';
+const AB='33333333-3333-4333-8333-000000000001';
+const BC='33333333-3333-4333-8333-000000000002';
+const AC='33333333-3333-4333-8333-000000000003';
+const partialEdgeTree=()=>projectTreeV2Schema.parse({
+  contractVersion:2,project,canUndo:true,
+  tasks:[
+    {...task(A,'Работа A','2026-10-05','2026-10-06'),sortOrder:0},
+    {...task(B,'Работа B','2026-10-07','2026-10-09'),sortOrder:1},
+    {...task(C,'Работа C','2026-10-10','2026-10-11'),sortOrder:2},
+    {...task(U,'Работа U',null,null),sortOrder:3}],
+  dependencies:[
+    {id:AB,projectId,predecessorId:A,successorId:B},
+    {id:BC,projectId,predecessorId:B,successorId:C},
+    {id:AC,projectId,predecessorId:A,successorId:C}],
+  schedule:{
+    analysisStatus:'incomplete',feasibility:'incomplete',coverage:{knownLeafCount:3,totalLeafCount:4},
+    tasks:{
+      [A]:{startDate:'2026-10-05',finishDate:'2026-10-06',calendarSpanDays:2,projectFloat:null,constraintFloat:null},
+      [B]:{startDate:'2026-10-07',finishDate:'2026-10-09',calendarSpanDays:3,projectFloat:null,constraintFloat:null},
+      [C]:{startDate:'2026-10-10',finishDate:'2026-10-11',calendarSpanDays:2,projectFloat:null,constraintFloat:null},
+      [U]:{startDate:null,finishDate:null,calendarSpanDays:null,projectFloat:null,constraintFloat:null}},
+    summaries:{},display:{},horizonFinishDate:null,criticalTaskIds:[],criticalDependencyIds:[],
+    diagnostics:[{code:'UNKNOWN_INTERVAL',taskIds:[U],dependencyIds:[],messageKey:'scheduling.UNKNOWN_INTERVAL'}],
+    partialAnalysis:{labelKey:'scheduling.PARTIAL_ANALYSIS',knownHorizonFinishDate:'2026-10-11',
+      coverage:{analyzedLeafCount:3,blockedLeafCount:1},
+      tasks:{[A]:{knownHorizonFloat:0},[B]:{knownHorizonFloat:0},[C]:{knownHorizonFloat:0}},
+      partialCriticalTaskIds:[A,B,C],partialCriticalDependencyIds:[AB,BC],partialCriticalSummaryIds:[]},
+  },
+});
+it('renders positive partial edges with a partial label and no global edge style',()=>{
+  const tree=partialEdgeTree();
+  expect(tree.schedule.criticalTaskIds).toEqual([]);
+  expect(tree.schedule.criticalDependencyIds).toEqual([]);
+  if(tree.schedule.analysisStatus!=='incomplete') throw new Error('Expected incomplete');
+  expect(tree.schedule.partialAnalysis?.partialCriticalDependencyIds).toEqual([AB,BC]);
+  const props={tree,disabled:false,onCommand:vi.fn().mockResolvedValue(true),
+    onSelect:vi.fn(),onShow:vi.fn()};
+  const first=render(<Dependencies {...props} task={tree.tasks.find(t=>t.id===B)!}/>);
+  for(const id of [AB,BC]){
+    const path=first.container.querySelector('[data-dependency-edge="'+id+'"]')!;
+    expect(path).toHaveClass('partial-critical');
+    expect(path).not.toHaveClass('critical');
+    expect(path.querySelector('title')).toHaveTextContent('Критическая связь датированной части');
+  }
+  expect(screen.getAllByText('Критическая связь датированной части',{exact:true})).toHaveLength(2);
+  expect(screen.queryByText('Критическая связь',{exact:true})).not.toBeInTheDocument();
+  first.unmount();
+  const second=render(<Dependencies {...props} task={tree.tasks.find(t=>t.id===A)!}/>);
+  const ac=second.container.querySelector('[data-dependency-edge="'+AC+'"]')!;
+  expect(ac).not.toHaveClass('partial-critical');expect(ac).not.toHaveClass('critical');
+  expect(ac.querySelector('title')).not.toHaveTextContent('Критическая связь датированной части');
+});
+```
+
 Use same Vitest jsdom setup/cleanup conventions as existing client suites. Exact copy added in strings:
 `scheduling.PARTIAL_ANALYSIS` = «Анализ датированной части; полный критический путь неизвестен»;
+`partialCriticalEdge` = «Критическая связь датированной части»; на partial arrow и card используется эта подпись и class `partial-critical`, без class `critical`. Нетесное AC сохраняет обычную подпись A→C без partial indicator.
 `knownHorizonFloat` label = «Резерв до известного горизонта»;
 global critical label = «Критична для окончания проекта»;
 pending = «Расчёт критического пути ещё не подключён».
 Global/partial styles have separate accessible labels; do not rely on color alone. Ready projectFloat and constraintFloat remain separate lines.
 
-Дополнить literal rendering tests: ready N06 A shows project7/constraint3 and no critical label; B done shows project4/constraint0 and no critical label; C has global label; F03 AB/BC arrows critical, AC arrow noncritical despite both ends critical; incomplete partial summary has partial label and no normal containsCritical; pending fixture is original Task5 shape and pending copy; infeasible keeps real source bars/diagnostic but suppresses all critical indicators. Loading/empty/error views and dirty draft tests из Task5 rerun; conditional bar keyboard ArrowRight remains disabled for planning, Enter opens panel, Tab/Esc focus works. No renderer runs scheduling.
+Добавить runnable literal rendering tests ниже; expected DTOs не вызывают calculator.
+
+В том же `tests/client/explicit-cpm.test.tsx` после partialEdgeTree определить следующие literal ready/frozen/summary fixtures и tests; Task5 loading/error/dirty/conditional-gesture suites сохраняются и выполняются через verify.
+
+```tsx
+const readyN06Tree=(doneB=false)=>projectTreeV2Schema.parse({
+  ...partialEdgeTree(),tasks:[
+    task(A,'Работа A','2026-10-05','2026-10-06'),
+    {...task(B,'Работа B','2026-10-10','2026-10-10'),status:doneB?'done':'todo'},
+    task(C,'Работа C','2026-10-05','2026-10-14')],
+  dependencies:[{id:AB,projectId,predecessorId:A,successorId:B}],schedule:{
+    analysisStatus:'ready',feasibility:'feasible',coverage:{knownLeafCount:3,totalLeafCount:3},
+    tasks:{
+      [A]:{startDate:'2026-10-05',finishDate:'2026-10-06',calendarSpanDays:2,projectFloat:7,constraintFloat:3},
+      [B]:{startDate:'2026-10-10',finishDate:'2026-10-10',calendarSpanDays:1,projectFloat:4,constraintFloat:doneB?0:4},
+      [C]:{startDate:'2026-10-05',finishDate:'2026-10-14',calendarSpanDays:10,projectFloat:0,constraintFloat:0}},
+    summaries:{},display:{},horizonFinishDate:'2026-10-14',partialAnalysis:null,
+    criticalTaskIds:[C],criticalDependencyIds:[],diagnostics:[]}});
+it('renders N06 project/local floats separately and does not promote done to critical',()=>{
+  const tree=readyN06Tree();
+  render(<ScheduleStatus tree={tree} task={tree.tasks[0]!}/>);
+  expect(screen.getByText(/Резерв проекта: 7/)).toBeVisible();
+  expect(screen.getByText(/Резерв текущего размещения: 3/)).toBeVisible();
+  expect(screen.queryByText('Критична для окончания проекта',{exact:true})).not.toBeInTheDocument();
+  cleanup();
+  const done=readyN06Tree(true);
+  render(<ScheduleStatus tree={done} task={done.tasks[1]!}/>);
+  expect(screen.getByText(/Резерв проекта: 4/)).toBeVisible();
+  expect(screen.getByText(/Резерв текущего размещения: 0/)).toBeVisible();
+  expect(screen.queryByText('Критична для окончания проекта',{exact:true})).not.toBeInTheDocument();
+  cleanup();
+  render(<ScheduleStatus tree={tree} task={tree.tasks[2]!}/>);
+  expect(screen.getByText('Критична для окончания проекта',{exact:true})).toBeVisible();
+});
+it('ready F03 keeps AC noncritical while tight AB and BC are global critical edges',()=>{
+  const base=partialEdgeTree();
+  const tree=projectTreeV2Schema.parse({...base,tasks:base.tasks.filter(t=>t.id!==U),schedule:{
+    analysisStatus:'ready',feasibility:'feasible',coverage:{knownLeafCount:3,totalLeafCount:3},
+    tasks:{
+      [A]:{startDate:'2026-10-05',finishDate:'2026-10-06',calendarSpanDays:2,projectFloat:0,constraintFloat:0},
+      [B]:{startDate:'2026-10-07',finishDate:'2026-10-09',calendarSpanDays:3,projectFloat:0,constraintFloat:0},
+      [C]:{startDate:'2026-10-10',finishDate:'2026-10-11',calendarSpanDays:2,projectFloat:0,constraintFloat:0}},
+    summaries:{},display:{},horizonFinishDate:'2026-10-11',partialAnalysis:null,
+    criticalTaskIds:[A,B,C],criticalDependencyIds:[AB,BC],diagnostics:[]}});
+  const props={tree,disabled:false,onCommand:vi.fn().mockResolvedValue(true),
+    onSelect:vi.fn(),onShow:vi.fn()};
+  const bView=render(<Dependencies {...props} task={tree.tasks.find(t=>t.id===B)!}/>);
+  for(const id of [AB,BC])
+    expect(bView.container.querySelector('[data-dependency-edge="'+id+'"]')).toHaveClass('critical');
+  bView.unmount();
+  const aView=render(<Dependencies {...props} task={tree.tasks.find(t=>t.id===A)!}/>);
+  expect(aView.container.querySelector('[data-dependency-edge="'+AC+'"]')).not.toHaveClass('critical');
+  expect(screen.queryByText('Критическая связь датированной части',{exact:true})).not.toBeInTheDocument();
+});
+it('partial summary has a partial descendant label and frozen pending keeps its own copy',()=>{
+  const P='22222222-2222-4222-8222-222222222226',base=partialEdgeTree();
+  if(base.schedule.analysisStatus!=='incomplete')throw new Error('Expected incomplete');
+  const tree=projectTreeV2Schema.parse({...base,tasks:[
+    task(P,'Этап P',null,null),...base.tasks.map(t=>({...t,parentId:P}))],
+    schedule:{...base.schedule,summaries:{[P]:{startDate:null,finishDate:null,calendarSpanDays:null,
+      knownLeafCount:3,totalLeafCount:4,containsCritical:null}},
+      partialAnalysis:{...base.schedule.partialAnalysis,partialCriticalSummaryIds:[P]}}});
+  render(<ScheduleStatus tree={tree} task={tree.tasks[0]!}/>);
+  expect(screen.getByText('Анализ датированной части; полный критический путь неизвестен')).toBeVisible();
+  expect(screen.getByText('Содержит критические задачи датированной части',{exact:true})).toBeVisible();
+  expect(screen.queryByText('Содержит критические задачи',{exact:true})).not.toBeInTheDocument();
+  cleanup();
+  const frozen=projectTreeV2Schema.parse({...partialTree(),schedule:{
+    analysisStatus:'pending-policy',feasibility:'feasible',coverage:{knownLeafCount:1,totalLeafCount:2},
+    tasks:{[A]:{startDate:'2026-10-05',finishDate:'2026-10-06',calendarSpanDays:2},
+      [U]:{startDate:null,finishDate:null,calendarSpanDays:null}},summaries:{},display:{},
+    criticalTaskIds:[],criticalDependencyIds:[],diagnostics:[]}});
+  render(<ScheduleStatus tree={frozen}/>);
+  expect(screen.getByText('Расчёт критического пути ещё не подключён')).toBeVisible();
+  expect(screen.queryByText(/Анализ датированной части/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Резерв проекта:/)).not.toBeInTheDocument();
+});
+```
+
+Exact summary copy: `containsCritical` = «Содержит критические задачи», `partialContainsCritical` = «Содержит критические задачи датированной части». Уже существующий infeasible test выше подавляет все partial labels; server/domain tests сохраняют real bars/intervals при конфликте. `npm test -- tests/client/App.test.tsx tests/client/planning.test.tsx` повторяет accepted Task5 loading/empty/error/dirty/keyboard/conditional-gesture assertions, которые эта задача не переопределяет.
+
 
 - [ ] **Step 2: Run RED.** `npm test -- tests/client/explicit-cpm.test.tsx` — FAIL missing partial copy/type narrowing or false global critical.
 - [ ] **Step 3: Implement discriminated rendering.** Use the following narrowing pattern at each consumer before reading new fields. Ready maps global IDs; incomplete partial IDs never enter global set. Summary global indicator reads ready containsCritical only.
@@ -1325,7 +1983,7 @@ async function command(page:Page,origin:string,tree:ProjectTreeV2,value:CommandV
 
 Imports: `test as base/expect/type Page` from Playwright; `randomUUID` from node:crypto; `syntheticRuntime` from `../../scripts/e2e-server.js`; V2 schemas/types from shared/contracts. Define base fixture runtime open/use/finally close as existing scheduling suite. Login with runtime.password synthetic credential; project creation POST has X-Leaf-Contract-Version2; seed exactly P04 dates/dependencies from Task D with nullable duration. Read response expected arrays A/B/C/D=0. Open B compact panel, change finish9→11, save once; real HTTP schedule P05 floats A/B=0,C/D=2 and critical only A/B/AB. Browser must show critical graph edge AB and noncritical CD, C ordinary reserve2. One visible Undo restores P04 dates/floats/both edges. `runtime.restart()` and reload preserves P04. Restart uses only existing synthetic helper.
 
-Add separate browser tests: deep C date14→8 updates tree/Gantt/graph and 40 summaries one revision; collapse/filter/scale changes neither GET schedule nor IDs; P07 known partial label, unknown U conditional bar never creates global critical; introduce known FS-conflict with unknown U and verify conflict+unknown copy, all critical sets empty; exact target retry after simulated response loss returns frozen original revision after later changes with no additional operation/undo. At both configured viewports 1440×900 and 1280×800 keyboard open/edit/save/Esc/Undo maintains focus. Assertions inspect numeric HTTP DTO and visible accessible labels, not CSS screenshot alone.
+Дополнительные browser cases определены кодом после основного case. Все tests выполняются в обоих configured viewports 1440×900 и 1280×800 без viewport override. S4 search/filter control не добавляется: filtered-row contract проверяется literal rendering test ниже, collapse/scale — реальными browser actions.
 
 Полный основной browser test в том же файле после readTree/command helpers:
 
@@ -1400,6 +2058,184 @@ test('explicit P04 edits, critical sets, one undo and restart agree',async({page
 
 Global float copy for this acceptance test: `projectFloat` = «Резерв проекта», `constraintFloat` = «Резерв текущего размещения». Labels explain hypothetical structural delay versus fixed neighboring intervals; neither label offers source mutation.
 
+Следующий код добавить в тот же browser file. Он использует readTree/command/test выше. Import Database применяется только к runtime.databasePath собственного synthetic runtime; counters не печатают данные.
+
+```ts
+import Database from 'better-sqlite3';
+import {commandEnvelopeV2Schema} from '../../src/shared/contracts.js';
+async function seedN06(page:Page,runtime:Awaited<ReturnType<typeof syntheticRuntime>>,depth=0) {
+  const login=await page.request.post(runtime.origin+'/api/auth/login',{
+    headers:{Origin:runtime.origin},data:{password:runtime.password}});
+  expect(login.status()).toBe(200);
+  const created=await page.request.post(runtime.origin+'/api/projects',{
+    headers:{Origin:runtime.origin,'X-Leaf-Contract-Version':'2'},
+    data:{title:'Synthetic CPM acceptance'}});
+  expect(created.status()).toBe(201);
+  let tree=await readTree(page,runtime.origin,(await created.json() as {id:string}).id);
+  tree=await command(page,runtime.origin,tree,{type:'project.schedule',changes:{calendarType:'all-days'}});
+  let parentId:string|null=null;
+  const parents:string[]=[];
+  for(let n=0;n<depth;n++){
+    tree=await command(page,runtime.origin,tree,{type:'task.create',title:'P'+n,parentId});
+    parentId=tree.tasks.find(t=>t.title==='P'+n)!.id;parents.push(parentId);
+  }
+  for(const title of ['A','B','C'])
+    tree=await command(page,runtime.origin,tree,{type:'task.create',title,parentId});
+  const by=Object.fromEntries(tree.tasks.map(t=>[t.title,t.id]));
+  for(const [title,inputStart,inputFinish] of [
+    ['A','2026-10-05','2026-10-06'],['B','2026-10-10','2026-10-10'],
+    ['C','2026-10-05','2026-10-14']] as const)
+    tree=await command(page,runtime.origin,tree,{type:'task.edit',taskId:by[title]!,changes:{inputStart,inputFinish}});
+  tree=await command(page,runtime.origin,tree,{type:'dependency.create',predecessorId:by.A!,successorId:by.B!});
+  await page.goto(runtime.origin);
+  await expect(page.getByRole('heading',{name:'Synthetic CPM acceptance',exact:true})).toBeVisible();
+  return {tree,by,parents,parentId};
+}
+function runtimeCounts(path:string,projectId:string) {
+  const db=new Database(path,{readonly:true});
+  try{
+    return {
+      project:db.prepare('SELECT revision FROM projects WHERE id=?').get(projectId),
+      operations:db.prepare('SELECT COUNT(*) AS n FROM operations WHERE projectId=?').get(projectId),
+      undo:db.prepare('SELECT COUNT(*) AS n FROM undo_snapshots WHERE projectId=?').get(projectId),
+    };
+  }finally{db.close();}
+}
+test('deep update and presentation actions preserve authoritative analysis and keyboard focus',async({page,runtime})=>{
+  test.setTimeout(120000);
+  const {tree:before,by,parents}=await seedN06(page,runtime,40);
+  const row=page.getByRole('tree',{name:'Задачи',exact:true}).getByRole('treeitem',{name:/^C,/});
+  await row.focus();await row.press('Enter');
+  await expect(page.getByRole('complementary',{name:'Задача',exact:true})).toBeVisible();
+  await page.getByLabel('Окончание',{exact:true}).fill('2026-10-08');
+  const saved=page.waitForResponse(r=>r.url().endsWith('/commands')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Сохранить',exact:true}).focus();await page.keyboard.press('Enter');
+  expect((await saved).status()).toBe(200);
+  const after=await readTree(page,runtime.origin,before.project.id);
+  expect(after.project.revision).toBe(before.project.revision+1);
+  if(after.schedule.analysisStatus!=='ready')throw new Error('Expected ready');
+  expect(after.schedule.horizonFinishDate).toBe('2026-10-10');
+  expect(after.schedule.criticalTaskIds).toEqual([by.B!]);expect(after.schedule.criticalDependencyIds).toEqual([]);
+  for(const [name,pf,cf] of [['A',3,3],['B',0,0],['C',2,2]] as const)
+    expect(after.schedule.tasks[by[name]!]).toMatchObject({projectFloat:pf,constraintFloat:cf});
+  for(const id of parents)expect(after.schedule.summaries[id]).toEqual({
+    startDate:'2026-10-05',finishDate:'2026-10-10',calendarSpanDays:6,
+    knownLeafCount:3,totalLeafCount:3,containsCritical:true});
+  await expect(page.locator('[data-gantt-bar="'+by.C+'"]').locator('..'))
+    .toHaveAttribute('aria-label',/2026-10-05.*2026-10-08/);
+  await page.keyboard.press('Escape');
+  await expect(row).toBeFocused();
+  const state=runtimeCounts(runtime.databasePath,before.project.id);
+  await page.getByRole('button',{name:'Свернуть P0',exact:true}).click();
+  await expect(row).toHaveCount(0);
+  for(const scale of ['weeks','months','days']){
+    await page.getByLabel('Масштаб Ганта',{exact:true}).selectOption(scale);
+    const current=await readTree(page,runtime.origin,before.project.id);
+    expect(current.schedule).toEqual(after.schedule);expect(current.tasks).toEqual(after.tasks);
+    expect(runtimeCounts(runtime.databasePath,before.project.id)).toEqual(state);
+  }
+  await page.getByRole('button',{name:'Развернуть P0',exact:true}).click();
+  await expect(row).toBeVisible();
+  const b=page.getByRole('tree',{name:'Задачи',exact:true}).getByRole('treeitem',{name:/^B,/});
+  await b.focus();await b.press('Enter');
+  await page.getByRole('tab',{name:'Зависимости',exact:true}).click();
+  await expect(page.locator('[data-dependency-edge="'+after.dependencies[0]!.id+'"]')).not.toHaveClass(/(^| )critical( |$)/);
+  await page.keyboard.press('Escape');await expect(b).toBeFocused();
+  const undone=page.waitForResponse(r=>r.url().endsWith('/commands')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Отменить последнее изменение',exact:true}).focus();
+  await page.keyboard.press('Enter');expect((await undone).status()).toBe(200);
+  const restored=await readTree(page,runtime.origin,before.project.id);
+  expect(restored.tasks).toEqual(before.tasks);expect(restored.schedule).toEqual(before.schedule);
+  await expect(page.getByRole('button',{name:'Отменить последнее изменение',exact:true})).toBeFocused();
+});
+test('conditional unknown keeps partial copy then known FS conflict suppresses all critical styles',async({page,runtime})=>{
+  const seeded=await seedN06(page,runtime,1);
+  let tree=await command(page,runtime.origin,seeded.tree,{type:'task.create',title:'U',parentId:seeded.parentId});
+  const u=tree.tasks.find(t=>t.title==='U')!.id;
+  tree=await command(page,runtime.origin,tree,{type:'task.edit',taskId:u,changes:{durationDays:3}});
+  expect(tree.schedule.analysisStatus).toBe('incomplete');
+  if(tree.schedule.analysisStatus!=='incomplete')throw new Error('Expected incomplete');
+  expect(tree.schedule.criticalTaskIds).toEqual([]);expect(tree.schedule.criticalDependencyIds).toEqual([]);
+  expect(tree.schedule.partialAnalysis?.partialCriticalTaskIds).toEqual([seeded.by.C!]);
+  expect(tree.schedule.tasks[u]).toMatchObject({startDate:null,finishDate:null,projectFloat:null,constraintFloat:null});
+  expect(tree.schedule.display[u]).toEqual({kind:'conditional',startDate:'2026-10-05',finishDate:'2026-10-07',clipped:false});
+  await page.reload();
+  await expect(page.getByText('Анализ датированной части; полный критический путь неизвестен').first()).toBeVisible();
+  await expect(page.getByRole('button',{name:/U.*Условное размещение; начало не задано/})).toBeVisible();
+  expect(await page.locator('.gantt-work.critical').count()).toBe(0);
+  const conflicted=await command(page,runtime.origin,tree,{type:'task.edit',taskId:seeded.by.A!,changes:{inputFinish:'2026-10-10'}});
+  expect(conflicted.project.revision).toBe(tree.project.revision+1);
+  expect(conflicted.schedule.analysisStatus).toBe('infeasible');
+  if(conflicted.schedule.analysisStatus!=='infeasible')throw new Error('Expected infeasible');
+  expect(conflicted.schedule.diagnostics.map(d=>d.code)).toEqual(['EXPLICIT_PRECEDENCE_CONFLICT','UNKNOWN_INTERVAL']);
+  expect(conflicted.schedule.partialAnalysis).toBeNull();
+  expect(conflicted.schedule.criticalTaskIds).toEqual([]);expect(conflicted.schedule.criticalDependencyIds).toEqual([]);
+  await page.reload();
+  await expect(page.getByText(/Предшественник заканчивается после явного начала/).first()).toBeVisible();
+  await expect(page.getByText(/Полная пара дат не задана/).first()).toBeVisible();
+  await expect(page.getByText(/Анализ датированной части/)).toHaveCount(0);
+  expect(await page.locator('.gantt-work.critical, .gantt-work.partial-critical').count()).toBe(0);
+  expect((await readTree(page,runtime.origin,tree.project.id)).tasks.find(t=>t.id===u))
+    .toMatchObject({inputStart:null,inputFinish:null,durationDays:3});
+});
+test('lost committed response retries the exact envelope and frozen revision without another write',async({page,runtime})=>{
+  const {tree:before,by}=await seedN06(page,runtime);
+  let envelope:ReturnType<typeof commandEnvelopeV2Schema.parse>|undefined;
+  let frozen:ProjectTreeV2|undefined;
+  await page.route('**/api/projects/'+before.project.id+'/commands',async route=>{
+    envelope=commandEnvelopeV2Schema.parse(route.request().postDataJSON());
+    const committed=await route.fetch();expect(committed.status()).toBe(200);
+    frozen=projectTreeV2Schema.parse(await committed.json());
+    await route.abort('failed');
+  },{times:1});
+  await page.getByRole('tree',{name:'Задачи',exact:true}).getByRole('treeitem',{name:/^C,/}).press('Enter');
+  await page.getByLabel('Окончание',{exact:true}).fill('2026-10-08');
+  await page.getByRole('button',{name:'Сохранить',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Повторить сохранение',exact:true})).toBeVisible();
+  if(!envelope||!frozen)throw new Error('Expected captured committed synthetic response');
+  expect(frozen.project.revision).toBe(before.project.revision+1);
+  const latest=await command(page,runtime.origin,frozen,{
+    type:'task.edit',taskId:by.B!,changes:{title:'Latest B',inputFinish:'2026-10-11'}});
+  const state=runtimeCounts(runtime.databasePath,before.project.id);
+  const retry=page.waitForResponse(r=>r.url().endsWith('/commands')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Повторить сохранение',exact:true}).click();
+  const reply=await retry;expect(reply.status()).toBe(200);
+  expect(reply.request().postDataJSON()).toEqual(envelope);
+  expect(projectTreeV2Schema.parse(await reply.json())).toEqual(frozen);
+  expect(runtimeCounts(runtime.databasePath,before.project.id)).toEqual(state);
+  expect(await readTree(page,runtime.origin,before.project.id)).toEqual(latest);
+  await page.reload();
+  await expect(page.getByRole('tree',{name:'Задачи',exact:true}).getByRole('treeitem',{name:/^Latest B,/})).toBeVisible();
+  expect((await readTree(page,runtime.origin,before.project.id)).schedule).toEqual(latest.schedule);
+});
+```
+
+Diagnostic UI copy for these literal checks: `EXPLICIT_PRECEDENCE_CONFLICT` = «Предшественник заканчивается после явного начала.»; `UNKNOWN_INTERVAL` = «Полная пара дат не задана.». Existing Task5 App stale-revision fixture still checks that frozen revision9 cannot replace already accepted revision10. Browser lost-response case above checks actual original cached reply and zero additional writes, then reads/reloads latest revision.
+
+Filtered-row invariant добавить в client file с imports Gantt/treeRows. Это existing rows contract, без нового S4 поиска:
+
+```tsx
+import {Gantt} from '../../src/client/Gantt.js';
+import {treeRows} from '../../src/client/tree-view.js';
+it('filtered rows and scale do not change the literal authoritative schedule or bypass edges',()=>{
+  const tree=partialEdgeTree(),before=structuredClone(tree);
+  const rows=treeRows(tree.tasks,new Set<string>()).filter(row=>row.task.id===A||row.task.id===C);
+  const props={tree,rows,start:'2026-10-05',today:'2026-10-07',selectedId:null,
+    disabled:false,onSelect:vi.fn(),onPlan:vi.fn()};
+  const view=render(<Gantt {...props} scale="days"/>);
+  expect(view.container.querySelector('[data-gantt-row="'+B+'"]')).toBeNull();
+  expect(view.container.querySelectorAll('[data-gantt-edge]')).toHaveLength(1);
+  expect(view.container.querySelector('[data-gantt-edge="'+AC+'"]')).not.toHaveClass('critical');
+  for(const scale of ['weeks','months','days'] as const){
+    view.rerender(<Gantt {...props} scale={scale}/>);
+    expect(tree).toEqual(before);
+    expect(view.container.querySelectorAll('[data-gantt-edge]')).toHaveLength(1);
+    expect(view.container.querySelector('[data-gantt-edge="'+AC+'"]')).not.toHaveClass('critical');
+  }
+  expect(props.onPlan).not.toHaveBeenCalled();
+});
+```
+
 
 - [ ] **Step 5: Run GREEN и full acceptance.** `npm test -- tests/client/explicit-cpm.test.tsx`; `npm run verify`; `npm run format:check`; `npm run test:e2e -- tests/e2e/explicit-cpm.spec.ts tests/e2e/optional-scheduling.spec.ts`; `npm run check:package`; `npm run check:kit`; `git diff --check`. Expect no skipped/retried suites; run all E2E once for integrated Task7. Update affected explicit unit/integration lists. Do not use --if-present.
 - [ ] **Step 6: Commit/review/handoff.** Normal staged guard+Gitleaks/hooks, commit `feat: show verified explicit-date critical paths`, two independent reviewers on same SHA. STATUS reports exact passed/failed/not-run and unresolved release work. ADR008 links implementation/checks without changing C16 formula. C05/OS16 complete only with all domain/storage/API/browser acceptance GREEN; V1 remains unfinished pending S4–S6.
@@ -1412,16 +2248,16 @@ Global float copy for this acceptance test: `projectFloat` = «Резерв пр
 | Entered placement/global horizon/gaps | P01/P02/P03/N06 и done N06 |
 | Fork/join/equal paths/critical edge predicate | F01/F02/F03, P04, 60-task/116-edge layer case |
 | Done structural/local float separation | P06, N06-done, source editing/explicit return+undo |
-| Incomplete/weak components/global known lower horizon | P07/P08/Hknown-blocked-late/all-blocked/no-known |
+| Incomplete/weak components/global known lower horizon | P07/P08/Hknown-blocked-late/all-blocked/no-known; F03+U positive partial AB/BC, AC noncritical |
 | Conflict priority plus unknown | P09 alone/P09+U, finish-only/start-only conflict |
-| Calendar adjacency and extremes | P10, weekdays Friday→Monday, all-days Friday→Saturday, full 0001–9999 span |
+| Calendar adjacency and extremes | P10/P10-all-days independent floats; Repository+HTTP calendar command and undo; full 0001–9999 span |
 | Technical origin invariance | Every ready fixture with two origins; literal N06 negative LS/LF |
 | Hierarchy/summary/display separation | 40-level complete/incomplete/deep-change, 10000-level summary source ignored |
-| Pure/immutable/deterministic/finite output | Reversed input fixtures, source clone equality, no path enumeration |
-| Strict live/frozen union and type consistency | Contract tests and typecheck; pending exact equality, cross-status rejection |
+| Pure/immutable/deterministic/finite output | Reversed input fixtures, source clone equality, no path enumeration; wide10000 unknown leaves with bounded callback work |
+| Strict live/frozen union and type consistency | Live-only current safe500 validators; pending-injection rollback; union only cache/client; Task2 suite adaptation and exact frozen parser |
 | Atomic revision/undo/restart/exact retry | P04→P05→undo, latest revision vs cached outcome, server rollback injection |
 | Frozen historical migration response | Task5 M08 durable restart repeated after CPM; pending parser/no solver |
-| Server-only UI/keyboard/empty/error/loading | Literal UI fixtures, real browser DTO+labels, Task5 UX regression |
+| Server-only UI/keyboard/empty/error/loading | Positive partial/global edge and partial-summary literal UI; filtered rows; deep browser collapse/scale/keyboard/undo; lost-response exact replay; Task5 UX regression |
 
 ## Gate и исполнение
 

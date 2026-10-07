@@ -8,6 +8,10 @@
 
 Independent review этого annex ожидается; Task 6 GREEN и Task 7 implementation не заявлены. Следующий шаг — два независимых APPROVED на точный SHA, затем Task 7 только после Task 5 GREEN. C16/O06 policy CLOSED; реализация CPM, C05/OS16 и S4–S6 остаются впереди. Application tests/E2E, production migration, push и deployment не запускались.
 
+Раунд 1: оба независимых reviewer дали CHANGES_REQUIRED. Исправленный кандидат добавляет positive F03+U partial task/edge DTO и отдельную UI подпись, P10 weekdays→all-days→undo с literal floats и одной revision, live-only safe internal500 validators для current paths и rollback injection, явную адаптацию existing Task2 suite с сохранением frozen parser expectations, Set-based diagnostic dedup и широкий synthetic fixture, concrete Repository/HTTP/legacy replay/UI/browser tests. Отдельно обозначена Task4/5 handoff граница unavailable historical done lock по C17; неоднозначный legacy исход не принимается как восстановленный lock.
+
+Для исправлений прошли независимый delayed-placement oracle 13/13, синтаксический разбор всех 29 TS/TSX блоков и strict disposable future-target typecheck schema/domain/Task2 adaptation/server/API/UI/browser snippets. Изолированное исполнение pure annex snippets подтвердило F03+U partial AB/BC при некритичном AC, отсутствие global IDs, live rejection frozen pending и 20 000 Array.some callback checks для 10 000 unknown leaves. Это проверка фрагментов и заявленных future interfaces, не запуск будущих Repository/HTTP/browser suites. `check:kit` прошёл (42 Markdown files, 152 local links), diff checks и staged guard/Gitleaks прошли; обычные commit hooks включены. Неизменённый `test:kit` повторно не запускался. Application/runtime/schema/lockfile не изменены; новый кандидат ожидает два independent verdicts, Task6 GREEN/Task7 не заявлены.
+
 
 ## Task 1 адаптации сроков — 2026-10-07
 
