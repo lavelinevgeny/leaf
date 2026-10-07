@@ -2268,3 +2268,9 @@ it('filtered rows and scale do not change the literal authoritative schedule or 
 - [ ] Task7 запускается только после Task5 GREEN и двух APPROVED annex. Исполнитель проверяет `git status --short --branch`, читает START_HERE/AGENTS/PRIVACY, использует один worktree writer, Node24.21.0/npm11.19.0 и существующий lockfile.
 - [ ] Исполнение A→B/C→D→E использует TDD RED/GREEN и scoped commits/reviews. Нет permission на production migration/push/deploy.
 - [ ] Финальный STATUS фиксирует implemented behavior, exact checks, limitations и S4–S6 next work; policy CLOSED и implementation GREEN остаются разными фактами.
+
+## Review metadata — 2026-10-07
+
+Substantive candidate `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` получил два независимых verdicts: Spec — **APPROVED**, Standards/executability — **APPROVED**. Scoped re-review проверил исправления шести findings относительно `697e2948c23b14ed58a726e3633242a63e5f32a9` вместе с исходными review reports; application implementation не одобрялось.
+
+Эта последующая запись меняет только review metadata. APPROVED относится к указанному substantive SHA, без переноса verdict на изменённый typed body или реализацию. CPM code ещё не реализован; Task7 требует Task5 GREEN. C17 unavailable-lock handoff остаётся pending Task4/5; любой изменённый scheduling input требует amendment этого annex и двух новых независимых reviews до подключения CPM.
