@@ -1,5 +1,14 @@
 # Статус разработки
 
+## Technical CPM annex Task 6 — 2026-10-07
+
+Подготовлен [implementation annex C16](superpowers/plans/2026-10-07-explicit-date-cpm.md) и добавлена ссылка в ADR 008. Документ задаёт полный strict live/frozen union, совместимые с будущим Task 5 pure interfaces, рабочую координату и H/Hknown, critical edge predicate, literal numerical fixtures и исполнимые RED/GREEN шаги. Покрыты P01–P11/N06, fork/join/равные пути/разрывы, глубокие summary, blocked weak components, conflict+unknown, done, крайние даты, undo/restart и frozen pending replies. Сохранённый invalid/mismatch source остаётся unknown/incomplete без доказанного FS-конфликта по нормативной C16; это явная адаптация промежуточного Task 2, без исправления source.
+
+Проверено на закреплённом Node 24.21.0: независимый полный перебор допустимых задержек малых literal ready fixtures прошёл 12/12 без production solver/calendar imports; schema/domain/numerical-test фрагменты прошли strict typecheck в disposable future-target harness. Все 17 TypeScript/TSX фрагментов прошли синтаксический разбор. `npm run test:kit` прошёл 52/52, skipped 0, настоящий Gitleaks и synthetic hook scenarios. `npm run check:kit` прошёл (42 Markdown files, 152 local links, три references, исторические 10 CPM и четыре calendar examples); `git diff --check` и `git diff --cached --check` прошли. `security:staged` прошёл на трёх scoped blobs: privacy guard и Gitleaks без покрываемых находок. Проверки документа и isolated snippets не являются application GREEN; текущий runtime/schema/source/lockfile не менялись.
+
+Independent review этого annex ожидается; Task 6 GREEN и Task 7 implementation не заявлены. Следующий шаг — два независимых APPROVED на точный SHA, затем Task 7 только после Task 5 GREEN. C16/O06 policy CLOSED; реализация CPM, C05/OS16 и S4–S6 остаются впереди. Application tests/E2E, production migration, push и deployment не запускались.
+
+
 ## Task 1 адаптации сроков — 2026-10-07
 
 Подготовлены неактивные `src/shared/optional-contracts.ts` и `src/domain/optional-planning.ts`: strict V2 формы без legacy planning fields, независимые nullable source поля, source patch с omission/null, проверка нового полного интервала и безопасное чтение сохранённой невалидной пары как `null`. Новый source валидируется только при изменении значения; text/status save и одинаковый patch не отклоняют прежний calendar-invalid ввод. Input duration ограничена 1–1 000 000, stored duration и производный span пары этим input cap не ограничены. `test:unit` включает новый независимый набор; [ADR 006](adr/006-optional-scheduling-contract.md) фиксирует W05, body/header version 2, exact legacy replay и frozen outcomes, сохраняя различие proposals, закрытых owner policy gates C16/C17 и будущих implementation/review dependencies.
