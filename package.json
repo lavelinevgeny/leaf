@@ -26,7 +26,7 @@
     "lint": "eslint src tests scripts/dev.mjs scripts/e2e-server.ts scripts/package-check.mjs vite.config.ts vitest.config.ts playwright.config.ts",
     "format:check": "prettier --check src tests migrations index.html tsconfig*.json vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js scripts/dev.mjs scripts/e2e-server.ts scripts/package-check.mjs compose.yaml .github/workflows/app-checks.yml",
     "test": "vitest run",
-    "test:unit": "vitest run tests/domain.test.ts tests/calendar.test.ts tests/optional-planning.test.ts tests/scheduling.test.ts tests/admin.test.ts tests/client",
+    "test:unit": "vitest run tests/domain.test.ts tests/calendar.test.ts tests/optional-planning.test.ts tests/optional-scheduling.test.ts tests/scheduling.test.ts tests/admin.test.ts tests/client",
     "test:integration": "vitest run tests/repository.test.ts tests/scheduling-repository.test.ts tests/scheduling-api.test.ts tests/migration.test.ts tests/api.test.ts tests/runtime.test.ts tests/backup.test.ts tests/dev.test.ts",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build",
     "admin:setup": "node dist/server/server/admin.js",
