@@ -10,7 +10,7 @@
 
 **Spec:** [Принятое приложение C16, разделы 1–4/P01–P11](../specs/2026-10-07-optional-scheduling-policy-proposal.md), [утверждённая спецификация, разделы 8–11/N06/OS16](../specs/2026-10-07-optional-scheduling-design.md), [ADR 008](../../adr/008-explicit-date-cpm.md), [основной план, Tasks 1/2/5/6/7](2026-10-07-optional-scheduling.md). Читать также [DECISIONS](../../DECISIONS.md), [SCHEDULING](../../SCHEDULING.md), [ACCEPTANCE](../../ACCEPTANCE.md), [PRIVACY](../../PRIVACY.md), [AGENT_WORKFLOW](../../AGENT_WORKFLOW.md).
 
-**Status:** Sequencing amendment 2026-10-08 подготовлен для двух новых independent reviews. Prior substantive bfa0f8e получил два APPROVED C17/math/typed body; этот кандидат уточняет только порядок исполнения, сохраняя все fenced snippets и расчётные контракты. C16/O06/G-CPM CLOSED как выбор политики; Task7 требует Task5 GREEN и двух reviews текущего execution plan. Ни один fenced test ниже не является уже реализованным application test.
+**Status:** Current execution candidate `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` получил два независимых APPROVED: Spec и Standards/executability. Historical bfa0f8e C17/math/typed approval сохранён отдельно; reviewed sequencing сохраняет все snippets и расчётные контракты. C16/O06/G-CPM CLOSED как выбор политики; CPM implementation требует actual Task5 GREEN и завершённого Task5 review. Ни один fenced test ниже не является уже реализованным application test.
 
 ## Global Constraints
 
@@ -2983,4 +2983,6 @@ Task4 source pin f5e92ab также получил два APPROVED; его actua
 
 Этот кандидат уточняет только execution order/file map/commit/check instructions: B/C LIVE switch и существующая approved initial frozen compatibility должны войти в один GREEN commit. Все 41 fenced snippets, математика, typed DTO и source policy сохранены относительно metadata8060ffc; большие initial-frozen blocks физически остаются в TaskD, но исполняются в B/C Step3a. D использует готовый freeze и добавляет live-only validators/persistence/HTTP/rollback/durable cached replay.
 
-Prior bfa0f8e APPROVED остаются историческими для C17/math/typed body и не унаследованы этим изменённым execution plan. Новому точному candidate SHA нужны два independent reviews. Read-only audit Task5 candidate5134b93 подтвердил import/script/expectation timing defect, но не одобрил application implementation; Task5 fix/check/review и Task5 GREEN остаются prerequisite Task7. CPM code этим изменением не реализован.
+Current execution candidate `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` получил два независимых verdicts: Spec — **APPROVED**, Standards/executability — **APPROVED**. Оба reviews отдельно проверили sequencing/file-map/check/commit amendment; prior bfa0f8e APPROVED остаются историческими для C17/math/typed body и не унаследованы как approval нового execution plan. Read-only audit Task5 candidate5134b93 подтвердил import/script/expectation timing defect, но не одобрил application implementation.
+
+Эта последующая запись меняет только review metadata: substantive body, approved procedural instructions и все 41 fenced snippets побайтово сохранены относительно approved9c71ed2. Verdicts относятся к этому точному execution candidate, без переноса на изменённый body или future CPM implementation. Task5 fix/check/review ещё завершаются; Task5 GREEN остаётся prerequisite Task7. CPM code не реализован.

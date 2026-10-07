@@ -1,5 +1,13 @@
 # Статус разработки
 
+## Review metadata sequencing CPM annex — 2026-10-08
+
+Current execution candidate [annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` получил два новых независимых APPROVED: Spec и Standards/executability. Atomic B/C LIVE/freeze checkpoint, focused compatibility guards и отдельный D deliverable проверены отдельно; bfa0f8e C17/math approval остаётся историческим. В header/footer и ADR008 записаны только review facts. Substantive body, approved procedural instructions и все 41 fenced snippets сохранены побайтово.
+
+На закреплённом Node24.21.0/npm11.19.0 прошли byte comparison approved body/procedural instructions/41fenced blocks, ADR formula/prior STATUS retention, `check:kit` (42 Markdown files, 156 local links), diff checks и staged privacy guard/Gitleaks на трёх scoped docs. Обычные hooks включены. Неизменённые numerical/snippet/application suites повторно не запускались.
+
+Это metadata-only revision, без CPM implementation или application edits. Task5 fix/check/review ещё завершаются; два approvals Task5 здесь не заявлены. Task7 требует actual Task5 GREEN и завершённого review его implementation. Approval плана относится к exact9c71ed2 и не переносится на изменённый body или будущую реализацию.
+
 ## Sequencing amendment technical CPM annex — 2026-10-08
 
 [Annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) уточняет порядок исполнения: B/C LIVE scheduler switch обязан одновременно создать и подключить уже описанную initial frozen projection, её literal tests и frozen resolver/preview/preparer imports в одном GREEN commit. Добавлены focused compatibility checks поверх unit suite и полный scope этого commit. D использует готовый freeze, сохраняет live-only validators/persistence/HTTP/rollback/durable cached replay; initial projection cases не объявляются повторно RED.
