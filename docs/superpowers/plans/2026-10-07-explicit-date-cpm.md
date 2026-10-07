@@ -10,7 +10,7 @@
 
 **Spec:** [Принятое приложение C16, разделы 1–4/P01–P11](../specs/2026-10-07-optional-scheduling-policy-proposal.md), [утверждённая спецификация, разделы 8–11/N06/OS16](../specs/2026-10-07-optional-scheduling-design.md), [ADR 008](../../adr/008-explicit-date-cpm.md), [основной план, Tasks 1/2/5/6/7](2026-10-07-optional-scheduling.md). Читать также [DECISIONS](../../DECISIONS.md), [SCHEDULING](../../SCHEDULING.md), [ACCEPTANCE](../../ACCEPTANCE.md), [PRIVACY](../../PRIVACY.md), [AGENT_WORKFLOW](../../AGENT_WORKFLOW.md).
 
-**Status:** C17 input amendment 2026-10-08 подготовлен для двух новых independent reviews. Substantive candidate29f193e ранее получил два APPROVED; они не распространяются на этот изменённый typed/algorithm body. C16/O06/G-CPM CLOSED как выбор политики; Task7 требует Task4 review и Task5 GREEN. Ни один fenced test ниже не является уже реализованным application test.
+**Status:** Sequencing amendment 2026-10-08 подготовлен для двух новых independent reviews. Prior substantive bfa0f8e получил два APPROVED C17/math/typed body; этот кандидат уточняет только порядок исполнения, сохраняя все fenced snippets и расчётные контракты. C16/O06/G-CPM CLOSED как выбор политики; Task7 требует Task5 GREEN и двух reviews текущего execution plan. Ни один fenced test ниже не является уже реализованным application test.
 
 ## Global Constraints
 
@@ -72,15 +72,15 @@ export function validateDependencies(
 | `src/domain/calendar.ts` | Существующую O(1)/O(log year) арифметику переиспользовать без новых зависимостей |
 | `src/server/repository.ts` | PrivateSnapshotV2→pure unavailable IDs; public field picking; parse live before commit, cache union without recalculation |
 | `src/server/optional-snapshot.ts` | Reviewed Task4 server-private strict schema/type/applyPrivateSourcePatch; Task7 imports, не дублирует публично |
-| `src/server/legacy-pending-types.ts`, `legacy-pending-source.ts`, `legacy-pending-projection.ts` | Frozen initial migration/preview projection, private structural input/frozen source validation; no active solver import |
-| `src/server/legacy-compatibility.ts`, `optional-upgrade.ts`, `optional-migration.ts` | Initial adaptation/preview используют frozen pending/source helper; archive/resolution/acknowledgement rules сохраняются |
+| `src/server/legacy-pending-types.ts`, `legacy-pending-source.ts`, `legacy-pending-projection.ts` | B/C: создать frozen initial migration/preview projection одновременно с LIVE switch; private structural input/frozen source validation, no active solver import |
+| `src/server/legacy-compatibility.ts`, `optional-upgrade.ts`, `optional-migration.ts` | B/C: initial adaptation/preview используют frozen pending/source helper; archive/resolution/acknowledgement rules сохраняются; D использует готовый freeze |
 | `src/client/ScheduleStatus.tsx`, `strings.ts` | Status/float/partial copy и отсутствие ложного global результата |
 | `src/client/Gantt.tsx`, `gantt-view.ts`, `Dependencies.tsx`, `TaskTree.tsx` | Global и partial IDs показывать раздельно; summary только индикатор потомков |
 | `tests/helpers/explicit-cpm-fixtures.ts` | Literal numerical matrix ниже; никакого вызова solver для expected |
 | `tests/explicit-cpm-contracts.test.ts` | Strict union, frozen pending equality, compile-time type assignment |
 | `tests/explicit-cpm.test.ts` | P01–P11/N06/fork/join/partial/extremes/invariance/deep fixtures |
 | `tests/explicit-cpm-repository.test.ts` | Revision/undo/restart/retry/frozen response/rollback на disposable SQLite |
-| `tests/legacy-pending-projection.test.ts` | Literal initial frozen outcomes, adapter/preview/SQL003 without live solver; positive current LIVE controls |
+| `tests/legacy-pending-projection.test.ts` | B/C: literal initial frozen outcomes, adapter/preview/SQL003 without live solver и positive current LIVE controls входят в тот же GREEN commit |
 | `tests/scheduling-api.test.ts` | Live HTTP response strict parse, status/unknown/conflict priorities |
 | `tests/client/explicit-cpm.test.tsx` | Literal server DTOs, unknown/partial/error/keyboard |
 | `tests/e2e/explicit-cpm.spec.ts` | Реальный browser edit→recalculate→undo→restart и collapse/graph |
@@ -1212,7 +1212,7 @@ export function analyzeDatedGraph(
 
 ### Task C: Live composition поверх реальной проекции
 
-**Files:** Modify `src/domain/scheduling.ts`, `src/domain/explicit-cpm.ts`, `tests/optional-scheduling.test.ts`; tests из B. B/C — один testable deliverable и один writer/commit.
+**Files:** Modify `src/domain/scheduling.ts`, `src/domain/explicit-cpm.ts`, `tests/optional-scheduling.test.ts`, `src/server/legacy-compatibility.ts`, `src/server/optional-upgrade.ts`, `src/server/optional-migration.ts`; create `src/server/legacy-pending-types.ts`, `src/server/legacy-pending-source.ts`, `src/server/legacy-pending-projection.ts`, `tests/legacy-pending-projection.test.ts`; tests из B; modify unit/integration lists in `package.json`. B/C — один testable deliverable и один writer/commit, включая initial frozen compatibility.
 
 **Interfaces:** Consumes `projectExplicitSchedule(input): ExplicitProjection`, B graph/backward functions. Produces единственный `calculateSchedule(input): LiveResult`. Source/date/display maps сохраняют семантику Task 5; projection не является вторым выбираемым scheduler.
 
@@ -1468,12 +1468,13 @@ Projection must emit exactly one source diagnostic per unknown/invalid leaf. It 
 
 C17 handoff реализуется exact private/pure contract выше: Task4 PrivateSnapshotV2.legacyIntervalUnavailable → Task5 OptionalInput.unavailableTaskIds. Source-only OptionalTask не получает public provenance. Task4 implementation/review и Task5 pass-through/undo/clear persistence обязательны до Task7; новый amended annex требует двух independent reviews. P06/N06-done описывают обычные unmarked explicit done интервалы.
 
-- [ ] **Step 4: Run GREEN.** `npm test -- tests/explicit-cpm-contracts.test.ts tests/explicit-cpm.test.ts tests/calendar.test.ts tests/optional-scheduling.test.ts`; after Task 5 suite name is still `optional-scheduling.test.ts` unless integrator moved it explicitly. Then `npm run typecheck`, `npm run lint`, `npm run test:unit` and independent oracle. No skip/empty suites.
-- [ ] **Step 5: Commit B/C together.** Stage `src/domain/explicit-cpm.ts`, `src/domain/scheduling.ts`, fixture/tests and package unit list; staged guard/Gitleaks and normal hooks; commit `feat: analyze explicit task intervals and partial components`. Two independent reviews of this SHA include literal floats/IDs/diagnostics, immutability, complexity and negative-origin invariance.
+- [ ] **Step 3a: Complete initial frozen compatibility in the same switch.** До GREEN/commit исполнить весь раздел ниже «Initial migration после подключения live CPM — выполняется с B/C»: три frozen modules, exact f5 extraction command, adapter/resolver/preview/preparer imports и полный `tests/legacy-pending-projection.test.ts`, включая actual SQL003 regression. Раздел заканчивается перед «Durable cached replay — выполняется в TaskD»; blocks остаются на месте для чтения, но не откладываются до D. LIVE calculateSchedule и initial frozen projection должны войти в один GREEN commit; промежуточный commit с LIVE adapter запрещён. Actual Task5 consumers импортируют `calculateSchedule` из domain/scheduling и source helpers из domain/planning; имя calculateOptionalSchedule остаётся только внутри pinned f5 extraction. Добавить новый compatibility test file в integration list.
+- [ ] **Step 4: Run GREEN.** `npm test -- tests/explicit-cpm-contracts.test.ts tests/explicit-cpm.test.ts tests/calendar.test.ts tests/optional-scheduling.test.ts`; after Task 5 suite name is still `optional-scheduling.test.ts` unless integrator moved it explicitly. Then `npm run typecheck`, `npm run lint`, `npm run test:unit` and independent oracle. Отдельно выполнить `npm test -- tests/legacy-compatibility.test.ts tests/optional-migration.test.ts tests/optional-upgrade.test.ts tests/legacy-pending-projection.test.ts`; все четыре suites должны быть GREEN до B/C commit. Actual Task5 unit list не включает эти integration suites, поэтому одного test:unit недостаточно. Frozen expected outcomes не адаптировать к LIVE ради GREEN. No skip/empty suites.
+- [ ] **Step 5: Commit B/C together.** Stage `src/domain/explicit-cpm.ts`, `src/domain/scheduling.ts`, fixture/domain/Task2 tests, все три `src/server/legacy-pending-*.ts`, `src/server/legacy-compatibility.ts`, `src/server/optional-upgrade.ts`, `src/server/optional-migration.ts`, `tests/legacy-pending-projection.test.ts` и package unit/integration lists; staged guard/Gitleaks and normal hooks; commit `feat: analyze explicit task intervals and partial components`. Two independent reviews этого единого GREEN SHA проверяют literal floats/IDs/diagnostics, immutability/complexity/origin invariance и отсутствие initial compatibility regression. D использует этот готовый freeze.
 
 ### Task D: Atomic server result, undo, restart и frozen retry
 
-**Files:** Modify `src/server/repository.ts`, `tests/scheduling-api.test.ts`, `tests/optional-migration.test.ts`; create `tests/explicit-cpm-repository.test.ts`; modify integration list in `package.json`.
+**Files:** Modify `src/server/repository.ts`, `tests/scheduling-api.test.ts`; create `tests/explicit-cpm-repository.test.ts`; modify integration list in `package.json`, сохраняя compatibility suite из B/C. Initial frozen modules/wiring/literal tests уже GREEN и reviewed вместе с B/C; D не создаёт и не генерирует их повторно.
 
 **Interfaces:** Consumes Task5 Repository: `createProject(title): Project`, `getTree(projectId,sessionId): ProjectTreeV2`, `getSchedule(projectId): ScheduleResponseV2`, `applyCommand(projectId,CommandEnvelopeV2,sessionId): ProjectTreeV2`, `replayLegacy(projectId,body:unknown,sessionId): ProjectTreeV2` and `openDatabase(path)` for newly created/schema3 synthetic DB. Existing mutate/save/snapshot seams use PrivateSnapshotV2; transaction parses live public response before commit and caches exact result. Command body/header contract remains V2.
 
@@ -2024,13 +2025,13 @@ it('HTTP conflict plus unknown commits once while invalid user triple rolls back
 
 Task5 V2 headers/body helpers остаются обязательными; setup авторизует только disposable synthetic SQLite. Existing header426/origin/session tests продолжают выполняться без изменения.
 
-- [ ] **Step 3: Preserve frozen legacy replay.** Добавить runnable durable regression ниже; принятый Task5 M08 продолжает выполняться.
+- [ ] **Step 3: Preserve frozen legacy replay.** Initial frozen projection/wiring/literal tests из следующего раздела уже исполняются и проходят GREEN в B/C. В D использовать их без повторного generation/создания. Добавить runnable regression раздела «Durable cached replay — выполняется в TaskD» ниже; принятый Task5 M08 продолжает выполняться.
 
-#### Initial migration после подключения live CPM
+#### Initial migration после подключения live CPM — выполняется с B/C
 
 Cached replies уже frozen и не вызывают math. Отдельно **initial** S2→003 migration/preview должна сохранять exact Task4 pending projection policy: она не вызывает live calculateSchedule или projectExplicitSchedule. Иначе новые UNKNOWN_INTERVAL/severity/C16 fields изменили бы archival conversion outcome. Server-only compatibility helper `projectLegacyPendingSchedule(input:LegacyPendingInput):FrozenPendingScheduleV2` копирует pure pending real/FS/summary/display body Task4, без CPM/Auto selection/product route. Active Repository имеет единственный live calculateSchedule.
 
-**Files в TaskD дополнительно:** Create `src/server/legacy-pending-types.ts`, `legacy-pending-source.ts`, `legacy-pending-projection.ts`; Modify `src/server/legacy-compatibility.ts`/`optional-upgrade.ts`/`optional-migration.ts` и `tests/optional-migration.test.ts`. Frozen date arithmetic использует уже server-only `legacy-calendar.ts` Task3; source validation тоже frozen. В этих модулях нет runtime import active scheduling/planning/calendar. General DomainError class не вычисляет даты/severity; публичный exact frozen schema/type — неизменяемый archive contract.
+**Files исполняются в B/C Step3a:** Create `src/server/legacy-pending-types.ts`, `legacy-pending-source.ts`, `legacy-pending-projection.ts`, `tests/legacy-pending-projection.test.ts`; Modify `src/server/legacy-compatibility.ts`/`optional-upgrade.ts`/`optional-migration.ts` и integration list. Existing `tests/legacy-compatibility.test.ts`/`optional-migration.test.ts`/`optional-upgrade.test.ts` сохраняют frozen expectations и служат обязательным focused GREEN guard. Frozen date arithmetic использует уже server-only `legacy-calendar.ts` Task3; source validation тоже frozen. В этих модулях нет runtime import active scheduling/planning/calendar. General DomainError class не вычисляет даты/severity; публичный exact frozen schema/type — неизменяемый archive contract.
 
 Literal private type module целиком:
 
@@ -2103,9 +2104,9 @@ return projectTreeV2Schema.parse({
 });
 ```
 
-`legacy-compatibility.ts` resolution admission imports realInterval из legacy-pending-source; `optional-upgrade.ts` preview imports realInterval/validateSourceInput оттуда и projectLegacyPendingSchedule из legacy-pending-projection; `optional-migration.ts` validation imports validateSourceInput оттуда. В existing preview loop заменить только call calculateOptionalSchedule на `projectLegacyPendingSchedule` с тем же private IDs input; archive/raw bytes/contextDigest/resolution outcomes не меняются. Strict public frozen DTO остаётся прежним. Эти imports не доходят до browser; active source editor и current scheduler используют active planning.
+`legacy-compatibility.ts` resolution admission imports realInterval из legacy-pending-source; `optional-upgrade.ts` preview imports realInterval/validateSourceInput оттуда и projectLegacyPendingSchedule из legacy-pending-projection; `optional-migration.ts` validation imports validateSourceInput оттуда. В actual Task5 adapter/preview заменить import/call `calculateSchedule` из domain/scheduling на `projectLegacyPendingSchedule` с тем же private IDs input; active planning imports в этих compatibility consumers переключить на frozen source helper. Имя calculateOptionalSchedule в generation command относится только к pinned f5 source, не к Task5 consumer export. Эти substitutions выполняются в B/C Step3a; archive/raw bytes/contextDigest/resolution outcomes не меняются. Strict public frozen DTO остаётся прежним. Эти imports не доходят до browser; active source editor и current scheduler используют active planning.
 
-Следующий полный literal compatibility test file `tests/legacy-pending-projection.test.ts` включить в integration list вместе с optional-migration suite; в TaskD RED/GREEN commands добавить это имя. Expected старых pending результатов записан вручную, active live control отдельно:
+Следующий полный literal compatibility test file `tests/legacy-pending-projection.test.ts` создать в B/C Step3a и включить в integration list вместе с optional-migration suite; C Step4 запускает его с тремя existing frozen compatibility suites. Current LIVE controls становятся GREEN одновременно с switch, frozen projection controls сохраняют прежний outcome. В D эти tests уже GREEN и остаются regression checks. Expected старых pending результатов записан вручную, active live control отдельно:
 
 ```ts
 import {expect,it,vi} from 'vitest';
@@ -2276,7 +2277,9 @@ it('post-CPM SQL003 creates exact pending cache and durable private marker witho
 });
 ```
 
-Concrete legacy replay regression добавить в `tests/explicit-cpm-repository.test.ts`. Дополнительные imports: `Database` from better-sqlite3, `readFileSync` from node:fs (добавить к existing fs import), `canonical` from shared/canonical и `prepareOptionalMigration` from server/optional-migration. Fixture выполняет только reviewed SQL в своём tmpdir; нет production upgrade acknowledgement bypass.
+#### Durable cached replay — выполняется в TaskD
+
+Concrete legacy replay regression добавить в `tests/explicit-cpm-repository.test.ts`. Дополнительные imports: `Database` from better-sqlite3, `readFileSync` from node:fs (добавить к existing fs import), `canonical` from shared/canonical и `prepareOptionalMigration` from server/optional-migration. Fixture выполняет только reviewed SQL в своём tmpdir; нет production upgrade acknowledgement bypass. Initial frozen projector/import wiring уже получены из B/C; здесь они не пересоздаются.
 
 ```ts
 import Database from 'better-sqlite3';
@@ -2365,7 +2368,7 @@ it('frozen legacy revision9 remains pending after live revision10 and restart wi
 
 Unknown original envelope, changed payload/session/project и digest/JSON corruption остаются в accepted Task5 replay suite; этот новый test выполняет конкретный live-vs-frozen переход после подключения CPM. Production migration/архивные resolution rules не меняются.
 
-- [ ] **Step 4: Run RED.** `npm test -- tests/explicit-cpm-repository.test.ts tests/scheduling-api.test.ts tests/optional-migration.test.ts tests/legacy-pending-projection.test.ts` — перед server union/wiring FAIL wrong status/frozen parse/rollback.
+- [ ] **Step 4: Run RED.** `npm test -- tests/explicit-cpm-repository.test.ts tests/scheduling-api.test.ts` — новые live-only pending injection/rollback cases должны FAIL до current-path validators: union-only path ещё допускает pending, а tests требуют safe500 и полный rollback. Initial frozen projection/legacy suites из B/C уже GREEN; от них не требовать ложного RED и не менять их expected outcomes.
 - [ ] **Step 5: Wire server parse before commit.** Live getTree/getSchedule/current mutation используют calculate с liveScheduleResultV2Schema и safe live tree/schedule validators выше. `change` проверяет liveProjectTreeV2Schema до записи operation response/commit; ошибки остаются safe internal500. Replay branch читает response/digest, парсит union через validatedCachedTreeResponse и возвращает результат, без чтения current project schedule. Existing auth/session/revision/idempotency/undo bounds сохраняются.
 - [ ] **Step 6: Run GREEN и commit.** `npm run test:integration`; `npm run typecheck`; `npm run lint`; staged checks и normal commit `feat: preserve atomic critical path analysis and frozen retries`; два independent reviews.
 
@@ -2959,7 +2962,7 @@ Exact diagnostic copy `LEGACY_INTERVAL_UNAVAILABLE` = «Прежний инте�
 - [ ] Reviewer 2 независимо проверяет exact SHA на C16/owner evidence/numerical matrix/admission/weak components/Hknown/conflict/undo/UI.
 - [ ] При CHANGES_REQUIRED исправить technical annex, rerun affected doc/oracle checks и получить **оба** APPROVED нового SHA. Accepted policy не переоткрывать; изменение формулы нельзя скрывать как code detail.
 - [ ] Task7 запускается только после Task5 GREEN и двух APPROVED annex. Исполнитель проверяет `git status --short --branch`, читает START_HERE/AGENTS/PRIVACY, использует один worktree writer, Node24.21.0/npm11.19.0 и существующий lockfile.
-- [ ] Исполнение A→B/C→D→E использует TDD RED/GREEN и scoped commits/reviews. Нет permission на production migration/push/deploy.
+- [ ] Исполнение A→B/C→D→E использует TDD RED/GREEN и scoped commits/reviews. B/C switch включает initial frozen modules/wiring/literal tests в один GREEN commit; D добавляет current live-only validators/persistence/HTTP/rollback/durable cached replay поверх готового freeze. Нет permission на production migration/push/deploy.
 - [ ] Финальный STATUS фиксирует implemented behavior, exact checks, limitations и S4–S6 next work; policy CLOSED и implementation GREEN остаются разными фактами.
 
 ## Review metadata — 2026-10-07
@@ -2970,8 +2973,14 @@ Substantive candidate `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` получил 
 
 ## C17 amendment review status — 2026-10-08
 
-Текущий substantive candidate `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил два независимых verdicts: Spec — **APPROVED**, Standards/executability — **APPROVED**. Оба reviews отдельно проверили изменённый private/pure input, marked-leaf admission, stable initial frozen projection и новые runnable regressions; прежние verdicts не унаследованы.
+C17 substantive candidate `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил два независимых verdicts: Spec — **APPROVED**, Standards/executability — **APPROVED**. Оба reviews отдельно проверили изменённый private/pure input, marked-leaf admission, stable initial frozen projection и новые runnable regressions; прежние verdicts не унаследованы.
 
 APPROVED `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` и metadata `889cb6afe777b6d9e6071f76a729a344906f90cb` остаются историческими. Эта последующая запись меняет только review metadata: substantive body и все fenced snippets побайтово сохранены относительно approved bfa0f8e. Verdicts относятся к указанному substantive SHA, без переноса на изменённые типы/формулы/snippets или будущую implementation.
 
 Task4 source pin f5e92ab также получил два APPROVED; его actual Task5 integration и Task5 GREEN ещё обязательны до CPM Task7. CPM code не реализован. SQL registry/production execution не разрешены этим annex.
+
+## Sequencing amendment review status — 2026-10-08
+
+Этот кандидат уточняет только execution order/file map/commit/check instructions: B/C LIVE switch и существующая approved initial frozen compatibility должны войти в один GREEN commit. Все 41 fenced snippets, математика, typed DTO и source policy сохранены относительно metadata8060ffc; большие initial-frozen blocks физически остаются в TaskD, но исполняются в B/C Step3a. D использует готовый freeze и добавляет live-only validators/persistence/HTTP/rollback/durable cached replay.
+
+Prior bfa0f8e APPROVED остаются историческими для C17/math/typed body и не унаследованы этим изменённым execution plan. Новому точному candidate SHA нужны два independent reviews. Read-only audit Task5 candidate5134b93 подтвердил import/script/expectation timing defect, но не одобрил application implementation; Task5 fix/check/review и Task5 GREEN остаются prerequisite Task7. CPM code этим изменением не реализован.

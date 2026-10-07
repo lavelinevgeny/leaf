@@ -1,5 +1,15 @@
 # Статус разработки
 
+## Sequencing amendment technical CPM annex — 2026-10-08
+
+[Annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) уточняет порядок исполнения: B/C LIVE scheduler switch обязан одновременно создать и подключить уже описанную initial frozen projection, её literal tests и frozen resolver/preview/preparer imports в одном GREEN commit. Добавлены focused compatibility checks поверх unit suite и полный scope этого commit. D использует готовый freeze, сохраняет live-only validators/persistence/HTTP/rollback/durable cached replay; initial projection cases не объявляются повторно RED.
+
+Read-only audit точного Task5 candidate5134b93 обнаружил, что initial adapter/preview ещё вызывают active calculateSchedule, а frozen expectations находятся в integration suites. Unit GREEN не защищает historical outcome. Actual Task5 consumer imports в execution instructions уточнены до calculateSchedule/planning; pinned f5 extraction и все snippets остаются прежними. Audit не является approval Task5 implementation.
+
+На Node24.21.0/npm11.19.0 прошли byte comparison всех 41 fenced blocks и nonprocedural annex text с metadata8060ffc, сверка сохранности prior STATUS records, `check:kit` (42 Markdown files, 155 local links), diff checks и staged privacy guard/Gitleaks на двух scoped docs. Обычные hooks включены. Неизменённые численные/snippet/application suites не повторялись.
+
+Изменены только procedural text и factual review status; prior bfa0f8e approvals остаются историческими для C17/math/DTO/source policy. Новый execution candidate pending двух independent reviews, Task5 ещё проходит fix/check/review. Task7 CPM code запрещён до Task5 GREEN и approvals текущего плана. В этом изменении только annex и STATUS; application/schema/lockfile/ADR/runtime и внешние действия не затронуты.
+
 ## Review metadata C17 CPM annex — 2026-10-08
 
 Current substantive candidate [technical annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил два новых независимых APPROVED: Spec и Standards/executability. Private unavailable input/admission и initial frozen projection проверены отдельно; прежние approvals29f193e остаются историческими. В annex footer и ADR008 записаны факты review/source boundary. Substantive body и все fenced snippets побайтово сохранены относительно approved bfa0f8e.
