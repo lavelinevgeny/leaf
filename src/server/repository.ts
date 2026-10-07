@@ -3,7 +3,13 @@ import { randomUUID, createHash } from 'node:crypto';
 import {
   commandEnvelopeSchema,
   createProjectSchema,
-  projectTreeSchema,
+  projectTreeV2Schema,
+  liveProjectTreeV2Schema,
+  liveScheduleResultV2Schema,
+  liveScheduleResponseV2Schema,
+  type LiveProjectTreeV2,
+  type LiveScheduleResponseV2,
+  type LiveScheduleResultV2,
   renameProjectSchema,
   type Command,
   type CommandEnvelope,
@@ -53,9 +59,19 @@ interface OperationRecord {
   contractVersion: number;
   responseSha256: string;
 }
-function validatedTreeResponse(value: unknown): ProjectTree {
-  const parsed = projectTreeSchema.safeParse(value);
+function validatedTreeResponse(value: unknown): LiveProjectTreeV2 {
+  const parsed = liveProjectTreeV2Schema.safeParse(value);
   if (!parsed.success) throw new Error('Invalid internal tree response');
+  return parsed.data;
+}
+function validatedScheduleResponse(value: unknown): LiveScheduleResponseV2 {
+  const parsed = liveScheduleResponseV2Schema.safeParse(value);
+  if (!parsed.success) throw new Error('Invalid internal schedule response');
+  return parsed.data;
+}
+function validatedCachedTreeResponse(value: unknown): ProjectTree {
+  const parsed = projectTreeV2Schema.safeParse(value);
+  if (!parsed.success) throw new Error('Invalid internal cached tree response');
   return parsed.data;
 }
 export class Repository {
@@ -146,23 +162,27 @@ export class Repository {
       });
     })();
   }
-  private calculate(snapshot: Snapshot) {
-    return calculateSchedule({
-      unavailableTaskIds: snapshot.legacyIntervalUnavailable,
-      calendarType: snapshot.project.calendarType,
-      tasks: snapshot.tasks,
-      dependencies: snapshot.dependencies,
-    });
+  private calculate(snapshot: Snapshot): LiveScheduleResultV2 {
+    const parsed = liveScheduleResultV2Schema.safeParse(
+      calculateSchedule({
+        unavailableTaskIds: snapshot.legacyIntervalUnavailable,
+        calendarType: snapshot.project.calendarType,
+        tasks: snapshot.tasks,
+        dependencies: snapshot.dependencies,
+      }),
+    );
+    if (!parsed.success) throw new Error('Invalid internal schedule response');
+    return parsed.data;
   }
-  getSchedule(projectId: string) {
+  getSchedule(projectId: string): LiveScheduleResponseV2 {
     return this.db.transaction(() => {
       const snapshot = this.snapshot(projectId);
-      return {
-        contractVersion: 2 as const,
+      return validatedScheduleResponse({
+        contractVersion: 2,
         projectId,
         revision: snapshot.project.revision,
         schedule: this.calculate(snapshot),
-      };
+      });
     })();
   }
   replayLegacy(
@@ -236,7 +256,7 @@ export class Repository {
             existing.responseSha256
           )
             throw new Error('Invalid operation digest');
-          return validatedTreeResponse(JSON.parse(existing.response));
+          return validatedCachedTreeResponse(JSON.parse(existing.response));
         }
         let snapshot = this.snapshot(projectId);
         const revision = snapshot.project.revision;

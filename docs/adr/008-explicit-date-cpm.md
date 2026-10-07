@@ -1,6 +1,6 @@
 # ADR 008 — критический путь введённого расписания
 
-Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md); current execution annex `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` прошёл два независимых review 2026-10-08. Historical C17/math approval bfa0f8e сохранён отдельно. O06/G-CPM закрыт как выбор политики; pure CPM подключён в Task7 B/C после reviewed Task5 GREEN; current LIVE-only guards и UI/browser acceptance остаются D/E.
+Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md); current execution annex `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` прошёл два независимых review 2026-10-08. Historical C17/math approval bfa0f8e сохранён отдельно. O06/G-CPM закрыт как выбор политики; pure CPM подключён в Task7 B/C после reviewed Task5 GREEN; current LIVE-only guards подключены в D; UI/browser acceptance остаётся E.
 
 ## Контекст
 
@@ -24,7 +24,9 @@ Pure analysis остаётся серверным и детерминирова�
 
 ## Проверка
 
-Task7 B/C реализует approved pure coordinate/graph/backward/composition и одновременно server-only initial frozen projection/source helpers из exact Task4 f5e92ab pin. Existing frozen calendar и archived pending outcome сохранены; adapter/resolver/preview/preparer не импортируют active scheduling/planning/calendar. Проверено: 50 literal CPM tests, 144 focused contracts/domain/calendar/Task2 tests, независимый перебор допустимых задержек по 14 ready fixtures, 117 focused compatibility tests, unit 310/integration 180 без skips, typecheck/lint/build/format/package PASS. Это промежуточный GREEN checkpoint перед двумя independent implementation reviews. LIVE-only current server guards D и server criticality UI/browser acceptance E ещё не реализованы; C05/OS16 не объявляются выполненными.
+Task7 B/C реализует approved pure coordinate/graph/backward/composition и одновременно server-only initial frozen projection/source helpers из exact Task4 f5e92ab pin. Existing frozen calendar и archived pending outcome сохранены; adapter/resolver/preview/preparer не импортируют active scheduling/planning/calendar. Проверено: 50 literal CPM tests, 144 focused contracts/domain/calendar/Task2 tests, независимый перебор допустимых задержек по 14 ready fixtures, 117 focused compatibility tests, unit 310/integration 180 без skips, typecheck/lint/build/format/package PASS. Это промежуточный GREEN checkpoint перед двумя independent implementation reviews. На момент B/C LIVE-only current server guards D и server criticality UI/browser acceptance E ещё не были реализованы; C05/OS16 не объявляются выполненными.
+
+Task7 D подключает current LIVE-only calculate/tree/schedule/precommit validators с safe internal500 и отдельный cached union parser без recalculation. Literal Repository/HTTP P04→P05→undo→restart, P10 calendar/undo, before/after-save rollback с таблицами и sqlite_sequence, C17 private/source passage и actual SQL003 frozen revision9 после LIVE10 проверены. Existing Task4/Task5 done guard и `DONE_PLAN_LOCKED` сохранены по точечной controller резолюции execution test snippet; math/source policy не менялись. Focused D25/25 (с retained repository fault suite33/33), integration202/202 и full verify512/512 без skips, typecheck/lint/build/format/package/kit PASS. D остаётся checkpoint перед двумя independent exact-SHA reviews; UI/browser acceptance E и C05/OS16 ещё не завершены.
 
 Следующие записи описывают evidence и ограничения на момент технического review annex; они не подменяют implementation acceptance.
 

@@ -8,7 +8,7 @@ import {
   createProjectSchema,
   loginSchema,
   renameProjectSchema,
-  scheduleResponseSchema,
+  liveScheduleResponseV2Schema,
   uuidSchema,
 } from '../shared/contracts.js';
 import { Auth, SESSION_SECONDS } from './auth.js';
@@ -190,7 +190,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       requireSession(request);
       requireContractVersion(request);
       const { id } = projectParamsSchema.parse(request.params);
-      const parsed = scheduleResponseSchema.safeParse(
+      const parsed = liveScheduleResponseV2Schema.safeParse(
         app.repository.getSchedule(id),
       );
       if (!parsed.success)

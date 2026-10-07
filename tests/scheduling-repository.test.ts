@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { openDatabase } from '../src/server/database.js';
 import { Repository } from '../src/server/repository.js';
 import {
-  projectTreeSchema,
+  liveProjectTreeV2Schema,
   type Command,
   type ProjectTree,
 } from '../src/shared/contracts.js';
@@ -373,7 +373,7 @@ it('freezes exact target retry after later writes and rolls back response-schema
   );
   expect(state()).toEqual(before);
   const spy = vi
-    .spyOn(projectTreeSchema, 'safeParse')
+    .spyOn(liveProjectTreeV2Schema, 'safeParse')
     .mockImplementation(() => {
       throw new Error('Synthetic response failure');
     });
