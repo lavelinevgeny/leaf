@@ -42,6 +42,27 @@ async function add(page: Page, title: string) {
   await expect(input).toHaveValue('');
 }
 
+test('creates a root immediately after confirmed deletion of the only task', async ({
+  page,
+  runtime,
+}) => {
+  await login(page, runtime.origin, runtime.password);
+  await project(page);
+  await add(page, 'Задача A');
+  await row(page, 'Задача A').click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page
+    .getByRole('button', { name: 'Удалить ветку', exact: true })
+    .click();
+  await expect(page.getByText('В проекте пока нет задач.')).toBeVisible();
+  await add(page, 'Задача B');
+  await expect(row(page, 'Задача B')).toHaveAttribute('aria-level', '1');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.reload();
+  await expect(row(page, 'Задача B')).toBeVisible();
+  await expect(row(page, 'Задача A')).toHaveCount(0);
+});
+
 test('real CRUD, tree keyboard, moves, branch undo and restart persistence', async ({
   page,
   runtime,

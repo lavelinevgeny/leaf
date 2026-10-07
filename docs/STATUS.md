@@ -18,7 +18,7 @@
 
 ## Следующая задача
 
-Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Combined preflight прошёл после интеграции в обычном checkout на `0e97e22`; финальный whole-branch review ожидается. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
+Выполнить S2 по SCHEDULING, fixtures и ACCEPTANCE: чистый тестируемый планировщик и атомарный пересчёт на сервере. Не подменять его расчётами в React. Combined preflight прошёл после интеграции в обычном checkout на `0e97e22`. Whole-branch review выявил устаревший контекст быстрого ввода и два замечания к test harness; исправления описаны ниже. Перед итоговым отчётом ожидаются один scoped re-review исправлений и новый root preflight. Перед внешней публикацией отдельно нужны поручение владельца, проверка remote CI/серверной защиты и решение о лицензии.
 
 ## S0–S1 — 2026-10-07
 
@@ -40,11 +40,29 @@
 | Docker build / Compose config / runtime smoke | Прошло на Linux ARM64, including real native SQLite/CLI/health/restart. |
 | `git diff --check`, staged diff, `security:staged` / `security:history` | Прошло: 27 changed index blobs; история и metadata также прошли guard/Gitleaks. |
 | `npm run preflight` после интеграции | Прошло в обычном checkout на `0e97e22`, Node 24.21.0 / npm 11.19.0: doctor, kit, workspace, index, staged, history/metadata и Gitleaks; 52/52 kit tests, skipped 0; 119 index entries, 178 historical file versions, 10 metadata objects. |
-| Финальный whole-branch review | Ожидается после сверки этого handoff. |
+| Финальный whole-branch review | Выполнен; найденный дефект быстрого ввода и два замечания к harness исправлены отдельной волной. Scoped re-review и новый root preflight ожидаются. |
 
 Историческое ограничение Task 3 worker: linked-worktree guard отклонял корневой `.git` pointer по PERSONAL_HOME_PATH; policy не менялась, preflight в worktree не запускался. Итоговый preflight выполнен основным агентом в обычном checkout на `0e97e22` и прошёл полностью; это ограничение не блокирует текущую интеграцию.
 
 Не выполнены: remote CI execution, AMD64 container smoke, HTTPS reverse proxy, restore/import/export, previous-schema upgrade, scheduling/Gantt/dependencies/CPM, S6 acceptance. Browser snapshots только синтетические и вне публичных assets; traces/video и CI uploads отсутствуют. Документация не содержит raw reports, runtime данных или личных путей.
+
+## S0–S1 — исправления финального review, 2026-10-07
+
+Исправлен quick-add после удаления, undo и переноса задач: общий `apply()` проверяет ссылки только принятого снимка текущего проекта после revision guard. Исчезнувший родитель возвращает контекст к корню проекта, исчезнувший или перенесённый якорь удаляется. Текст и допустимые parent/anchor сохраняются; per-project drafts, dirty guards, conflict recovery и точный retry не меняют контрактов. Новые независимые HTTP fixtures проверяют удаление единственного корня, undo создания, исчезновение родителя при delete/undo, перенос/удаление якоря, сохранение допустимого контекста и отказ старого conflict snapshot с последующим свежим reload.
+
+Readiness fetch реального E2E-процесса ограничен AbortSignal timeout. Cleanup охватывает весь lifecycle после создания собственного временного каталога, включая setup БД/аккаунта и резервирование порта. БД и listeners закрываются, завершение процесса ожидается даже после SIGKILL; удаление собственного synthetic runtime выполняется в finally при ошибках остановки. Dev smoke использует ту же раннюю границу cleanup. Схема, серверная семантика, lockfile, security policy и зависимости не изменены.
+
+| Проверка этой волны | Результат |
+|---|---|
+| RED на исходном коде | 6 новых клиентских регрессий упали, 26/32 прошли; настоящий Chromium delete→create regression также упал. |
+| Focused GREEN | 34/34: 33 React cases и один real dev-process smoke. |
+| Финальный `npm run verify` | Прошло: typecheck, lint, 84/84 tests в 7 suites, production client/server build; skipped 0. |
+| `npm run format:check`, `git diff --check` | Прошло. |
+| `npm run test:e2e` | Прошло: 8/8, 1440×900 и 1280×800, retries/skipped 0; delete→create с подтверждением и сохранением после browser reload. |
+| Внешние synthetic probes | Прошло: ранний account setup failure и реальный nonzero child/stop failure оставляют собственный runtime очищенным; TCP listener без HTTP headers вызывает timeout, затем readiness реального процесса проходит. |
+| Scoped re-review / новый root preflight | Ожидаются; full preflight в linked worktree не запускался и policy не ослаблялась. |
+
+Предыдущие audit, Docker/native backup и kit-suite результаты выше не повторялись для этой ограниченной волны. Remote CI, другие архитектуры контейнера, HTTPS proxy, restore/import/export/upgrade и S2/S3 по-прежнему не проверены заново. Следующая продуктовая задача — S2 после контрольного review и root preflight.
 
 ## REPO-INIT — 2026-10-06
 

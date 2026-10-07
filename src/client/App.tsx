@@ -109,6 +109,35 @@ export function App() {
       return false;
     treeRef.current = next;
     setTree(next);
+    setQuickDrafts((previous) => {
+      const saved = previous[next.project.id];
+      const after = orderedChildren(next.tasks, null).at(-1);
+      const preview = saved?.context ?? {
+        parentId: null,
+        ...(after ? { afterId: after.id } : {}),
+      };
+      const parentId =
+        preview.parentId &&
+        next.tasks.some((task) => task.id === preview.parentId)
+          ? preview.parentId
+          : null;
+      return {
+        ...previous,
+        [next.project.id]: {
+          title: saved?.title ?? '',
+          context: {
+            parentId,
+            ...(preview.afterId &&
+            next.tasks.some(
+              (task) =>
+                task.id === preview.afterId && task.parentId === parentId,
+            )
+              ? { afterId: preview.afterId }
+              : {}),
+          },
+        },
+      };
+    });
     setProjects((previous) =>
       previous.map((project) =>
         project.id === next.project.id ? next.project : project,
@@ -158,35 +187,6 @@ export function App() {
         return;
       }
       setConflict(false);
-      setQuickDrafts((previous) => {
-        const saved = previous[id];
-        const after = orderedChildren(next.tasks, null).at(-1);
-        const preview = saved?.context ?? {
-          parentId: null,
-          ...(after ? { afterId: after.id } : {}),
-        };
-        const parentId =
-          preview.parentId &&
-          next.tasks.some((task) => task.id === preview.parentId)
-            ? preview.parentId
-            : null;
-        return {
-          ...previous,
-          [id]: {
-            title: saved?.title ?? '',
-            context: {
-              parentId,
-              ...(preview.afterId &&
-              next.tasks.some(
-                (task) =>
-                  task.id === preview.afterId && task.parentId === parentId,
-              )
-                ? { afterId: preview.afterId }
-                : {}),
-            },
-          },
-        };
-      });
       pendingRef.current = null;
       setPending(null);
     } catch (failure) {
