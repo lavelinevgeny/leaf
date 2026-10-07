@@ -1,5 +1,13 @@
 # Статус разработки
 
+## Root verification принятой адаптации и плана CPM — 2026-10-08
+
+Основной checkout на объединённых reviewed Task5/Task6 прошёл `npm run verify`: typecheck, lint, 399/399 application tests в 24 files без skips и production build. `format:check` и `check:package` — PASS. Полный `preflight` — PASS: doctor, kit (43 Markdown files, 161 local links), 52/52 harness tests с настоящим Gitleaks, workspace/index/staged/history guards и scans, 41 Git metadata objects. Первоначальный workspace refusal выявил личный административный путь только в generated scratch report; пример заменён эквивалентной NVM_DIR-ссылкой, guard policy и application source не менялись.
+
+Два независимых Task5 re-review APPROVED на `ac9c645`; два новых independent execution-plan reviews APPROVED на `9c71ed2`. Root merge не менял application behavior или approved plan body; STATUS conflicts сохранили обе истории. Worker final browser E2E — 30/30 на двух viewport. Root browser/Docker suites повторно не запускались для идентичного reviewed application source; прежний Docker evidence привязан к исходному Task5 checkpoint, без заявления нового image.
+
+Task5 GREEN и технический CPM plan/review prerequisite закрыты. Далее fresh worker исполняет A→B/C→D→E с отдельными GREEN commits и двумя independent implementation reviews каждого checkpoint. B/C одновременно подключает LIVE analysis и initial frozen compatibility. CPM/C05/OS16 ещё не реализованы; S4–S6 и first release остаются впереди. Production migration, публикация и remote actions не выполнялись.
+
 ## Объединение Task 5 и approved execution plan CPM — 2026-10-08
 
 В основном checkout объединены принятый Task 5 (`ac9c645`, два независимых APPROVED) и reviewed execution annex (`9c71ed2`, два новых независимых APPROVED; metadata `003ff23`). Контракты, source policy, математика и все 41 snippets плана сохранены. При объединении разрешён только STATUS conflict с сохранением обоих наборов исторических записей. CPM code ещё не начат.
