@@ -1,0 +1,29 @@
+/* Initial implementation proposal, not pixel-exact measurements from a mockup. */
+:root {
+  --leaf-bg: #ffffff;
+  --leaf-sidebar: #f6f8f7;
+  --leaf-surface-muted: #f9fbfa;
+  --leaf-border: #e8eeeb;
+  --leaf-text: #202a26;
+  --leaf-text-muted: #69766f;
+  --leaf-accent: #27985b;
+  --leaf-accent-soft: #e8f4ec;
+  --leaf-focus: #216bc4;
+  --leaf-critical: #c83d54;
+  --leaf-critical-soft: #fbe7eb;
+  --leaf-bar: #b9dccc;
+  --leaf-bar-alt: #b9d9ee;
+  --leaf-today: #b98405;
+  --leaf-radius: 8px;
+  --leaf-row-height: 38px;
+  --leaf-sidebar-width: 224px;
+  --leaf-task-panel-width: 380px;
+  --leaf-space-1: 4px;
+  --leaf-space-2: 8px;
+  --leaf-space-3: 12px;
+  --leaf-space-4: 16px;
+  --leaf-space-6: 24px;
+  --leaf-space-8: 32px;
+  --leaf-font:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
