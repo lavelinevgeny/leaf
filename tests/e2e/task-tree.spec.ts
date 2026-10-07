@@ -114,9 +114,13 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await expect(row(page, 'Задача B1')).toHaveAttribute('aria-level', '2');
   await page.keyboard.press('Alt+ArrowLeft');
   await expect(row(page, 'Задача B1')).toHaveAttribute('aria-level', '1');
+  // The move restores keyboard focus on the next frame after its DOM update.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
   page.once('dialog', (dialog) => dialog.accept());
-  await row(page, 'Задача A').focus();
-  await page.keyboard.press('Delete');
+  await row(page, 'Задача A').press('Delete');
   await expect(row(page, 'Задача A')).toHaveCount(0);
   await expect(row(page, 'Внук A')).toHaveCount(0);
   await page

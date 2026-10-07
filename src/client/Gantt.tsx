@@ -281,7 +281,7 @@ export function Gantt({
               <g
                 role="button"
                 tabIndex={0}
-                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? ', Условное размещение; начало не задано' : ''}${critical.has(task.id) ? `, ${strings.critical}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
+                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? ', Условное размещение; начало не задано' : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${critical.has(task.id) ? `, ${strings.critical}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
                 aria-disabled={disabled}
                 className={`gantt-work ${interval.kind}${critical.has(task.id) ? ' critical' : ''}${task.status === 'done' ? ' completed' : ''}`}
                 onPointerDown={(event) => begin(event, task, 'move')}
@@ -333,6 +333,9 @@ export function Gantt({
                   {task.title}: {interval.start} – {interval.finish}
                   {interval.kind === 'conditional'
                     ? ' (Условное размещение; начало не задано)'
+                    : ''}
+                  {interval.clipped
+                    ? ' (Отображение ограничено предельной датой)'
                     : ''}
                   {task.status === 'done' ? ` (${strings.doneHint})` : ''}
                 </title>

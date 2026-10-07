@@ -56,6 +56,8 @@ export function App() {
     task: Task;
     patch: import('../shared/contracts.js').SourcePatch;
     target: string;
+    projectId: string;
+    revision: number;
   } | null>(null);
   const [selected, setSelected] = useState<Task | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>('details');
@@ -130,6 +132,12 @@ export function App() {
       treeRef.current.project.revision > next.project.revision
     )
       return false;
+    setDurationChoice((choice) =>
+      choice?.projectId === next.project.id &&
+      choice.revision === next.project.revision
+        ? choice
+        : null,
+    );
     treeRef.current = next;
     setTree(next);
     setQuickDrafts((previous) => {
@@ -194,6 +202,7 @@ export function App() {
     return true;
   }
   async function loadProject(id: string, preserveDraft = false) {
+    setDurationChoice(null);
     const sequence = ++loadSequence.current;
     currentProject.current = id;
     setLoading(true);
@@ -530,7 +539,13 @@ export function App() {
         target,
       );
       if (intent.requiresDurationChoice) {
-        setDurationChoice({ task, patch: intent.patch, target });
+        setDurationChoice({
+          task,
+          patch: intent.patch,
+          target,
+          projectId: treeRef.current.project.id,
+          revision: treeRef.current.project.revision,
+        });
         return;
       }
       await command({
@@ -541,6 +556,35 @@ export function App() {
     } catch {
       setNotice(strings.invalidGesture);
     }
+  }
+  function finishDurationChoice(syncDuration: boolean) {
+    const choice = durationChoice;
+    const current = treeRef.current;
+    setDurationChoice(null);
+    if (
+      !choice ||
+      !current ||
+      current.project.id !== choice.projectId ||
+      current.project.revision !== choice.revision ||
+      !canNavigate()
+    )
+      return;
+    const task = current.tasks.find((item) => item.id === choice.task.id);
+    if (!task?.inputStart || task.status === 'done') return;
+    void command({
+      type: 'task.edit',
+      taskId: task.id,
+      changes: {
+        ...choice.patch,
+        durationDays: syncDuration
+          ? workingDaysInclusive(
+              task.inputStart,
+              choice.target,
+              current.project.calendarType,
+            )
+          : null,
+      },
+    });
   }
   async function createProject(title: string) {
     if (!canNavigate() || createUncertain || !title.trim()) return false;
@@ -913,37 +957,10 @@ export function App() {
           }}
         >
           <p>Новая дата окончания не совпадает с заданной длительностью.</p>
-          <button
-            onClick={() => {
-              const choice = durationChoice;
-              setDurationChoice(null);
-              void command({
-                type: 'task.edit',
-                taskId: choice.task.id,
-                changes: {
-                  ...choice.patch,
-                  durationDays: workingDaysInclusive(
-                    choice.task.inputStart!,
-                    choice.target,
-                    tree!.project.calendarType,
-                  ),
-                },
-              });
-            }}
-          >
+          <button onClick={() => finishDurationChoice(true)}>
             Синхронно изменить длительность
           </button>
-          <button
-            onClick={() => {
-              const choice = durationChoice;
-              setDurationChoice(null);
-              void command({
-                type: 'task.edit',
-                taskId: choice.task.id,
-                changes: { ...choice.patch, durationDays: null },
-              });
-            }}
-          >
+          <button onClick={() => finishDurationChoice(false)}>
             Очистить длительность
           </button>
           <button autoFocus onClick={() => setDurationChoice(null)}>

@@ -1,9 +1,9 @@
+import { validateDependency } from '../src/domain/planning.js';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { z } from 'zod';
 import {
   calculateSchedule,
   conditionalFinish,
-  validateOptionalDependency,
 } from '../src/domain/scheduling.js';
 import type {
   OptionalResult,
@@ -576,7 +576,7 @@ describe('narrow optional graph validation', () => {
     'rejects %s -> %s before writes and returns safe pure diagnostics',
     (predecessor, successor, edges, errorCode, diagnosticCode) => {
       expect(() =>
-        validateOptionalDependency(tasks, edges, predecessor, successor),
+        validateDependency(tasks, edges, predecessor, successor),
       ).toThrowError(expect.objectContaining({ code: errorCode }));
       const result = schedule(tasks, [
         ...edges,
@@ -595,9 +595,9 @@ describe('narrow optional graph validation', () => {
   );
 
   it('accepts a DAG, with hierarchy providing no implied dependencies', () => {
-    expect(() => validateOptionalDependency(tasks, [], 'A', 'B')).not.toThrow();
+    expect(() => validateDependency(tasks, [], 'A', 'B')).not.toThrow();
     expect(() =>
-      validateOptionalDependency(tasks, [e('AB', 'A', 'B')], 'A', 'C'),
+      validateDependency(tasks, [e('AB', 'A', 'B')], 'A', 'C'),
     ).not.toThrow();
   });
 

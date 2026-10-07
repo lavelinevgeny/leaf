@@ -1,5 +1,13 @@
 # Статус разработки
 
+## Task 5: исправления после первого review — 2026-10-08
+
+Отложенный выбор длительности привязан к исходным project/revision: начало загрузки проекта и принятый новый revision отменяют его; обе кнопки проверяют актуальность перед командой. Разрешённая навигация больше не оставляет диалог без tree, отмена не выполняет mutation. Единственный активный DAG-validator находится в planning; optional graph tests теперь вызывают ту же функцию, что Repository и Dependencies, без изменения frozen legacy solver.
+
+Initial window и reveal Ганта используют source-start, затем source-finish, когда нет real/conditional interval. Исходные отметки остаются независимыми от полос и не принимают planning gestures. Для clipped conditional display добавлено пояснение «Отображение ограничено предельной датой» в title и accessible label; исходная длительность не меняется.
+
+Проверки на закреплённом toolchain: новые regressions сначала дали 4 component failures и 2 actual-server browser failures; после исправления final verify прошёл (399 application tests без skips, typecheck, lint, build), literal render fixtures и отдельный overflow producer control сохранены; повторные typecheck/lint/format:check/check:package — PASS. Два полных browser прогона выявили по одному прежнему тестовому race: Delete до восстановления фокуса после move и reopen до завершения Save(done). Тесты ждут соответствующий animation frame / «Сохранено»; production-поведение не менялось, retries/skips не добавлены. Итоговый полный browser-прогон: 30/30 PASS на1440×900 и1280×800, включая unchanged pinned S3 client; все прежние26 scenarios и4 новые проверки сохранены. Retained graph cases сохранены. SQL/storage/transport/CPM-код и упаковка не менялись. Docker/kit повторно не запускались: прежний Docker evidence относится к исходному Task 5 checkpoint, не к новому image. Workspace/history/preflight остаются обязанностью integrator в обычном checkout; known linked-worktree pointer guard не обходился. Следующий шаг — два независимых re-review точного fix SHA.
+
 ## Task 5: атомарная адаптация storage/API/UI — 2026-10-08
 
 Активированы target contracts V2, независимые необязательные source dates/duration, серверная pending-проекция и migration003. C16 policy CLOSED; настоящий CPM implementation pending. Публичные DTO явно перечисляют project/tasks/dependencies и не раскрывают archive/provenance. Операции/undo сохраняются; C17 markers переживают details/status/calendar/edges, restart, preserveWork и undo. Явный validated source patch, включая равные значения, подтверждает интервал; status-only возврат в работу marker сохраняет.

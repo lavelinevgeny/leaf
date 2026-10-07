@@ -95,6 +95,7 @@ test('project settings preserve dirty calendar draft, done requires return and p
     await page.getByRole('treeitem', { name: /Работа A,/ }).click();
     await page.getByLabel('Статус', { exact: true }).selectOption('done');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Начало', { exact: true })).toBeDisabled();
     await page.getByLabel('Статус', { exact: true }).selectOption('doing');
     await expect(page.getByLabel('Начало', { exact: true })).toBeEnabled();

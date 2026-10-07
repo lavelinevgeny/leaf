@@ -6,6 +6,7 @@ import { Gantt } from './Gantt.js';
 import {
   computedDateLabel,
   ganttInterval,
+  sourceMarkers,
   shiftDate,
   todayInZone,
   type Scale,
@@ -23,6 +24,12 @@ interface Props {
   disabled: boolean;
   show: boolean;
   reveal: GanttReveal | null;
+}
+function timelineDate(task: Task, tree: ProjectTree) {
+  return (
+    ganttInterval(task, tree.schedule)?.start ??
+    sourceMarkers(task, tree.schedule)[0]?.date
+  );
 }
 export function TaskTimeline({
   tree,
@@ -43,7 +50,7 @@ export function TaskTimeline({
   const [start, setStart] = useState(() =>
     shiftDate(
       tree.tasks
-        .map((task) => ganttInterval(task, tree.schedule)?.start)
+        .map((task) => timelineDate(task, tree))
         .filter((date): date is string => !!date)
         .sort()[0] ?? today,
       -3,
@@ -56,7 +63,7 @@ export function TaskTimeline({
   useEffect(() => {
     if (!reveal) return;
     const task = tree.tasks.find((item) => item.id === reveal.taskId);
-    const date = task && ganttInterval(task, tree.schedule)?.start;
+    const date = task && timelineDate(task, tree);
     if (date) setStart(shiftDate(date, -3));
     if (horizontal.current) horizontal.current.scrollLeft = 0;
     requestAnimationFrame(() => {
