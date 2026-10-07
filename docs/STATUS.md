@@ -1,5 +1,11 @@
 # Статус разработки
 
+## Объединение Task 5 и approved execution plan CPM — 2026-10-08
+
+В основном checkout объединены принятый Task 5 (`ac9c645`, два независимых APPROVED) и reviewed execution annex (`9c71ed2`, два новых независимых APPROVED; metadata `003ff23`). Контракты, source policy, математика и все 41 snippets плана сохранены. При объединении разрешён только STATUS conflict с сохранением обоих наборов исторических записей. CPM code ещё не начат.
+
+Task 5 worker подтвердил 399/399 application tests и 30/30 browser E2E. Основной checkout выполняет полный verify/preflight и format/package; эти результаты фиксируются отдельной фактической записью после завершения. Далее Task 7: A→B/C→D→E, с двумя независимыми review каждого checkpoint; B/C переключает LIVE и initial frozen compatibility одним GREEN commit. Production migration, remote actions и release не выполнялись; S4–S6 остаются впереди.
+
 ## Принятая интеграция Task 5 — 2026-10-08
 
 Task 5 принят после исправлений: независимые Spec и Standards re-review дали APPROVED на `ac9c6450d0ddac61d8f36086796fb1eeaf5569fe`. Все четыре замечания закрыты. В основном checkout объединены contracts V2, schema003, атомарные source/provenance/undo/replay и optional UI; STATUS conflict разрешён сохранением обеих историй. Application source соответствует reviewed candidate; локальное объединение не добавляет новых правил.
@@ -36,6 +42,24 @@ Publication guard в linked worktree: security:workspace остановлен н
 В основном checkout сохранён technical annex с двумя новыми независимыми APPROVED на substantive `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9`; metadata `8060ffc` сохраняет approved body/snippets. Разрешён единственный конфликт STATUS: сохранены оба набора исторических записей. Application source, schema registry и lockfile не менялись; CPM code ещё не начат. Task 5 integration проходит собственные application checks и требует двух независимых review перед исполнением annex.
 
 Документационная интеграция прошла `check:kit` (43 Markdown files, 159 local links), `format:check` и diff check; staged guard/Gitleaks и обычные hooks обязательны при commit. Полный application preflight выполнен на принятом Task 4; для documentation merge он не заменяет последующую проверку интеграции Task 5. Production migration и внешние действия не выполнялись.
+
+## Review metadata sequencing CPM annex — 2026-10-08
+
+Current execution candidate [annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` получил два новых независимых APPROVED: Spec и Standards/executability. Atomic B/C LIVE/freeze checkpoint, focused compatibility guards и отдельный D deliverable проверены отдельно; bfa0f8e C17/math approval остаётся историческим. В header/footer и ADR008 записаны только review facts. Substantive body, approved procedural instructions и все 41 fenced snippets сохранены побайтово.
+
+На закреплённом Node24.21.0/npm11.19.0 прошли byte comparison approved body/procedural instructions/41fenced blocks, ADR formula/prior STATUS retention, `check:kit` (42 Markdown files, 156 local links), diff checks и staged privacy guard/Gitleaks на трёх scoped docs. Обычные hooks включены. Неизменённые numerical/snippet/application suites повторно не запускались.
+
+Это metadata-only revision, без CPM implementation или application edits. Task5 fix/check/review ещё завершаются; два approvals Task5 здесь не заявлены. Task7 требует actual Task5 GREEN и завершённого review его implementation. Approval плана относится к exact9c71ed2 и не переносится на изменённый body или будущую реализацию.
+
+## Sequencing amendment technical CPM annex — 2026-10-08
+
+[Annex Task 6](superpowers/plans/2026-10-07-explicit-date-cpm.md) уточняет порядок исполнения: B/C LIVE scheduler switch обязан одновременно создать и подключить уже описанную initial frozen projection, её literal tests и frozen resolver/preview/preparer imports в одном GREEN commit. Добавлены focused compatibility checks поверх unit suite и полный scope этого commit. D использует готовый freeze, сохраняет live-only validators/persistence/HTTP/rollback/durable cached replay; initial projection cases не объявляются повторно RED.
+
+Read-only audit точного Task5 candidate5134b93 обнаружил, что initial adapter/preview ещё вызывают active calculateSchedule, а frozen expectations находятся в integration suites. Unit GREEN не защищает historical outcome. Actual Task5 consumer imports в execution instructions уточнены до calculateSchedule/planning; pinned f5 extraction и все snippets остаются прежними. Audit не является approval Task5 implementation.
+
+На Node24.21.0/npm11.19.0 прошли byte comparison всех 41 fenced blocks и nonprocedural annex text с metadata8060ffc, сверка сохранности prior STATUS records, `check:kit` (42 Markdown files, 155 local links), diff checks и staged privacy guard/Gitleaks на двух scoped docs. Обычные hooks включены. Неизменённые численные/snippet/application suites не повторялись.
+
+Изменены только procedural text и factual review status; prior bfa0f8e approvals остаются историческими для C17/math/DTO/source policy. Новый execution candidate pending двух independent reviews, Task5 ещё проходит fix/check/review. Task7 CPM code запрещён до Task5 GREEN и approvals текущего плана. В этом изменении только annex и STATUS; application/schema/lockfile/ADR/runtime и внешние действия не затронуты.
 
 ## Review metadata C17 CPM annex — 2026-10-08
 

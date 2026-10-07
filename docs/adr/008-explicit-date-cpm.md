@@ -1,6 +1,6 @@
 # ADR 008 — критический путь введённого расписания
 
-Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md); C17-amended technical annex `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` прошёл два независимых review 2026-10-08. O06/G-CPM закрыт как выбор политики; новый CPM ещё не реализован, Task7 требует actual Task5 GREEN.
+Дата: 2026-10-07. Статус: принято владельцем для будущей реализации, [C16](../DECISIONS.md); current execution annex `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` прошёл два независимых review 2026-10-08. Historical C17/math approval bfa0f8e сохранён отдельно. O06/G-CPM закрыт как выбор политики; новый CPM ещё не реализован, Task7 требует actual Task5 GREEN и завершённого Task5 review.
 
 ## Контекст
 
@@ -24,7 +24,7 @@ Pure analysis остаётся серверным и детерминирова�
 
 ## Проверка
 
-Математические policy inputs и P01–P11 приняты владельцем. [Технический implementation annex Task 6](../superpowers/plans/2026-10-07-explicit-date-cpm.md) определяет полный typed DTO/strict schemas, pure function contracts, numerical fixture format, runnable RED/GREEN steps, fork/join, deep-summary, conflict+unknown и undo/restart cases. Current substantive candidate `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` получил независимые Spec **APPROVED** и Standards/executability **APPROVED**. Прежние verdicts для `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` остаются историческими; новый input/body проверен отдельно. Последующая metadata запись сохраняет approved substantive body/snippets и не является review реализации.
+Математические policy inputs и P01–P11 приняты владельцем. [Технический implementation annex Task 6](../superpowers/plans/2026-10-07-explicit-date-cpm.md) определяет полный typed DTO/strict schemas, pure function contracts, numerical fixture format, runnable RED/GREEN steps, fork/join, deep-summary, conflict+unknown и undo/restart cases. Current execution candidate `9c71ed2aa8b8f9f9a68a282d50189b24299d14df` получил независимые Spec **APPROVED** и Standards/executability **APPROVED**. Эти reviews проверили atomic B/C LIVE/freeze checkpoint, focused compatibility guards и отдельный D deliverable; математический/typed body и все snippets сохранены. Прежние verdicts для C17 candidate `bfa0f8e1d2cf42a8d0c13f9e968304217ba931f9` и `29f193ea8dcd7ab0213fe84fc7dafa913a4a4b21` остаются историческими. Последующая metadata запись сохраняет approved body/procedural instructions/snippets и не является review реализации.
 
 Reviewed C17 source boundary задаёт server-private `PrivateSnapshotV2.legacyIntervalUnavailable` → pure `OptionalInput.unavailableTaskIds`. Marked retained valid pair остаётся unknown для real/coverage/full summary/CPM и Hknown; raw known FS conflict, source minima/notes и original edges сохраняются. Public Task/DTO не получают provenance. Annex задаёт explicit validated clear с original-done return, private undo/reopen/preserveWork passage и server-only frozen pending projection для initial migration/preview, отдельно от единственного current LIVE scheduler. Это reviewed technical contract, actual runtime integration ещё относится к Task5.
 
