@@ -4,11 +4,9 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { privateSnapshotV2Schema as snapshotV2Schema } from '../src/server/optional-snapshot.js';
 import { canonical } from '../src/shared/canonical.js';
-import {
-  projectTreeV2Schema,
-  snapshotV2Schema,
-} from '../src/shared/optional-contracts.js';
+import { projectTreeV2Schema } from '../src/shared/optional-contracts.js';
 import {
   replayLegacyOperation,
   resolutionKey,
@@ -221,7 +219,9 @@ function resolutions(db: Database.Database): ResolutionIndex {
         context,
         taskId: item.id,
         legacyDigest: sha(canonical(item)),
+        contextDigest: sha(canonical(snapshot)),
         source,
+        outcome: 'materialized-done',
       });
     }
   }

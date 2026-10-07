@@ -1,6 +1,6 @@
 CREATE TABLE scheduling_migration_archive (
   projectId TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK(kind IN ('project','task','operation-payload','operation-response','undo-snapshot')),
+  kind TEXT NOT NULL CHECK(kind IN ('project','task','operation-payload','operation-response','undo-snapshot','resolution')),
   recordKey TEXT NOT NULL,
   sourceSchemaVersion INTEGER NOT NULL CHECK(sourceSchemaVersion = 2),
   originalText TEXT NOT NULL,
@@ -10,6 +10,10 @@ CREATE TABLE scheduling_migration_archive (
 ALTER TABLE operations ADD COLUMN contractVersion INTEGER NOT NULL DEFAULT 1 CHECK(contractVersion IN (1,2));
 ALTER TABLE operations ADD COLUMN responseContractVersion INTEGER NOT NULL DEFAULT 2 CHECK(responseContractVersion = 2);
 ALTER TABLE operations ADD COLUMN responseSha256 TEXT NOT NULL DEFAULT '';
+CREATE TABLE task_schedule_provenance (
+  taskId TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL CHECK(reason = 'legacy-interval-unavailable')
+) STRICT;
 -- APPLY_AFTER_ARCHIVE
 ALTER TABLE tasks DROP COLUMN planMode;
 ALTER TABLE tasks DROP COLUMN notBefore;

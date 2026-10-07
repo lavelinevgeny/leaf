@@ -35,3 +35,7 @@ Source-only перенос сохраняет null Auto dates, но скрыва
 Предстоящие synthetic tests: M01–M10, точные counts/digests и auth preservation, разные current/history states одного taskId, missing/mismatched resolution, cached retry/restart, undo удалённой задачи, stale/missing acknowledgement, startup без подтверждения, repeated migration и rollback при отказе version insert. `npm run check:kit` проверяет ссылки, а не эти application behaviors.
 
 Production execution требует отдельного поручения и backup по [PRIVACY](../PRIVACY.md). Archive сохраняет originals; downgrade без проверенной процедуры не обещается. Реальные данные агенту не требуются.
+
+## Техническое уточнение Task 4 — 2026-10-08
+
+[ADR 009](009-unavailable-legacy-provenance.md) определяет приватный durable unavailable marker, private undo snapshot, дополнительную immutable resolution metadata и проверку digest полного собственного context. Это сохраняет source pair без ложного восстановления done lock и не добавляет публичный legacy mode. Frozen server-only calculator закреплён за S3 `6317791dff9dc944de3a1676effebcf1322b2ff6`; его calendar/types также независимы от активного solver. Resolver воспроизводит полный собственный snapshot; непроверенный cached schedule не используется как альтернативная опора. Task 4 helpers остаются неактивными до review и интеграции Task 5.

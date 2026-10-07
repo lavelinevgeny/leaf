@@ -90,6 +90,7 @@ function resolve(
   context: SnapshotContext,
   legacyTask: object,
   source: LegacyResolution['source'],
+  ownSnapshot: object = { ...snapshot, tasks: [legacyTask] },
 ) {
   return new Map([
     [
@@ -100,7 +101,14 @@ function resolve(
         legacyDigest: createHash('sha256')
           .update(canonical(legacyTask))
           .digest('hex'),
+        contextDigest: createHash('sha256')
+          .update(canonical(ownSnapshot))
+          .digest('hex'),
         source,
+        outcome:
+          source.inputStart === null || source.inputFinish === null
+            ? ('unavailable' as const)
+            : ('materialized-done' as const),
       },
     ],
   ]);
@@ -472,7 +480,11 @@ describe('frozen legacy compatibility', () => {
           project: { ...tree.project, startDate: null },
         },
         operation,
-        resolve(operation, legacyTask, source),
+        resolve(operation, legacyTask, source, {
+          ...snapshot,
+          tasks: [legacyTask],
+          project: { ...snapshot.project, startDate: null },
+        }),
       );
       expect(result.tasks[0]).toMatchObject(source);
       expect(result.schedule).toMatchObject({
@@ -505,11 +517,24 @@ describe('frozen legacy compatibility', () => {
         tasks: [relative],
       },
       operation,
-      resolve(operation, relative, {
-        inputStart: '2026-10-09',
-        inputFinish: '2026-10-13',
-        durationDays: 3,
-      }),
+      resolve(
+        operation,
+        relative,
+        {
+          inputStart: '2026-10-09',
+          inputFinish: '2026-10-13',
+          durationDays: 3,
+        },
+        {
+          ...snapshot,
+          tasks: [relative],
+          project: {
+            ...snapshot.project,
+            calendarType: 'weekdays',
+            startDate: '2026-10-09',
+          },
+        },
+      ),
     );
     expect(result.tasks[0]).toMatchObject({
       inputStart: '2026-10-09',
@@ -596,11 +621,16 @@ describe('frozen legacy compatibility', () => {
     const result = adaptLegacyTree(
       { ...tree, tasks: [done, following], dependencies: [edge] },
       operation,
-      resolve(operation, done, {
-        inputStart: '2026-10-05',
-        inputFinish: '2026-10-07',
-        durationDays: 3,
-      }),
+      resolve(
+        operation,
+        done,
+        {
+          inputStart: '2026-10-05',
+          inputFinish: '2026-10-07',
+          durationDays: 3,
+        },
+        { ...snapshot, tasks: [done, following], dependencies: [edge] },
+      ),
     );
     expect(
       result.tasks.map(({ inputStart, inputFinish }) => [
@@ -645,7 +675,11 @@ describe('frozen legacy compatibility', () => {
         tasks: [done],
       },
       operation,
-      resolve(operation, done, source),
+      resolve(operation, done, source, {
+        ...snapshot,
+        tasks: [done],
+        project: { ...snapshot.project, calendarType: 'weekdays' },
+      }),
     );
     expect(result.tasks[0]).toMatchObject(source);
     expect(result.schedule.diagnostics.map((item) => item.code)).toContain(

@@ -354,6 +354,17 @@ export function calculateOptionalSchedule(
     return finishResult();
   }
 
+  const unavailable = new Set(input.unavailableTaskIds ?? []);
+  for (const id of unavailable)
+    if (!taskMap.has(id)) diagnostic('INVALID_UNAVAILABLE_TASK', [id]);
+  const unavailableLeaves = leaves.filter((id) => unavailable.has(id));
+  if (unavailableLeaves.length)
+    diagnostic(
+      'LEGACY_INTERVAL_UNAVAILABLE',
+      unavailableLeaves,
+      [],
+      'incomplete',
+    );
   const aggregates = new Map(ids.map((id) => [id, blankAggregate()]));
   const knownStartMin = new Map<string, string | null>(
     ids.map((id) => [id, null]),
@@ -392,7 +403,7 @@ export function calculateOptionalSchedule(
       continue;
     }
     const real = realInterval(task, input.calendarType);
-    if (real !== null) {
+    if (real !== null && !unavailable.has(id)) {
       result.tasks[id] = real;
       aggregate.realStartMin = real.startDate;
       aggregate.realFinishMax = real.finishDate;

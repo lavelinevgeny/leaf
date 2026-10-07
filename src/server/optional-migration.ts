@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { canonical } from '../shared/canonical.js';
 import { DomainError } from '../domain/tree.js';
 import { validateSourceInput } from '../domain/optional-planning.js';
 import {
@@ -37,11 +38,12 @@ const undoSchema = z.strictObject({
   sequence: z.number().int().positive(),
   projectId: z.uuid(),
   beforeSnapshot: z.string(),
+  afterRevision: z.number().int().nonnegative(),
 });
 const sha = (text: string): string =>
   createHash('sha256').update(text).digest('hex');
 const sqlDigest =
-  'c510f13199ca4bbdc7573dce1aafb46d345a0f874690a6a77c97928ba75dd312';
+  'daf89b5c9459da428ae10f74368ba19e9530a7f34bc6d63d9a69566868085191';
 function invalidSnapshot(): never {
   throw new DomainError(
     'INVALID_LEGACY_SNAPSHOT',
@@ -66,7 +68,7 @@ function json(text: string): unknown {
     return invalidSnapshot();
   }
 }
-function originals(db: Database.Database) {
+export function loadLegacyOriginals(db: Database.Database) {
   const projects = parse(
     z.array(LegacyProjectSchema),
     db.prepare(`SELECT ${projectColumns} FROM projects ORDER BY id`).all(),
@@ -99,7 +101,7 @@ function originals(db: Database.Database) {
     z.array(undoSchema),
     db
       .prepare(
-        'SELECT sequence,projectId,beforeSnapshot FROM undo_snapshots ORDER BY sequence',
+        'SELECT sequence,projectId,beforeSnapshot,afterRevision FROM undo_snapshots ORDER BY sequence',
       )
       .all(),
   );
@@ -112,7 +114,9 @@ function originals(db: Database.Database) {
     invalidSnapshot();
   return { projects, tasks, dependencies, operations, undo };
 }
-function contexts(rows: ReturnType<typeof originals>): LegacyContextRecord[] {
+function contexts(
+  rows: ReturnType<typeof loadLegacyOriginals>,
+): LegacyContextRecord[] {
   const result: LegacyContextRecord[] = rows.projects.map((project) => ({
     context: { kind: 'active', key: project.id },
     snapshot: {
@@ -124,6 +128,11 @@ function contexts(rows: ReturnType<typeof originals>): LegacyContextRecord[] {
     },
   }));
   for (const operation of rows.operations) {
+    const payload = parse(
+      LegacyOperationPayloadSchema,
+      json(operation.payload),
+    );
+    if (payload.operationId !== operation.operationId) invalidSnapshot();
     const tree = parse(LegacyTreeSchema, json(operation.response));
     if (tree.project.id !== operation.projectId) invalidSnapshot();
     result.push({
@@ -155,7 +164,7 @@ function contexts(rows: ReturnType<typeof originals>): LegacyContextRecord[] {
 export function loadLegacyContexts(
   db: Database.Database,
 ): LegacyContextRecord[] {
-  return contexts(originals(db));
+  return contexts(loadLegacyOriginals(db));
 }
 export function migrationCategoryCounts(db: Database.Database): {
   auto: number;
@@ -238,7 +247,7 @@ export function prepareOptionalMigration(
   )
     throw new Error('Unsupported database schema');
   if (versions.length === 3) return;
-  const rows = originals(db);
+  const rows = loadLegacyOriginals(db);
   const legacyContexts = contexts(rows);
   const validResolutionKeys = new Set(
     legacyContexts.flatMap(({ context, snapshot }) =>
@@ -319,6 +328,13 @@ export function prepareOptionalMigration(
       String(undo.sequence),
       undo.beforeSnapshot,
     );
+  for (const { context, snapshot } of legacyContexts)
+    for (const task of snapshot.tasks) {
+      const key = resolutionKey(context, task.id);
+      const resolution = resolutions.get(key);
+      if (resolution)
+        archive(snapshot.project.id, 'resolution', key, canonical(resolution));
+    }
   db.exec(parts[1]!);
   const updateSource = db.prepare(
     'UPDATE tasks SET inputStart=@inputStart,inputFinish=@inputFinish,durationDays=@durationDays WHERE id=@id AND projectId=@projectId',
@@ -327,6 +343,15 @@ export function prepareOptionalMigration(
     if (context.kind !== 'active') continue;
     for (const task of snapshots.get(resolutionKey(context, ''))!.tasks)
       updateSource.run(task);
+  }
+  const insertProvenance = db.prepare(
+    "INSERT INTO task_schedule_provenance(taskId,reason) VALUES (?, 'legacy-interval-unavailable')",
+  );
+  for (const { context } of legacyContexts) {
+    if (context.kind !== 'active') continue;
+    for (const id of snapshots.get(resolutionKey(context, ''))!
+      .legacyIntervalUnavailable)
+      insertProvenance.run(id);
   }
   const updateResponse = db.prepare(
     'UPDATE operations SET response=?,responseContractVersion=2,responseSha256=? WHERE operationId=?',

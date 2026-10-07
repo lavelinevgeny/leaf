@@ -3,15 +3,20 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
   projectTreeV2Schema,
-  snapshotV2Schema,
   taskV2Schema,
   type ProjectTreeV2,
-  type SnapshotV2,
   type SourceFields,
 } from '../shared/optional-contracts.js';
 import { canonical } from '../shared/canonical.js';
 import { calculateOptionalSchedule } from '../domain/optional-scheduling.js';
 import { realInterval } from '../domain/optional-planning.js';
+import {
+  privateSnapshotV2Schema,
+  type PrivateSnapshotV2,
+} from './optional-snapshot.js';
+import type { LegacyContextRecord } from './optional-migration.js';
+import { calculateLegacySchedule } from './legacy-scheduling.js';
+import { indexToDate, nextWorkingDay } from './legacy-calendar.js';
 import { DomainError } from '../domain/tree.js';
 import {
   LegacySnapshotSchema,
@@ -27,7 +32,9 @@ export type LegacyResolution = {
   context: SnapshotContext;
   taskId: string;
   legacyDigest: string;
+  contextDigest: string;
   source: SourceFields;
+  outcome: 'source' | 'materialized-auto' | 'materialized-done' | 'unavailable';
 };
 export type ResolutionIndex = ReadonlyMap<string, LegacyResolution>;
 
@@ -68,6 +75,7 @@ function sourceFor(
   task: LegacyTask,
   context: SnapshotContext,
   resolutions: ResolutionIndex,
+  contextDigest: string,
 ): SourceFields {
   const resolution = resolutions.get(resolutionKey(context, task.id));
   if (!resolution) {
@@ -82,7 +90,14 @@ function sourceFor(
     resolution.context.kind !== context.kind ||
     resolution.context.key !== context.key ||
     resolution.taskId !== task.id ||
-    resolution.legacyDigest !== digestLegacyTask(task)
+    resolution.legacyDigest !== digestLegacyTask(task) ||
+    resolution.contextDigest !== contextDigest ||
+    ![
+      'source',
+      'materialized-auto',
+      'materialized-done',
+      'unavailable',
+    ].includes(resolution.outcome)
   )
     policyRequired();
   // Scalar validation only: historical calendar/source contradictions are
@@ -93,27 +108,131 @@ function sourceFor(
   if (
     !source.success ||
     source.data.durationDays !== task.durationDays ||
-    (!ambiguous(task) &&
+    ((resolution.outcome === 'unavailable' || !ambiguous(task)) &&
       (source.data.inputStart !== task.inputStart ||
         source.data.inputFinish !== task.inputFinish))
   )
     policyRequired();
   return source.data;
 }
+// A full own-context recomputation avoids trusting a cached result whose
+// provenance cannot be proved. In particular, current origins never enter history.
+export function resolveLegacySources(
+  contexts: readonly LegacyContextRecord[],
+): ResolutionIndex {
+  const index = new Map<string, LegacyResolution>();
+  for (const { context, snapshot } of contexts) {
+    const legacy = LegacySnapshotSchema.parse(snapshot);
+    const schedule = calculateLegacySchedule(legacy);
+    const contextDigest = createHash('sha256')
+      .update(canonical(legacy))
+      .digest('hex');
+    for (const task of legacy.tasks) {
+      let source: SourceFields = {
+        inputStart: task.inputStart,
+        inputFinish: task.inputFinish,
+        durationDays: task.durationDays,
+      };
+      let outcome: LegacyResolution['outcome'] = 'source';
+      const absoluteDone =
+        task.status === 'done' &&
+        (task.completedStart !== null || task.completedFinish !== null);
+      const relativeDone =
+        task.status === 'done' &&
+        (task.completedStartIndex !== null ||
+          task.completedFinishIndex !== null);
+      if (absoluteDone) {
+        if (task.completedStart !== null && task.completedFinish !== null) {
+          source = {
+            ...source,
+            inputStart: task.completedStart,
+            inputFinish: task.completedFinish,
+          };
+          outcome = 'materialized-done';
+        } else outcome = 'unavailable';
+      } else if (relativeDone) {
+        outcome = 'unavailable';
+        if (
+          legacy.project.startDate !== null &&
+          task.completedStartIndex !== null &&
+          task.completedFinishIndex !== null &&
+          task.completedFinishIndex > task.completedStartIndex
+        ) {
+          try {
+            const origin = nextWorkingDay(
+              legacy.project.startDate,
+              legacy.project.calendarType,
+            );
+            source = {
+              ...source,
+              inputStart: indexToDate(
+                task.completedStartIndex,
+                origin,
+                legacy.project.calendarType,
+              ),
+              inputFinish: indexToDate(
+                task.completedFinishIndex - 1,
+                origin,
+                legacy.project.calendarType,
+              ),
+            };
+            outcome = 'materialized-done';
+          } catch (error) {
+            if (!(error instanceof RangeError)) throw error;
+          }
+        }
+      } else if (task.planMode === 'auto') {
+        const old = schedule.tasks[task.id];
+        const candidate = {
+          ...source,
+          inputStart: old?.startDate ?? null,
+          inputFinish: old?.finishDate ?? null,
+        };
+        if (realInterval(candidate, legacy.project.calendarType) !== null) {
+          source = candidate;
+          outcome = 'materialized-auto';
+        } else outcome = 'unavailable';
+      }
+      const key = resolutionKey(context, task.id);
+      if (index.has(key)) policyRequired();
+      index.set(key, {
+        context,
+        taskId: task.id,
+        legacyDigest: digestLegacyTask(task),
+        contextDigest,
+        source,
+        outcome,
+      });
+    }
+  }
+  return index;
+}
+
 export function projectLegacySnapshot(
   value: unknown,
   context: SnapshotContext,
   resolutions: ResolutionIndex,
-): SnapshotV2 {
+): PrivateSnapshotV2 {
   const parsed = LegacySnapshotSchema.safeParse(value);
   if (!parsed.success) invalidLegacySnapshot();
   const { project, tasks, dependencies } = parsed.data;
+  const contextDigest = createHash('sha256')
+    .update(canonical(parsed.data))
+    .digest('hex');
   if (
     tasks.some((task) => task.projectId !== project.id) ||
     dependencies.some((edge) => edge.projectId !== project.id)
   )
     invalidLegacySnapshot();
-  return snapshotV2Schema.parse({
+  return privateSnapshotV2Schema.parse({
+    legacyIntervalUnavailable: tasks
+      .filter(
+        (task) =>
+          resolutions.get(resolutionKey(context, task.id))?.outcome ===
+          'unavailable',
+      )
+      .map((task) => task.id)
+      .sort(),
     project: {
       id: project.id,
       title: project.title,
@@ -131,7 +250,7 @@ export function projectLegacySnapshot(
       description: task.description,
       sortOrder: task.sortOrder,
       status: task.status,
-      ...sourceFor(task, context, resolutions),
+      ...sourceFor(task, context, resolutions, contextDigest),
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
     })),
@@ -160,27 +279,12 @@ export function adaptLegacyTree(
     calendarType: snapshot.project.calendarType,
     tasks: snapshot.tasks,
     dependencies: snapshot.dependencies,
+    unavailableTaskIds: snapshot.legacyIntervalUnavailable,
   });
-  const unavailable = tasks
-    .filter(
-      (task, index) =>
-        ambiguous(task) &&
-        realInterval(snapshot.tasks[index]!, project.calendarType) === null,
-    )
-    .map((task) => task.id)
-    .sort();
-  if (unavailable.length) {
-    schedule.diagnostics.push({
-      code: 'LEGACY_INTERVAL_UNAVAILABLE',
-      taskIds: unavailable,
-      dependencyIds: [],
-      messageKey: 'scheduling.LEGACY_INTERVAL_UNAVAILABLE',
-    });
-    if (schedule.feasibility === 'feasible')
-      schedule.feasibility = 'incomplete';
-  }
   return projectTreeV2Schema.parse({
-    ...snapshot,
+    project: snapshot.project,
+    tasks: snapshot.tasks,
+    dependencies: snapshot.dependencies,
     contractVersion: 2,
     canUndo: parsed.data.canUndo,
     schedule,

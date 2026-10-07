@@ -11,6 +11,8 @@ export interface OptionalTask extends SourceFields {
   status: 'todo' | 'doing' | 'done';
 }
 export interface OptionalInput {
+  // Server-private C17 provenance; does not change source fields or FS edges.
+  unavailableTaskIds?: readonly string[];
   calendarType: CalendarType;
   tasks: readonly OptionalTask[];
   dependencies: readonly SchedulingDependency[];
