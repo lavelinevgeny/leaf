@@ -180,6 +180,73 @@ describe('authenticated API boundary', () => {
       ).statusCode,
     ).toBe(413);
   });
+  it('protects decoded API routes with exact Origin, JSON and no-store', async () => {
+    const cookie = await login();
+    const created = await project(cookie);
+    const baseline = app.repository.getTree(
+      created.id,
+      app.auth.session(cookie)!,
+    );
+    for (const suppliedOrigin of [undefined, 'http://wrong.example.test']) {
+      const requestHeaders = {
+        cookie: `leaf_session=${cookie}`,
+        ...(suppliedOrigin ? { origin: suppliedOrigin } : {}),
+      };
+      const create = await app.inject({
+        method: 'POST',
+        url: '/%61pi/projects',
+        headers: requestHeaders,
+        payload: { title: 'Rejected encoded creation' },
+      });
+      expect(create.statusCode).toBe(403);
+      expect(create.headers['cache-control']).toBe('no-store');
+      const mutation = await app.inject({
+        method: 'POST',
+        url: `/%61pi/projects/${created.id}/commands`,
+        headers: requestHeaders,
+        payload: {
+          expectedRevision: baseline.project.revision,
+          operationId: randomUUID(),
+          command: {
+            type: 'task.create',
+            title: 'Rejected encoded task',
+            parentId: null,
+          },
+        },
+      });
+      expect(mutation.statusCode).toBe(403);
+      expect(mutation.headers['cache-control']).toBe('no-store');
+      const authentication = await app.inject({
+        method: 'POST',
+        url: '/%61pi/auth/login',
+        headers: requestHeaders,
+        payload: { password: syntheticPassword },
+      });
+      expect(authentication.statusCode).toBe(403);
+      expect(authentication.headers['cache-control']).toBe('no-store');
+      expect(Boolean(authentication.headers['set-cookie'])).toBe(false);
+    }
+    const invalidJson = await app.inject({
+      method: 'POST',
+      url: '/%61pi/projects',
+      headers: { ...headers(cookie), 'content-type': 'text/plain' },
+      payload: 'Synthetic',
+    });
+    expect(invalidJson.statusCode).toBe(415);
+    const projects = await app.inject({
+      url: '/%61pi/projects',
+      headers: headers(cookie),
+    });
+    expect(projects.statusCode).toBe(200);
+    expect(projects.headers['cache-control']).toBe('no-store');
+    expect(projects.json<Project[]>()).toEqual([created]);
+    const tree = await app.inject({
+      url: `/%61pi/projects/${created.id}/tree`,
+      headers: headers(cookie),
+    });
+    expect(tree.headers['cache-control']).toBe('no-store');
+    expect(tree.json<ProjectTree>()).toEqual(baseline);
+  });
   it('rate limits uniform incorrect login responses', async () => {
     await app.auth.setup(syntheticPassword);
     for (let i = 0; i < 5; i++) {

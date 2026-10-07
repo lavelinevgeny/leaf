@@ -63,11 +63,13 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
           'Content-Security-Policy',
           "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         );
-      if (request.url.startsWith('/api/'))
-        reply.header('Cache-Control', 'no-store');
+      // Fastify resolves percent-encoded paths before selecting a route.
+      // Apply API policy to that registered route, never the raw URL.
+      const isApiRoute = request.routeOptions.url?.startsWith('/api/') ?? false;
+      if (isApiRoute) reply.header('Cache-Control', 'no-store');
       if (
         ['POST', 'PATCH', 'DELETE', 'PUT'].includes(request.method) &&
-        request.url.startsWith('/api/')
+        isApiRoute
       ) {
         if (request.headers.origin !== options.publicOrigin)
           throw new DomainError(

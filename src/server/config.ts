@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
 import {
   basename,
   dirname,
@@ -21,10 +21,18 @@ export interface RuntimeConfig {
   databasePath: string;
   staticRoot: string;
 }
+function entryStat(path: string) {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
 function resolvedDestination(path: string): string {
   const tail: string[] = [];
   let parent = resolve(path);
-  while (!existsSync(parent)) {
+  while (!entryStat(parent)) {
     tail.unshift(basename(parent));
     const next = dirname(parent);
     if (next === parent)
@@ -39,6 +47,22 @@ function inside(path: string, root: string): boolean {
     part === '' ||
     (!part.startsWith(`..${sep}`) && part !== '..' && !isAbsolute(part))
   );
+}
+export function validateDatabasePath(databasePath: string): string {
+  if (!isAbsolute(databasePath))
+    throw new Error('Database path must be absolute');
+  const directory = resolvedDestination(dirname(databasePath));
+  if (inside(directory, realpathSync(applicationRoot)))
+    throw new Error('Database path must be outside the application checkout');
+  const destination = join(directory, basename(databasePath));
+  // lstat also sees dangling links. Never let SQLite or chmod follow a file
+  // link; WAL, shared-memory and rollback journals use the same boundary.
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    const stat = entryStat(destination + suffix);
+    if (stat && (!stat.isFile() || stat.isSymbolicLink()))
+      throw new Error('Database and companion paths must be regular files');
+  }
+  return destination;
 }
 export function loadConfig(
   environment: Record<string, string | undefined> = process.env,
@@ -70,12 +94,13 @@ export function loadConfig(
     !['http:', 'https:'].includes(parsed.protocol)
   )
     throw new Error('LEAF_PUBLIC_ORIGIN must be an exact HTTP origin');
+  const databasePath = validateDatabasePath(join(destination, 'leaf.sqlite'));
   mkdirSync(destination, { recursive: true, mode: 0o700 });
   return {
     host,
     port,
     publicOrigin,
-    databasePath: join(destination, 'leaf.sqlite'),
+    databasePath,
     staticRoot: join(applicationRoot, 'dist/client'),
   };
 }

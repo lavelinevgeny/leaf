@@ -5,11 +5,15 @@ import {
   mkdirSync,
   writeFileSync,
   symlinkSync,
+  readFileSync,
+  existsSync,
+  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadConfig } from '../src/server/config.js';
+import { openDatabase } from '../src/server/database.js';
 import { buildApp } from '../src/server/app.js';
 
 const dirs: string[] = [];
@@ -48,6 +52,53 @@ describe('safe runtime configuration', () => {
     symlinkSync(resolve('.'), join(dir, 'checkout'), 'dir');
     expect(() =>
       loadConfig({ LEAF_DATA_DIR: join(dir, 'checkout', 'synthetic-data') }),
+    ).toThrow();
+  });
+  it.each(['', '-wal', '-shm', '-journal'])(
+    'rejects existing database path symlinks before writes or chmod (%s)',
+    (suffix) => {
+      const dir = scratch();
+      const targetDir = scratch();
+      const target = join(targetDir, 'synthetic-target.txt');
+      const contents = 'Synthetic protected bytes';
+      writeFileSync(target, contents, { mode: 0o640 });
+      const mode = statSync(target).mode;
+      const databasePath = join(dir, 'leaf.sqlite');
+      symlinkSync(target, databasePath + suffix);
+      expect(() => loadConfig({ LEAF_DATA_DIR: dir })).toThrow();
+      expect(() => openDatabase(databasePath)).toThrow();
+      expect(readFileSync(target, 'utf8')).toBe(contents);
+      expect(statSync(target).mode).toBe(mode);
+      if (suffix) expect(existsSync(databasePath)).toBe(false);
+    },
+  );
+  it.each(['', '-wal', '-shm', '-journal'])(
+    'rejects dangling database path symlinks without creating their targets (%s)',
+    (suffix) => {
+      const dir = scratch();
+      const targetDir = scratch();
+      const target = join(targetDir, 'synthetic-absent-target.sqlite');
+      const databasePath = join(dir, 'leaf.sqlite');
+      symlinkSync(target, databasePath + suffix);
+      expect(() => loadConfig({ LEAF_DATA_DIR: dir })).toThrow();
+      expect(() => openDatabase(databasePath)).toThrow();
+      expect(existsSync(target)).toBe(false);
+      if (suffix) expect(existsSync(databasePath)).toBe(false);
+    },
+  );
+  it('rejects a file symlink into public checkout without opening its target', () => {
+    const dir = scratch();
+    const databasePath = join(dir, 'leaf.sqlite');
+    symlinkSync(resolve('src/shared/contracts.ts'), databasePath);
+    // Config validation only: the public target must never reach SQLite/chmod.
+    expect(() => loadConfig({ LEAF_DATA_DIR: dir })).toThrow();
+  });
+  it('rejects direct database paths through a directory symlink into checkout', () => {
+    const dir = scratch();
+    symlinkSync(resolve('.'), join(dir, 'checkout'), 'dir');
+    // No runtime fixture is created inside checkout.
+    expect(() =>
+      openDatabase(join(dir, 'checkout', 'never-create-synthetic.sqlite')),
     ).toThrow();
   });
   it('refuses noninteractive account setup and password arguments without creating a DB', () => {

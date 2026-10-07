@@ -2,12 +2,16 @@ import Database from 'better-sqlite3';
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateDatabasePath } from './config.js';
 
 export function openDatabase(databasePath: string): Database.Database {
-  mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 });
-  const db = new Database(databasePath);
+  let safePath = validateDatabasePath(databasePath);
+  mkdirSync(dirname(safePath), { recursive: true, mode: 0o700 });
+  // Recheck after mkdir and immediately before the driver can open any file.
+  safePath = validateDatabasePath(safePath);
+  const db = new Database(safePath);
   try {
-    chmodSync(databasePath, 0o600);
+    chmodSync(safePath, 0o600);
     db.pragma('foreign_keys = ON');
     db.pragma('busy_timeout = 5000');
     db.pragma('journal_mode = WAL');
