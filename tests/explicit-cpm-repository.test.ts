@@ -15,6 +15,9 @@ import {
   type CommandV2,
 } from '../src/shared/contracts.js';
 import { privateSnapshotV2Schema } from '../src/server/optional-snapshot.js';
+import Database from 'better-sqlite3';
+import { canonical } from '../src/shared/canonical.js';
+import { prepareOptionalMigration } from '../src/server/optional-migration.js';
 let directory: string,
   path: string,
   db: ReturnType<typeof openDatabase>,
@@ -839,10 +842,6 @@ it('private schema rejects duplicate foreign or cross-project markers and public
   ).toBe(false);
 });
 
-import Database from 'better-sqlite3';
-import { canonical } from '../src/shared/canonical.js';
-import { prepareOptionalMigration } from '../src/server/optional-migration.js';
-// Add readFileSync to the existing node:fs import.
 it('frozen legacy revision9 remains pending after live revision10 and restart without solver', () => {
   db.close();
   const legacyPath = join(directory, 'legacy-synthetic.sqlite');

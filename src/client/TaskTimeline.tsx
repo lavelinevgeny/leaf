@@ -107,6 +107,7 @@ export function TaskTimeline({
         <label>
           {strings.scale}
           <select
+            aria-label={strings.scale}
             value={scale}
             onChange={(event) => setScale(event.target.value as Scale)}
           >

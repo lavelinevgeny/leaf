@@ -521,8 +521,22 @@ export function App() {
     }
   }
   async function undo() {
-    if (canNavigate() && treeRef.current?.canUndo)
-      await command({ type: 'undo' });
+    if (!canNavigate() || !treeRef.current?.canUndo) return;
+    const trigger = document.activeElement;
+    await command({ type: 'undo' });
+    if (trigger instanceof HTMLButtonElement)
+      requestAnimationFrame(() => {
+        if (!trigger.isConnected || document.activeElement !== document.body)
+          return;
+        if (!trigger.disabled) trigger.focus();
+        else {
+          const row = document.querySelector<HTMLElement>(
+            '[role="tree"][aria-label="Задачи"] [role="treeitem"][tabindex="0"]',
+          );
+          if (row) row.focus();
+          else document.getElementById('quick-task')?.focus();
+        }
+      });
   }
   async function planTask(task: Task, kind: 'move' | 'resize', target: string) {
     if (!canNavigate() || !treeRef.current) return;

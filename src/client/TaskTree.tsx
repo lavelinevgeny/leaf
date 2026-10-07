@@ -34,6 +34,13 @@ export function TaskTree({
   rows: suppliedRows,
   schedule,
 }: Props) {
+  const global = new Set(
+    schedule?.analysisStatus === 'ready' ? schedule.criticalTaskIds : [],
+  );
+  const partial =
+    schedule?.analysisStatus === 'incomplete' ? schedule.partialAnalysis : null;
+  const partialTasks = new Set(partial?.partialCriticalTaskIds ?? []);
+  const partialSummaries = new Set(partial?.partialCriticalSummaryIds ?? []);
   const rows = suppliedRows ?? treeRows(tasks, collapsed, rootId);
   const [focusedId, setFocusedId] = useState<string | null>(selectedId);
   const refs = useRef(new Map<string, HTMLDivElement>());
@@ -61,126 +68,146 @@ export function TaskTree({
   }
   return (
     <div role="tree" aria-label={label} className="task-tree">
-      {rows.map(({ task, depth, hasChildren }, index) => (
-        <div
-          key={task.id}
-          ref={(node) => {
-            if (node) refs.current.set(task.id, node);
-            else refs.current.delete(task.id);
-          }}
-          role="treeitem"
-          aria-label={`${task.title}, ${statusLabels[task.status]}${computedDateLabel(task, schedule) ? `, ${computedDateLabel(task, schedule)}` : ''}`}
-          aria-level={depth + 1}
-          aria-expanded={hasChildren ? !collapsed.has(task.id) : undefined}
-          aria-selected={selectedId === task.id}
-          tabIndex={focusId === task.id ? 0 : -1}
-          data-task-id={task.id}
-          className={`task-row${selectedId === task.id ? ' selected' : ''}${hasChildren ? ' summary' : ''}`}
-          style={{ paddingInlineStart: `${16 + depth * 22}px` }}
-          onFocus={() => setFocusedId(task.id)}
-          onClick={() => onSelect(task)}
-          onKeyDown={(event) => {
-            if (event.target !== event.currentTarget) return;
-            if (
-              event.altKey &&
-              ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
-                event.key,
-              )
-            ) {
-              event.preventDefault();
-              onAction(
-                (
-                  {
-                    ArrowUp: 'up',
-                    ArrowDown: 'down',
-                    ArrowLeft: 'out',
-                    ArrowRight: 'in',
-                  } as const
-                )[event.key as 'ArrowUp'],
-                task,
-              );
-              return;
-            }
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              focus(rows[index + 1]?.task.id);
-            }
-            if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              focus(rows[index - 1]?.task.id);
-            }
-            if (event.key === 'Home') {
-              event.preventDefault();
-              focus(rows[0]?.task.id);
-            }
-            if (event.key === 'End') {
-              event.preventDefault();
-              focus(rows.at(-1)?.task.id);
-            }
-            if (event.key === 'ArrowRight') {
-              event.preventDefault();
-              if (hasChildren && collapsed.has(task.id)) onToggle(task.id);
-              else if (hasChildren) focus(rows[index + 1]?.task.id);
-            }
-            if (event.key === 'ArrowLeft') {
-              event.preventDefault();
-              if (hasChildren && !collapsed.has(task.id)) onToggle(task.id);
-              else focus(task.parentId ?? undefined);
-            }
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              onSelect(task);
-            }
-            if (event.key === 'Insert') {
-              event.preventDefault();
-              onAction(event.shiftKey ? 'child' : 'sibling', task);
-            }
-            if (event.key === 'Delete') {
-              event.preventDefault();
-              onAction('delete', task);
-            }
-          }}
-        >
-          {hasChildren ? (
-            <button
-              type="button"
-              tabIndex={-1}
-              className="disclosure"
-              aria-label={`${collapsed.has(task.id) ? strings.expand : strings.collapse} ${task.title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggle(task.id);
-                refs.current.get(task.id)?.focus();
-              }}
-            >
-              {collapsed.has(task.id) ? '▸' : '▾'}
-            </button>
-          ) : (
-            <span className="disclosure" />
-          )}
-          <span className={`status-dot ${task.status}`} aria-hidden="true">
-            {task.status === 'done' ? '✓' : ''}
-          </span>
-          <span className="task-title" title={task.title}>
-            {task.title}
-          </span>
-          {schedule?.criticalTaskIds.includes(task.id) && (
-            <span
-              className="critical-indicator"
-              title={strings.critical}
-              aria-label={strings.critical}
-            >
-              ◆
-            </span>
-          )}
-          <span
-            className="task-date"
-            title={computedDateLabel(task, schedule) || strings.noDate}
+      {rows.map(({ task, depth, hasChildren }, index) => {
+        const containsCritical =
+          schedule?.analysisStatus === 'ready' &&
+          schedule.summaries[task.id]?.containsCritical === true;
+        const partialCritical =
+          partialTasks.has(task.id) || partialSummaries.has(task.id);
+        const indicator = global.has(task.id)
+          ? strings.critical
+          : containsCritical
+            ? strings.containsCritical
+            : partialSummaries.has(task.id)
+              ? strings.partialContainsCritical
+              : partialTasks.has(task.id)
+                ? strings.partialCritical
+                : '';
+        return (
+          <div
+            key={task.id}
+            ref={(node) => {
+              if (node) refs.current.set(task.id, node);
+              else refs.current.delete(task.id);
+            }}
+            role="treeitem"
+            aria-label={`${task.title}, ${statusLabels[task.status]}${computedDateLabel(task, schedule) ? `, ${computedDateLabel(task, schedule)}` : ''}`}
+            aria-level={depth + 1}
+            aria-expanded={hasChildren ? !collapsed.has(task.id) : undefined}
+            aria-selected={selectedId === task.id}
+            tabIndex={focusId === task.id ? 0 : -1}
+            data-task-id={task.id}
+            className={`task-row${selectedId === task.id ? ' selected' : ''}${hasChildren ? ' summary' : ''}`}
+            style={{ paddingInlineStart: `${16 + depth * 22}px` }}
+            onFocus={() => setFocusedId(task.id)}
+            onClick={() => onSelect(task)}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (
+                event.altKey &&
+                ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
+                  event.key,
+                )
+              ) {
+                event.preventDefault();
+                onAction(
+                  (
+                    {
+                      ArrowUp: 'up',
+                      ArrowDown: 'down',
+                      ArrowLeft: 'out',
+                      ArrowRight: 'in',
+                    } as const
+                  )[event.key as 'ArrowUp'],
+                  task,
+                );
+                return;
+              }
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                focus(rows[index + 1]?.task.id);
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                focus(rows[index - 1]?.task.id);
+              }
+              if (event.key === 'Home') {
+                event.preventDefault();
+                focus(rows[0]?.task.id);
+              }
+              if (event.key === 'End') {
+                event.preventDefault();
+                focus(rows.at(-1)?.task.id);
+              }
+              if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                if (hasChildren && collapsed.has(task.id)) onToggle(task.id);
+                else if (hasChildren) focus(rows[index + 1]?.task.id);
+              }
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                if (hasChildren && !collapsed.has(task.id)) onToggle(task.id);
+                else focus(task.parentId ?? undefined);
+              }
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onSelect(task);
+              }
+              if (event.key === 'Insert') {
+                event.preventDefault();
+                onAction(event.shiftKey ? 'child' : 'sibling', task);
+              }
+              if (event.key === 'Delete') {
+                event.preventDefault();
+                onAction('delete', task);
+              }
+            }}
           >
-            {compactDateLabel(task, schedule) || strings.noDate}
-          </span>
-        </div>
-      ))}
+            {hasChildren ? (
+              <button
+                type="button"
+                tabIndex={-1}
+                className="disclosure"
+                aria-label={`${collapsed.has(task.id) ? strings.expand : strings.collapse} ${task.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggle(task.id);
+                  refs.current.get(task.id)?.focus();
+                }}
+              >
+                {collapsed.has(task.id) ? '▸' : '▾'}
+              </button>
+            ) : (
+              <span className="disclosure" />
+            )}
+            <span className={`status-dot ${task.status}`} aria-hidden="true">
+              {task.status === 'done' ? '✓' : ''}
+            </span>
+            <span className="task-title" title={task.title}>
+              {task.title}
+            </span>
+            {indicator && (
+              <span
+                className={
+                  partialCritical
+                    ? 'partial-critical-indicator'
+                    : 'critical-indicator'
+                }
+                title={indicator}
+                aria-label={indicator}
+              >
+                ◆
+              </span>
+            )}
+            <span
+              className="task-date"
+              title={computedDateLabel(task, schedule) || strings.noDate}
+            >
+              {compactDateLabel(task, schedule) || strings.noDate}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

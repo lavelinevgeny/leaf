@@ -1,12 +1,5 @@
 import type { ProjectTree, Task } from '../shared/contracts.js';
-import { strings } from './strings.js';
-const labels: Record<string, string> = {
-  LEGACY_INTERVAL_UNAVAILABLE:
-    'Прежний интервал не удалось определить. Проверьте и сохраните даты. Завершённую задачу сначала верните в работу.',
-  INVALID_SOURCE_INTERVAL: 'Проверьте даты и длительность задачи.',
-  EXPLICIT_PRECEDENCE_CONFLICT: 'Сроки задачи противоречат зависимости.',
-  UNKNOWN_PREDECESSOR: 'Интервал связанной задачи неизвестен.',
-};
+import { diagnosticLabels, strings } from './strings.js';
 export function ScheduleStatus({
   tree,
   task,
@@ -15,6 +8,17 @@ export function ScheduleStatus({
   task?: Task;
 }) {
   const { schedule } = tree;
+  const partial =
+    schedule.analysisStatus === 'incomplete' ? schedule.partialAnalysis : null;
+  const ordinary =
+    schedule.analysisStatus === 'ready' && task
+      ? schedule.tasks[task.id]
+      : undefined;
+  const summary =
+    schedule.analysisStatus === 'ready' && task
+      ? schedule.summaries[task.id]
+      : undefined;
+  const known = partial && task ? partial.tasks[task.id] : undefined;
   const names = new Map(tree.tasks.map((item) => [item.id, item.title]));
   const diagnostics = schedule.diagnostics.filter(
     (item) => !task || item.taskIds.includes(task.id),
@@ -27,9 +31,51 @@ export function ScheduleStatus({
             {strings.coverage} {schedule.coverage.knownLeafCount} {strings.of}{' '}
             {schedule.coverage.totalLeafCount} {strings.leaves}
           </span>
-          <p>Расчёт критического пути ещё не подключён</p>
         </>
       )}
+      {schedule.analysisStatus === 'pending-policy' && (
+        <p>{strings.frozenPending}</p>
+      )}
+      {schedule.analysisStatus === 'ready' && !task && (
+        <p>{strings.readyCritical}</p>
+      )}
+      {schedule.analysisStatus === 'incomplete' && (
+        <p>{partial ? strings[partial.labelKey] : strings.unknownCritical}</p>
+      )}
+      {task && ordinary && (
+        <>
+          {schedule.criticalTaskIds.includes(task.id) && (
+            <p className="critical-label">{strings.critical}</p>
+          )}
+          <p title="Структурный резерв введённого расписания; не меняет исходные даты.">
+            {strings.projectFloat}: {ordinary.projectFloat}{' '}
+            {strings.workingDays}
+          </p>
+          <p title="Локальный резерв при сохранении остальных введённых интервалов; не разрешает изменить завершённую работу.">
+            {strings.constraintFloat}: {ordinary.constraintFloat}{' '}
+            {strings.workingDays}
+          </p>
+        </>
+      )}
+      {summary?.containsCritical === true && (
+        <p className="critical-label">{strings.containsCritical}</p>
+      )}
+      {known && (
+        <p>
+          {strings.knownHorizonFloat}: {known.knownHorizonFloat}{' '}
+          {strings.workingDays}
+        </p>
+      )}
+      {partial && task && partial.partialCriticalTaskIds.includes(task.id) && (
+        <p className="partial-critical-label">{strings.partialCritical}</p>
+      )}
+      {partial &&
+        task &&
+        partial.partialCriticalSummaryIds.includes(task.id) && (
+          <p className="partial-critical-label">
+            {strings.partialContainsCritical}
+          </p>
+        )}
       {schedule.feasibility === 'incomplete' && (
         <span className="schedule-warning">Неполные сроки</span>
       )}
@@ -40,7 +86,8 @@ export function ScheduleStatus({
         <ul className="schedule-diagnostics">
           {diagnostics.map((item, index) => (
             <li key={index}>
-              {labels[item.code] ?? 'Проверьте сроки связанных задач.'}
+              {diagnosticLabels[item.code] ??
+                'Проверьте сроки связанных задач.'}
               {!task && item.taskIds.length > 0
                 ? ` (${item.taskIds.map((id) => names.get(id) ?? strings.taskRemoved).join(', ')})`
                 : ''}

@@ -51,8 +51,18 @@ export function Gantt({
   const suppressClick = useRef(false);
   const height = HEADER_HEIGHT + rows.length * ROW_HEIGHT;
   const days = calendarDays(start, view.days);
-  const critical = new Set(tree.schedule.criticalTaskIds);
-  const criticalEdges = new Set(tree.schedule.criticalDependencyIds);
+  const schedule = tree.schedule;
+  const critical = new Set(
+    schedule.analysisStatus === 'ready' ? schedule.criticalTaskIds : [],
+  );
+  const criticalEdges = new Set(
+    schedule.analysisStatus === 'ready' ? schedule.criticalDependencyIds : [],
+  );
+  const partial =
+    schedule.analysisStatus === 'incomplete' ? schedule.partialAnalysis : null;
+  const partialTasks = new Set(partial?.partialCriticalTaskIds ?? []);
+  const partialEdges = new Set(partial?.partialCriticalDependencyIds ?? []);
+  const partialSummaries = new Set(partial?.partialCriticalSummaryIds ?? []);
   useEffect(() => {
     const cancel = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && gestureRef.current) {
@@ -233,19 +243,35 @@ export function Gantt({
             key={edge.id}
             data-gantt-edge={edge.id}
             d={`M${x1},${y1} H${bend} V${y2} H${x2}`}
-            className={`gantt-edge${criticalEdges.has(edge.id) ? ' critical' : ''}`}
+            className={`gantt-edge${criticalEdges.has(edge.id) ? ' critical' : ''}${partialEdges.has(edge.id) ? ' partial-critical' : ''}`}
             markerEnd={`url(#${marker}-arrow)`}
           >
             <title>
               {criticalEdges.has(edge.id)
                 ? strings.criticalEdge
-                : strings.dependencies}
+                : partialEdges.has(edge.id)
+                  ? strings.partialCriticalEdge
+                  : strings.dependencies}
             </title>
           </path>
         );
       })}
       {rows.map(({ task }, index) => {
         const interval = ganttInterval(task, tree.schedule);
+        const containsCritical =
+          schedule.analysisStatus === 'ready' &&
+          schedule.summaries[task.id]?.containsCritical === true;
+        const partialCritical =
+          partialTasks.has(task.id) || partialSummaries.has(task.id);
+        const criticalLabel = critical.has(task.id)
+          ? strings.critical
+          : containsCritical
+            ? strings.containsCritical
+            : partialSummaries.has(task.id)
+              ? strings.partialContainsCritical
+              : partialTasks.has(task.id)
+                ? strings.partialCritical
+                : '';
         const y = HEADER_HEIGHT + index * ROW_HEIGHT;
         let x1 = interval ? dateX(interval.start, start, view.dayWidth) : 0;
         let x2 = interval?.finish
@@ -281,9 +307,9 @@ export function Gantt({
               <g
                 role="button"
                 tabIndex={0}
-                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? ', Условное размещение; начало не задано' : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${critical.has(task.id) ? `, ${strings.critical}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
+                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? ', Условное размещение; начало не задано' : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${criticalLabel ? `, ${criticalLabel}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
                 aria-disabled={disabled}
-                className={`gantt-work ${interval.kind}${critical.has(task.id) ? ' critical' : ''}${task.status === 'done' ? ' completed' : ''}`}
+                className={`gantt-work ${interval.kind}${critical.has(task.id) ? ' critical' : ''}${partialCritical ? ' partial-critical' : ''}${containsCritical ? ' contains-critical' : ''}${task.status === 'done' ? ' completed' : ''}`}
                 onPointerDown={(event) => begin(event, task, 'move')}
                 onPointerMove={move}
                 onPointerUp={finish}
@@ -337,6 +363,7 @@ export function Gantt({
                   {interval.clipped
                     ? ' (Отображение ограничено предельной датой)'
                     : ''}
+                  {criticalLabel ? ` (${criticalLabel})` : ''}
                   {task.status === 'done' ? ` (${strings.doneHint})` : ''}
                 </title>
                 {interval.kind === 'summary' ? (

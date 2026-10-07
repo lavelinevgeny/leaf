@@ -41,7 +41,7 @@ describe('direct dependency graph', () => {
     project,
     tasks: [a, b, current, d],
     dependencies: edges,
-    schedule: { ...emptySchedule, criticalDependencyIds: [edges[0]!.id] },
+    schedule: { ...emptySchedule },
     canUndo: false,
   };
   it('draws one separate edge per neighbor, selects neighbors and deletes only a link', () => {
@@ -61,7 +61,7 @@ describe('direct dependency graph', () => {
     expect(
       view.container.querySelectorAll('[data-dependency-edge]'),
     ).toHaveLength(3);
-    expect(screen.getByText('Критическая связь')).toBeInTheDocument();
+    expect(screen.queryByText('Критическая связь')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Открыть: Работа 1/ }));
     expect(onSelect).toHaveBeenCalledWith(a);
     fireEvent.click(

@@ -5,6 +5,12 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildApp, type LeafApp } from '../src/server/app.js';
 import type { Command, ProjectTree } from '../src/shared/contracts.js';
+import * as scheduling from '../src/domain/scheduling.js';
+import Database from 'better-sqlite3';
+import {
+  projectTreeV2Schema,
+  scheduleResponseV2Schema,
+} from '../src/shared/contracts.js';
 let dir: string;
 let app: LeafApp;
 let tree: ProjectTree;
@@ -231,12 +237,6 @@ async function step(
   expect(response.statusCode).toBe(200);
   return projectTreeV2Schema.parse(response.json());
 }
-import * as scheduling from '../src/domain/scheduling.js';
-import Database from 'better-sqlite3';
-import {
-  projectTreeV2Schema,
-  scheduleResponseV2Schema,
-} from '../src/shared/contracts.js';
 function apiState(projectId: string) {
   const read = new Database(join(dir, 'synthetic.sqlite'), { readonly: true });
   try {

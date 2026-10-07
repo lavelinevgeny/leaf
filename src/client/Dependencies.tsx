@@ -83,13 +83,19 @@ export function Dependencies({
   const currentY = 30 + predecessors.length * 72 + 24;
   const afterY = currentY + 100;
   const height = afterY + Math.max(36, successors.length * 72) + 8;
-  const criticalEdges = new Set(tree.schedule.criticalDependencyIds);
+  const schedule = tree.schedule;
+  const criticalEdges = new Set(
+    schedule.analysisStatus === 'ready' ? schedule.criticalDependencyIds : [],
+  );
+  const partial =
+    schedule.analysisStatus === 'incomplete' ? schedule.partialAnalysis : null;
+  const partialEdges = new Set(partial?.partialCriticalDependencyIds ?? []);
   function card(item: Task, y: number, edge?: Dependency) {
     const date = compactDateLabel(item, tree.schedule) || strings.notScheduled;
     return (
       <div
         key={edge?.id ?? item.id}
-        className={`dependency-card${!edge ? ' current' : ''}`}
+        className={`dependency-card${!edge ? ' current' : ''}${edge && partialEdges.has(edge.id) ? ' partial-critical' : ''}`}
         style={{ top: y }}
       >
         <button
@@ -107,6 +113,11 @@ export function Dependencies({
             <small>
               {date} · {statusLabels[item.status]}
             </small>
+            {edge && partialEdges.has(edge.id) && (
+              <small className="partial-critical-label">
+                {strings.partialCriticalEdge}
+              </small>
+            )}
             {edge && criticalEdges.has(edge.id) && (
               <small className="critical-label">{strings.criticalEdge}</small>
             )}
@@ -184,10 +195,15 @@ export function Dependencies({
               data-dependency-edge={edge.id}
               d={`M38,${30 + index * 72 + 30} H${8 + index * 5} V${currentY + 30} H38`}
               markerEnd={`url(#${marker}-dep)`}
-              className={`dependency-arrow${criticalEdges.has(edge.id) ? ' critical' : ''}`}
+              className={`dependency-arrow${criticalEdges.has(edge.id) ? ' critical' : ''}${partialEdges.has(edge.id) ? ' partial-critical' : ''}`}
             >
               <title>
                 {byId.get(edge.predecessorId)?.title} → {task.title}
+                {partialEdges.has(edge.id)
+                  ? ` — ${strings.partialCriticalEdge}`
+                  : criticalEdges.has(edge.id)
+                    ? ` — ${strings.criticalEdge}`
+                    : ''}
               </title>
             </path>
           ))}
@@ -197,10 +213,15 @@ export function Dependencies({
               data-dependency-edge={edge.id}
               d={`M38,${currentY + 30} H${8 + index * 5} V${afterY + index * 72 + 30} H38`}
               markerEnd={`url(#${marker}-dep)`}
-              className={`dependency-arrow${criticalEdges.has(edge.id) ? ' critical' : ''}`}
+              className={`dependency-arrow${criticalEdges.has(edge.id) ? ' critical' : ''}${partialEdges.has(edge.id) ? ' partial-critical' : ''}`}
             >
               <title>
                 {task.title} → {byId.get(edge.successorId)?.title}
+                {partialEdges.has(edge.id)
+                  ? ` — ${strings.partialCriticalEdge}`
+                  : criticalEdges.has(edge.id)
+                    ? ` — ${strings.criticalEdge}`
+                    : ''}
               </title>
             </path>
           ))}

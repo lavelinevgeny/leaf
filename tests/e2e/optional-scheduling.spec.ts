@@ -28,9 +28,12 @@ test('optional source, conditional display, mismatch rollback, FS conflict, undo
     c = tree.tasks.find((t) => t.title === 'Работа C')!.id;
   await page.goto(runtime.origin);
   await expect(
-    page.getByText('Расчёт критического пути ещё не подключён', {
-      exact: true,
-    }),
+    page.getByText(
+      'Анализ датированной части; полный критический путь неизвестен',
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: /Работа C.*Условное размещение/ }),
@@ -70,7 +73,7 @@ test('optional source, conditional display, mismatch rollback, FS conflict, undo
   await page.getByRole('treeitem', { name: /Работа C,/ }).click();
   await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
   await expect(
-    page.getByText('Сроки задачи противоречат зависимости.').first(),
+    page.getByText('Предшественник заканчивается после явного начала.').first(),
   ).toBeVisible();
   await page.screenshot({
     path: `/tmp/leaf-task5-${info.project.name}-dependencies.png`,
@@ -174,7 +177,9 @@ test('unavailable original done must reopen, explicitly adopts equal source, und
   await page.goto(runtime.origin);
   await page.getByRole('treeitem', { name: /Работа A,/ }).click();
   await expect(
-    page.getByText(/Прежний интервал не удалось определить/).last(),
+    page
+      .getByText(/Прежний интервал недоступен; полный расчёт неизвестен/)
+      .last(),
   ).toBeVisible();
   await expect(page.getByLabel('Начало', { exact: true })).toBeDisabled();
   await page.getByLabel('Статус', { exact: true }).selectOption('doing');
