@@ -89,9 +89,9 @@ const actionableCodes = new Set([
 
 **Interfaces:** Consumes Task 1 accessible project menu/dialog and Task 2 local row diagnostics/help. Uses `syntheticRuntime`, `seedOptionalRuntime`, `readTree`, `send` from existing helpers; fixture task names remain synthetic. Produces browser evidence for CW01–CW08 in both configured viewports.
 
-- [ ] Step 1: Seed at least 24 tasks through real API and add independent A/B FS-conflict case; collect mutation request counts and a before tree snapshot. Navigate to application; assert absent global coverage/unknown-date warnings and menu/help/filter view actions produce no writes and identical tree/revision/canUndo.
-- [ ] Step 2: Test menu/dialog keyboard/Escape/focus, settings save/discard/failed response plus exact retry, 409 conflict reload with retained settings draft, real Tab/Shift+Tab boundary assertions in the browser, rename and compact undo persisted behavior, Gantt toggle/help, local conflict and unrelated task. Preserve real backend assertions; no browser mocks for successful writes.
-- [ ] Step 3: Verify concrete geometry in both viewport projects. Capture synthetic screenshots to temp outside checkout for manual review, reporting exact paths only in scratch report. Verify alignment/order of tree/Gantt after filter/collapse and enough complete visible rows.
+- [x] Step 1: Seed at least 24 tasks through real API and add independent A/B FS-conflict case; collect mutation request counts and a before tree snapshot. Navigate to application; assert absent global coverage/unknown-date warnings and menu/help/filter view actions produce no writes and identical tree/revision/canUndo.
+- [x] Step 2: Test menu/dialog keyboard/Escape/focus, settings save/discard/failed response plus exact retry, 409 conflict reload with retained settings draft, real Tab/Shift+Tab boundary assertions in the browser, rename and compact undo persisted behavior, Gantt toggle/help, local conflict and unrelated task. Preserve real backend assertions; no browser mocks for successful writes.
+- [x] Step 3: Verify concrete geometry in both viewport projects. Capture synthetic screenshots to temp outside checkout for manual review, reporting exact paths only in scratch report. Verify alignment/order of tree/Gantt after filter/collapse and enough complete visible rows.
 
 ```ts
 const rows = page.getByRole('tree', { name: 'Задачи', exact: true }).getByRole('treeitem');
@@ -102,7 +102,7 @@ const scroll = await page.locator('[data-plan-scroll]').boundingBox();
 expect(lastVisible!.y + lastVisible!.height).toBeLessThanOrEqual(scroll!.y + scroll!.height);
 ```
 
-- [ ] Step 4: Build and run `npx playwright test tests/e2e/compact-workspace.spec.ts` and affected browser suites. Fix stale assumptions with equal-strength behavioral assertions; report failures separately from successful reruns. Format, commit; task review.
+- [x] Step 4: Build and run `npx playwright test tests/e2e/compact-workspace.spec.ts` and affected browser suites. Fix stale assumptions with equal-strength behavioral assertions; report failures separately from successful reruns. Format, commit; task review.
 
 ## Final integration gates
 

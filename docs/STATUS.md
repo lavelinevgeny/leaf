@@ -2,9 +2,13 @@
 
 ## Компактное рабочее пространство — C20, 2026-10-08
 
-По поручению владельца обновлены DECISIONS, UI, SCHEDULING, ACCEPTANCE и START_HERE; утверждённая [спецификация C20](superpowers/specs/2026-10-08-compact-workspace-design.md) и [план реализации](superpowers/plans/2026-10-08-compact-workspace.md) подготовлены. Реализация и независимые проверки выполняются отдельными агентами в изолированных worktree. Постоянная сводка удаляется из presentation; настройки, partial/global семантика, реальные конфликты и undo сохраняются. Scheduler/API/схема/security policy не меняются.
+Обновлены DECISIONS, UI, SCHEDULING, ACCEPTANCE, START_HERE и прежние optional-scheduling спецификации. [План C20](superpowers/plans/2026-10-08-compact-workspace.md) реализован тремя отдельными агентами в изолированных worktree; все task reviews и scoped fix reviews приняты. [Спецификация](superpowers/specs/2026-10-08-compact-workspace-design.md) сохраняет scheduler/API и выбранные три PNG.
 
-Перед изменениями Git был чист; security:workspace PASS. Application checks для C20 ещё не выполнены. S4–S6 и первый релиз остаются незавершёнными. Следующее действие — выполнить три задачи плана и записать фактическую приёмку.
+Убрана постоянная сводка дат/CPM. Меню проекта открывает компактные настройки и переименование; формы сохраняют черновики, ошибки, exact retry и conflict reload. Поиск/статус компактны, сброс условный, undo остаётся постоянной кнопкой. Actionable diagnostics показываются у затронутых строк и подробно в панели; отсутствие дат не является предупреждением. Ready/partial/frozen пояснения и различные critical labels сохранены. Помощь Ганта открывается по запросу. Длинное название сокращается визуально без потери доступного имени; native modal и меню сохраняют фокус. Сервер, domain scheduler, API/DTO, схема, миграции, lockfile, зависимости и security policy не менялись.
+
+Финальный root verify PASS: typecheck/lint, 641/641 unit/integration tests в 37 files, production build. Format:check и check:package PASS. Новые browser checks 4/4 и affected 20/20 PASS в двух viewports; первый ряд 228,5 px, видны 15/12 полных строк, overflow отсутствует. Полный tree/revision/canUndo не меняется от представления, writes=0; сохранение настроек, реальный 409/reload, exact retry потерянного ответа, rename/undo/restart, Tab/Escape и collapse/filter alignment проверены. Четыре финальных синтетических capture просмотрены root и агентом, остаются вне checkout.
+
+Check:kit, test:kit 52/52 с настоящим Gitleaks, doctor и workspace/history checks прошли на этапе реализации. Полный root test:e2e и итоговый whole-change review выполняются; итоговые результаты будут добавлены после завершения. Найденные при разработке CW01 spacing и visibility/menu Escape defects исправлены; assertions и порог 230 px не ослаблены. Docker smoke, sandbox probe, push/deployment/release не выполнялись. Следующая продуктовая задача — проверка доски O03 и её статусы/undo; S4–S6 и первый релиз остаются незавершёнными.
 
 ## Фавикон из логотипа — 2026-10-08
 
