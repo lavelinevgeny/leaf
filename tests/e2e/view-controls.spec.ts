@@ -213,22 +213,50 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
     await expect(row).toHaveAttribute('aria-selected', 'true');
     const withCleanPanel = await geometry(page, row);
     await editor.focus();
-    await list.evaluate((button: HTMLButtonElement) => button.click());
+    await editor.evaluate((node: HTMLInputElement) =>
+      node.setSelectionRange(2, 7),
+    );
+    await list.click();
     await expect(editor).toBeFocused();
+    expect(
+      await editor.evaluate((node: HTMLInputElement) => [
+        node.selectionStart,
+        node.selectionEnd,
+      ]),
+    ).toEqual([2, 7]);
     await sameGeometry(page, row, withCleanPanel);
-    await gantt.evaluate((button: HTMLButtonElement) => button.click());
+    await gantt.click();
     await expect(editor).toBeFocused();
+    expect(
+      await editor.evaluate((node: HTMLInputElement) => [
+        node.selectionStart,
+        node.selectionEnd,
+      ]),
+    ).toEqual([2, 7]);
     await sameGeometry(page, row, withCleanPanel);
     await expect(editor).toHaveValue('Synthetic dirty quick draft');
     expect(await editorHandle!.evaluate((node) => node.isConnected)).toBe(true);
     const description = panel.getByLabel('Описание', { exact: true });
     await description.fill('Synthetic unsaved panel draft');
+    const descriptionHandle = await description.elementHandle();
+    await description.evaluate((node: HTMLTextAreaElement) =>
+      node.setSelectionRange(3, 9),
+    );
     await expect(editor).toBeDisabled();
     const withDraft = await geometry(page, row);
     const draftPeriod = await page.locator('.gantt-month').allTextContents();
     const draftOffset = await horizontal.evaluate((node) => node.scrollLeft);
-    await list.evaluate((button: HTMLButtonElement) => button.click());
+    await list.click();
     await expect(description).toBeFocused();
+    expect(
+      await description.evaluate((node: HTMLTextAreaElement) => [
+        node.selectionStart,
+        node.selectionEnd,
+      ]),
+    ).toEqual([3, 9]);
+    expect(await descriptionHandle!.evaluate((node) => node.isConnected)).toBe(
+      true,
+    );
     await sameGeometry(page, row, withDraft);
     await expect(description).toHaveValue('Synthetic unsaved panel draft');
     await expect(row).toHaveAttribute('aria-selected', 'true');
@@ -237,8 +265,17 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
       info.project.name + '-panel-draft-list.png',
     );
     await page.screenshot({ path: panelCapture });
-    await gantt.evaluate((button: HTMLButtonElement) => button.click());
+    await gantt.click();
     await expect(description).toBeFocused();
+    expect(
+      await description.evaluate((node: HTMLTextAreaElement) => [
+        node.selectionStart,
+        node.selectionEnd,
+      ]),
+    ).toEqual([3, 9]);
+    expect(await descriptionHandle!.evaluate((node) => node.isConnected)).toBe(
+      true,
+    );
     await sameGeometry(page, row, withDraft);
     expect(await page.locator('.gantt-month').allTextContents()).toEqual(
       draftPeriod,

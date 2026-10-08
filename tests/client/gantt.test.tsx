@@ -325,6 +325,59 @@ it('switches two pressed-state view buttons with mouse and keyboard', async () =
   expect(gantt).toHaveAttribute('aria-pressed', 'true');
 });
 
+it('preserves active editor focus and selection on pointer switching without changing keyboard focus', async () => {
+  const user = userEvent.setup();
+  const blur = vi.fn();
+  function Views() {
+    const [show, setShow] = useState(true);
+    return (
+      <>
+        <input
+          aria-label="Synthetic input"
+          defaultValue="Synthetic draft"
+          onBlur={blur}
+        />
+        <textarea
+          aria-label="Synthetic description"
+          defaultValue="Synthetic panel draft"
+          onBlur={blur}
+        />
+        <TaskViewControl showGantt={show} onChange={setShow} />
+        <button type="button">Other action</button>
+      </>
+    );
+  }
+  render(<Views />);
+  const list = screen.getByRole('button', { name: 'Список' });
+  const gantt = screen.getByRole('button', { name: 'Гант' });
+  for (const name of ['Synthetic input', 'Synthetic description']) {
+    const editor = screen.getByRole('textbox', { name }) as HTMLInputElement;
+    await user.click(editor);
+    editor.setSelectionRange(2, 7);
+    blur.mockClear();
+    for (const button of [list, gantt]) {
+      await user.click(button);
+      expect(editor).toHaveFocus();
+      expect([editor.selectionStart, editor.selectionEnd]).toEqual([2, 7]);
+      expect(button).toHaveAttribute('aria-pressed', 'true');
+      expect(blur).not.toHaveBeenCalled();
+    }
+  }
+  await user.tab();
+  expect(list).toHaveFocus();
+  await user.keyboard('{Enter}');
+  expect(list).toHaveFocus();
+  expect(list).toHaveAttribute('aria-pressed', 'true');
+  await user.tab();
+  await user.keyboard(' ');
+  expect(gantt).toHaveFocus();
+  expect(gantt).toHaveAttribute('aria-pressed', 'true');
+  const other = screen.getByRole('button', { name: 'Other action' });
+  await user.click(screen.getByRole('textbox', { name: 'Synthetic input' }));
+  await user.click(other);
+  expect(other).toHaveFocus();
+});
+
 it('discloses the project today on hover and focus and updates it across timezone and day changes', async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-08T23:30:00Z'));

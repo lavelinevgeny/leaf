@@ -2,6 +2,9 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
+import { TaskViewControl } from '../../src/client/TaskViewControl.js';
 import { TaskTimeline } from '../../src/client/TaskTimeline.js';
 import { TaskTree } from '../../src/client/TaskTree.js';
 import {
@@ -141,6 +144,75 @@ it('preserves the mounted tree, dirty editor, focus and shared header across vie
     expect(view.container.querySelector('.timeline-heading')).toBe(heading);
   }
   expect(tree).toEqual(before);
+  expect(p.onPlan).not.toHaveBeenCalled();
+  expect(p.onToggle).not.toHaveBeenCalled();
+});
+
+it('keeps the inline editor, selection and selected tree row on actual pointer switching', async () => {
+  const user = userEvent.setup();
+  const tree = optionalTreeFixture();
+  const context = { parentId: optionalIds.p };
+  const blur = vi.fn();
+  const p = {
+    tree,
+    selectedId: optionalIds.a,
+    collapsed: new Set<string>(),
+    onToggle: vi.fn(),
+    onSelect: vi.fn(),
+    onAction: vi.fn(),
+    onPlan: vi.fn(),
+    disabled: false,
+    reveal: null,
+    draft: {
+      task: draftTask(tree, context, 'Synthetic draft', {
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
+      }),
+      context,
+      active: true,
+      input: (
+        <input
+          aria-label="Synthetic pointer editor"
+          defaultValue="Synthetic draft"
+          onBlur={blur}
+        />
+      ),
+    },
+  };
+  function Timeline() {
+    const [show, setShow] = useState(true);
+    return (
+      <TaskTimeline
+        {...p}
+        show={show}
+        viewControl={<TaskViewControl showGantt={show} onChange={setShow} />}
+      />
+    );
+  }
+  const view = render(<Timeline />);
+  const editor = screen.getByRole('textbox', {
+    name: 'Synthetic pointer editor',
+  }) as HTMLInputElement;
+  const taskTree = screen.getByRole('tree', { name: 'Задачи' });
+  const selected = screen.getByRole('treeitem', { name: /^Работа A,/ });
+  const heading = view.container.querySelector('.timeline-heading');
+  await user.click(editor);
+  editor.setSelectionRange(3, 8);
+  for (const name of ['Список', 'Гант']) {
+    await user.click(screen.getByRole('button', { name }));
+    expect(
+      screen.getByRole('textbox', { name: 'Synthetic pointer editor' }),
+    ).toBe(editor);
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveValue('Synthetic draft');
+    expect([editor.selectionStart, editor.selectionEnd]).toEqual([3, 8]);
+    expect(screen.getByRole('tree', { name: 'Задачи' })).toBe(taskTree);
+    expect(screen.getByRole('treeitem', { name: /^Работа A,/ })).toBe(selected);
+    expect(selected).toHaveAttribute('aria-selected', 'true');
+    expect(view.container.querySelector('.timeline-heading')).toBe(heading);
+    expect(blur).not.toHaveBeenCalled();
+  }
   expect(p.onPlan).not.toHaveBeenCalled();
   expect(p.onToggle).not.toHaveBeenCalled();
 });
