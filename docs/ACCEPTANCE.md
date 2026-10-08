@@ -53,3 +53,7 @@
 ## Минимальные наборы тестов после S0
 
 Domain unit + property tests, SQLite integration, API auth/validation/transaction tests, React interaction tests, Playwright E2E и визуальный smoke. `npm test` не должен запускать только kit tests и считаться полным тестированием leaf.
+
+## Компактное рабочее пространство C20
+
+Обязательные критерии CW01–CW08 заданы в [спецификации C20](superpowers/specs/2026-10-08-compact-workspace-design.md): вместимость длинного дерева в двух viewports, отсутствие общей сводки и missing-date warnings, keyboard/focus/dirty forms, сохранённые настройки и undo, локальные FS-конфликты, partial/global labels, помощь и управление только при включённом Ганте. Серверные данные и revision не изменяются от действий представления.
