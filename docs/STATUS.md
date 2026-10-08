@@ -1,5 +1,11 @@
 # Статус разработки
 
+## Фавикон — 2026-10-08
+
+В `index.html` подключён локальный `src/client/favicon.svg`: белый лист на зелёном фоне из палитры leaf. Vite выпускает отдельный asset с хешем (`?no-inline`), совместимый с действующей CSP. Docker allowlist и package check разрешают только этот дополнительный файл. Исходник и preview проверены, точные байты добавлены в public-assets manifest; внешних ссылок, шрифтов и метаданных нет. Модель и поведение приложения не менялись.
+
+PASS: `npm run build`, `npm run format:check`, `npm run check:package`; Chromium загрузил production asset и декодировал SVG в размерах 16/32/64 px с серверной CSP, синтетический preview просмотрен. Перед коммитом выполнены `npm run check:kit`, `npm run security:staged` и `git diff --cached --check`. Полные application unit/integration/E2E suites и Docker build не запускались для статического изменения. Push/deployment не выполнялись. Следующая продуктовая задача — проверка доски O03; S4–S6 остаются незавершёнными.
+
 ## C19 — подготовка локального коммита — 2026-10-08
 
 По поручению владельца подготовлены 45 файлов C19: условное отображение, создание задач со сроками, тесты и согласованные документы. Повторный verify на закреплённом Node 24.21.0/npm 11.19.0 PASS: typecheck, lint, 620/620 unit/integration tests и production build. format:check, check:package, git diff --check и полный preflight прошли: doctor 11/11, kit, test:kit 52/52 с реальным Gitleaks, workspace/index/staged/history/metadata checks. Первоначальный preflight отказал из-за Node 24.19.0 в оболочке; повторный запуск использовал уже установленную закреплённую версию без изменения политики.

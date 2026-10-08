@@ -16,6 +16,7 @@ const expected = [
   '!src/**/*.ts',
   '!src/**/*.tsx',
   '!src/**/*.css',
+  '!src/client/favicon.svg',
   '!migrations/',
   '!migrations/001-initial.sql',
   '!migrations/002-scheduling.sql',
@@ -34,7 +35,10 @@ function inspect(directory) {
     if (stat.isSymbolicLink())
       throw new Error('Source symlinks are not package inputs');
     if (stat.isDirectory()) inspect(path);
-    else if (!/\.(ts|tsx|css)$/.test(path))
+    else if (
+      !/\.(ts|tsx|css)$/.test(path) &&
+      path !== join('src', 'client', 'favicon.svg')
+    )
       throw new Error('Unexpected source package input');
   }
 }

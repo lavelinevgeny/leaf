@@ -3,6 +3,11 @@
   "note": "New binary assets require human privacy review and a new exact SHA-256 entry. Never add a directory-wide exemption.",
   "assets": [
     {
+      "path": "src/client/favicon.svg",
+      "sha256": "ab99358b0063a419fff11719dc3ef97ba840edfecc36f21f2412fbc6d4e8d313",
+      "review": "Locally drawn leaf favicon; source and rendered 16/32/64 px preview inspected. Only SVG geometry and palette colors; no personal data, metadata or external resources."
+    },
+    {
       "path": "design/references/01-main-screen.png",
       "sha256": "9f508c2069a9d7fcd41250d7515c8ad005011e0891feff026f37fc270697665f",
       "review": "Selected generated UI concept; illustrative identities removed where present; no production data."

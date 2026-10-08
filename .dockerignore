@@ -13,6 +13,7 @@
 !src/**/*.ts
 !src/**/*.tsx
 !src/**/*.css
+!src/client/favicon.svg
 !migrations/
 !migrations/001-initial.sql
 !migrations/002-scheduling.sql
