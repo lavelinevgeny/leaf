@@ -1,5 +1,7 @@
 import {
   useEffect,
+  useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,6 +19,8 @@ import {
 } from './quick-add-view.js';
 import { Gantt } from './Gantt.js';
 import {
+  HEADER_HEIGHT,
+  ROW_HEIGHT,
   computedDateLabel,
   ganttInterval,
   sourceMarkers,
@@ -116,6 +120,10 @@ export function TaskTimeline({
   }
   const focusedTask = tree.tasks.find((task) => task.id === selectedId);
   const today = useProjectToday(tree.project.timezone);
+  const todayDescriptionId = useId();
+  const [todayHovered, setTodayHovered] = useState(false);
+  const [todayFocused, setTodayFocused] = useState(false);
+  const fullToday = today.split('-').reverse().join('.');
   const [scale, setScale] = useState<Scale>('days');
   const [start, setStart] = useState(() =>
     shiftDate(
@@ -129,6 +137,15 @@ export function TaskTimeline({
   const [width, setWidth] = useState(420);
   const horizontal = useRef<HTMLDivElement>(null);
   const vertical = useRef<HTMLDivElement>(null);
+  const horizontalOffset = useRef(0);
+  useLayoutEffect(() => {
+    if (show && horizontal.current)
+      horizontal.current.scrollLeft = horizontalOffset.current;
+    else {
+      setTodayHovered(false);
+      setTodayFocused(false);
+    }
+  }, [show]);
   const resize = useRef<{ x: number; width: number } | null>(null);
   const draftDate = draft?.active
     ? draftInterval(tree, draft.task, today)?.start
@@ -143,7 +160,8 @@ export function TaskTimeline({
       setStart(shiftDate(draftDate, -3));
       if (viewport) viewport.scrollLeft = 0;
     }
-  }, [draftDate, show]);
+    // A view change must not navigate to an unchanged draft.
+  }, [draftDate]);
   useEffect(() => {
     if (!draft?.active) return;
     requestAnimationFrame(() => {
@@ -198,13 +216,19 @@ export function TaskTimeline({
   return (
     <div
       className="task-timeline"
-      style={{ '--tree-width': `${width}px` } as CSSProperties}
+      style={
+        {
+          '--tree-width': `${width}px`,
+          '--plan-header-height': `${HEADER_HEIGHT}px`,
+          '--plan-row-height': `${ROW_HEIGHT}px`,
+        } as CSSProperties
+      }
     >
       {results}
       <div className="gantt-toolbar">
         {viewControl}
         {show && (
-          <>
+          <div className="gantt-scale-controls">
             <label>
               {strings.scale}
               <select
@@ -226,15 +250,31 @@ export function TaskTimeline({
             >
               ‹
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setStart(shiftDate(today, -3));
-                if (horizontal.current) horizontal.current.scrollLeft = 0;
-              }}
-            >
-              {strings.today}
-            </button>
+            <span className="today-disclosure">
+              <button
+                type="button"
+                aria-describedby={todayDescriptionId}
+                onMouseEnter={() => setTodayHovered(true)}
+                onMouseLeave={() => setTodayHovered(false)}
+                onFocus={() => setTodayFocused(true)}
+                onBlur={() => setTodayFocused(false)}
+                onClick={() => {
+                  setStart(shiftDate(today, -3));
+                  if (horizontal.current) horizontal.current.scrollLeft = 0;
+                }}
+              >
+                {strings.today}
+              </button>
+              <span
+                id={todayDescriptionId}
+                role={todayHovered || todayFocused ? 'tooltip' : undefined}
+                className={
+                  todayHovered || todayFocused ? 'today-tooltip' : 'sr-only'
+                }
+              >
+                {fullToday}
+              </span>
+            </span>
             <button
               type="button"
               aria-label={strings.nextPeriod}
@@ -242,93 +282,94 @@ export function TaskTimeline({
             >
               ›
             </button>
-            <span>{start}</span>
-          </>
+          </div>
         )}
       </div>
       <div className="plan-scroll" ref={vertical} data-plan-scroll>
-        {show ? (
-          <div className="timeline-columns">
-            <div className="timeline-tree">
-              <div className="timeline-heading">
-                {strings.title}
-                <span>
-                  {strings.start} / {strings.finish}
-                </span>
-              </div>
-              <TaskTree {...treeProps} />
+        <div className={`timeline-columns${show ? '' : ' list-view'}`}>
+          <div className="timeline-tree">
+            <div className="timeline-heading">
+              {strings.title}
+              <span>
+                {strings.start} / {strings.finish}
+              </span>
             </div>
-            <div
-              className="timeline-divider"
-              role="separator"
-              tabIndex={0}
-              aria-label={strings.treeWidth}
-              aria-orientation="vertical"
-              aria-valuemin={300}
-              aria-valuemax={620}
-              aria-valuenow={width}
-              onKeyDown={(event) => {
-                if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
-                  event.preventDefault();
-                  setWidth((value) =>
-                    Math.max(
-                      300,
-                      Math.min(
-                        620,
-                        value + (event.key === 'ArrowLeft' ? -20 : 20),
-                      ),
-                    ),
-                  );
-                }
-              }}
-              onPointerDown={(event) => {
-                if (event.button === 0) {
-                  resize.current = { x: event.clientX, width };
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                }
-              }}
-              onPointerMove={(event) => {
-                if (resize.current)
-                  setWidth(
-                    Math.max(
-                      300,
-                      Math.min(
-                        620,
-                        resize.current.width + event.clientX - resize.current.x,
-                      ),
-                    ),
-                  );
-              }}
-              onPointerUp={() => {
-                resize.current = null;
-              }}
-              onPointerCancel={() => {
-                resize.current = null;
-              }}
-            />
-            <div
-              className="timeline-time"
-              ref={horizontal}
-              tabIndex={0}
-              aria-label={strings.gantt}
-            >
-              <Gantt
-                tree={tree}
-                rows={rows}
-                start={start}
-                scale={scale}
-                today={today}
-                selectedId={selectedId}
-                disabled={disabled}
-                onSelect={onSelect}
-                onPlan={onPlan}
-                draftId={draft?.active ? draftTaskId : undefined}
-              />
-            </div>
+            <TaskTree {...treeProps} />
           </div>
-        ) : (
-          <TaskTree {...treeProps} />
-        )}
+          <div
+            className="timeline-divider"
+            hidden={!show}
+            role="separator"
+            tabIndex={0}
+            aria-label={strings.treeWidth}
+            aria-orientation="vertical"
+            aria-valuemin={300}
+            aria-valuemax={620}
+            aria-valuenow={width}
+            onKeyDown={(event) => {
+              if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+                event.preventDefault();
+                setWidth((value) =>
+                  Math.max(
+                    300,
+                    Math.min(
+                      620,
+                      value + (event.key === 'ArrowLeft' ? -20 : 20),
+                    ),
+                  ),
+                );
+              }
+            }}
+            onPointerDown={(event) => {
+              if (event.button === 0) {
+                resize.current = { x: event.clientX, width };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }
+            }}
+            onPointerMove={(event) => {
+              if (resize.current)
+                setWidth(
+                  Math.max(
+                    300,
+                    Math.min(
+                      620,
+                      resize.current.width + event.clientX - resize.current.x,
+                    ),
+                  ),
+                );
+            }}
+            onPointerUp={() => {
+              resize.current = null;
+            }}
+            onPointerCancel={() => {
+              resize.current = null;
+            }}
+          />
+          <div
+            className="timeline-time"
+            hidden={!show}
+            ref={horizontal}
+            onScroll={(event) => {
+              if (show)
+                horizontalOffset.current = event.currentTarget.scrollLeft;
+            }}
+            tabIndex={0}
+            aria-label={strings.gantt}
+          >
+            <Gantt
+              tree={tree}
+              rows={rows}
+              start={start}
+              scale={scale}
+              today={today}
+              selectedId={selectedId}
+              disabled={disabled}
+              onSelect={onSelect}
+              onPlan={onPlan}
+              draftId={draft?.active ? draftTaskId : undefined}
+            />
+          </div>
+        </div>
       </div>
       <span className="sr-only">
         {focusedTask ? computedDateLabel(focusedTask, tree.schedule) : ''}

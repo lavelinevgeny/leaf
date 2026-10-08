@@ -18,6 +18,7 @@ import { focusTaskRow, type TreeAction } from './TaskTree.js';
 import { orderedChildren, subtreeIds } from './tree-view.js';
 import { strings } from './strings.js';
 import { ProjectControls } from './ProjectControls.js';
+import { TaskViewControl } from './TaskViewControl.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
 import { TaskFilters } from './TaskFilters.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
@@ -1077,14 +1078,10 @@ export function App() {
                 }}
                 show={showGantt}
                 viewControl={
-                  <label className="gantt-toggle">
-                    <input
-                      type="checkbox"
-                      checked={showGantt}
-                      onChange={(event) => setShowGantt(event.target.checked)}
-                    />
-                    {strings.gantt}
-                  </label>
+                  <TaskViewControl
+                    showGantt={showGantt}
+                    onChange={setShowGantt}
+                  />
                 }
                 reveal={ganttReveal}
                 disabled={

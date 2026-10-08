@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { TaskTimeline } from '../../src/client/TaskTimeline.js';
 import { TaskTree } from '../../src/client/TaskTree.js';
 import {
   draftTask,
@@ -91,4 +92,55 @@ it('Until Friday counts working days and starts on Monday after a weekend', () =
     durationDays: 5,
   });
   expect(fridayPlan('2026-10-10', 'all-days').durationDays).toBe(7);
+});
+
+it('preserves the mounted tree, dirty editor, focus and shared header across view changes', () => {
+  const tree = optionalTreeFixture();
+  const before = structuredClone(tree);
+  const context = { parentId: optionalIds.p };
+  const p = {
+    tree,
+    selectedId: optionalIds.a,
+    collapsed: new Set([optionalIds.p]),
+    onToggle: vi.fn(),
+    onSelect: vi.fn(),
+    onAction: vi.fn(),
+    onPlan: vi.fn(),
+    disabled: false,
+    show: true,
+    reveal: null,
+    draft: {
+      task: draftTask(tree, context, 'Synthetic draft', {
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
+      }),
+      context,
+      active: true,
+      input: (
+        <input aria-label="Synthetic editor" defaultValue="Synthetic draft" />
+      ),
+    },
+  };
+  const view = render(<TaskTimeline {...p} />);
+  const editor = screen.getByRole('textbox', { name: 'Synthetic editor' });
+  const taskTree = screen.getByRole('tree', { name: 'Задачи' });
+  const selected = screen.getByRole('treeitem', { name: /^Работа A,/ });
+  const heading = view.container.querySelector('.timeline-heading');
+  editor.focus();
+  for (const show of [false, true, false]) {
+    view.rerender(<TaskTimeline {...p} show={show} />);
+    expect(screen.getByRole('textbox', { name: 'Synthetic editor' })).toBe(
+      editor,
+    );
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveValue('Synthetic draft');
+    expect(screen.getByRole('tree', { name: 'Задачи' })).toBe(taskTree);
+    expect(screen.getByRole('treeitem', { name: /^Работа A,/ })).toBe(selected);
+    expect(selected).toHaveAttribute('aria-selected', 'true');
+    expect(view.container.querySelector('.timeline-heading')).toBe(heading);
+  }
+  expect(tree).toEqual(before);
+  expect(p.onPlan).not.toHaveBeenCalled();
+  expect(p.onToggle).not.toHaveBeenCalled();
 });

@@ -151,7 +151,7 @@ it('distinguishes no matches, clears search with Escape and supports list-only k
   expect(search).toHaveFocus();
   expect(ids()).toEqual([root.id, group.id, a.id, b.id, done.id]);
   await user.type(search, 'Монтаж A');
-  await user.click(screen.getByRole('checkbox', { name: 'Гант' }));
+  await user.click(screen.getByRole('button', { name: 'Список' }));
   const first = screen.getByRole('treeitem', { name: /Этап A,/ });
   first.focus();
   await user.keyboard('{ArrowDown}{ArrowDown}');

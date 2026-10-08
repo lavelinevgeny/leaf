@@ -1207,7 +1207,10 @@ describe('client HTTP interactions', () => {
       expectedRevision: 0,
       title: 'Переименованный проект',
     });
-    expect(screen.getByRole('checkbox', { name: 'Гант' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Гант' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(screen.queryByText('Доска')).not.toBeInTheDocument();
   });
   it('keeps the real parent when creating a sibling from the reused subtask tree', async () => {

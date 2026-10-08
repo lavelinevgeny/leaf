@@ -197,19 +197,21 @@ test('compact geometry, local diagnostics and view actions preserve the authorit
   await expect(
     page
       .locator('.gantt-toolbar')
-      .getByRole('checkbox', { name: 'Гант', exact: true }),
+      .getByRole('button', { name: 'Гант', exact: true }),
   ).toBeVisible();
-  const toggle = page.getByRole('checkbox', { name: 'Гант', exact: true });
-  await toggle.focus();
+  const toggle = page.getByRole('button', { name: 'Гант', exact: true });
+  const list = page.getByRole('button', { name: 'Список', exact: true });
+  await list.focus();
   await page.keyboard.press('Space');
-  await expect(toggle).not.toBeChecked();
-  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(list).toBeFocused();
   await expect(help).toHaveCount(0);
   await expect(page.getByLabel('Масштаб Ганта', { exact: true })).toHaveCount(
     0,
   );
-  await page.keyboard.press('Space');
-  await expect(toggle).toBeChecked();
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(toggle).toBeFocused();
   const search = page.getByRole('searchbox', {
     name: 'Поиск задач',

@@ -82,6 +82,8 @@ export const strings = {
   workingDays: 'раб. дн.',
   notScheduled: 'Не запланировано',
   blocked: 'Расчёт заблокирован',
+  taskView: 'Представление задач',
+  list: 'Список',
   gantt: 'Гант',
   scale: 'Масштаб Ганта',
   today: 'Сегодня',

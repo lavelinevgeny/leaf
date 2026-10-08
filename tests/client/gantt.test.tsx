@@ -4,6 +4,9 @@ import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { calculateSchedule } from '../../src/domain/scheduling.js';
 import { Gantt } from '../../src/client/Gantt.js';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
+import { TaskViewControl } from '../../src/client/TaskViewControl.js';
 import { TaskTimeline } from '../../src/client/TaskTimeline.js';
 import { treeRows } from '../../src/client/tree-view.js';
 import { optionalTreeFixture, optionalIds } from './fixtures.js';
@@ -274,20 +277,15 @@ it('keeps the view control available without Gantt help or planning writes', () 
     disabled: false,
     show: true,
     reveal: null,
-    viewControl: (
-      <label>
-        <input type="checkbox" defaultChecked />
-        Гант
-      </label>
-    ),
+    viewControl: <TaskViewControl showGantt onChange={vi.fn()} />,
   };
   const view = render(<TaskTimeline {...p} />);
   expect(screen.queryByRole('button', { name: 'Помощь Ганта' })).toBeNull();
   expect(screen.queryByText(/Перенос — обе даты/)).toBeNull();
-  expect(screen.getByRole('checkbox', { name: 'Гант' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Гант' })).toBeVisible();
   expect(screen.getByRole('combobox', { name: 'Масштаб Ганта' })).toBeVisible();
   view.rerender(<TaskTimeline {...p} show={false} />);
-  expect(screen.getByRole('checkbox', { name: 'Гант' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Гант' })).toBeVisible();
   expect(screen.queryByRole('combobox', { name: 'Масштаб Ганта' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Сегодня' })).toBeNull();
   expect(
@@ -298,4 +296,79 @@ it('keeps the view control available without Gantt help or planning writes', () 
   expect(screen.getByRole('combobox', { name: 'Масштаб Ганта' })).toBeVisible();
   expect(tree).toEqual(before);
   expect(p.onPlan).not.toHaveBeenCalled();
+});
+
+it('switches two pressed-state view buttons with mouse and keyboard', async () => {
+  const user = userEvent.setup();
+  function Views() {
+    const [show, setShow] = useState(true);
+    return <TaskViewControl showGantt={show} onChange={setShow} />;
+  }
+  render(<Views />);
+  expect(
+    screen.getByRole('group', { name: 'Представление задач' }),
+  ).toBeVisible();
+  const gantt = screen.getByRole('button', { name: 'Гант' });
+  const list = screen.getByRole('button', { name: 'Список' });
+  expect(gantt).toHaveAttribute('aria-pressed', 'true');
+  await user.click(list);
+  expect(list).toHaveAttribute('aria-pressed', 'true');
+  expect(gantt).toHaveAttribute('aria-pressed', 'false');
+  await user.tab();
+  expect(gantt).toHaveFocus();
+  await user.keyboard('{Enter}');
+  expect(gantt).toHaveAttribute('aria-pressed', 'true');
+  await user.tab({ shift: true });
+  await user.keyboard(' ');
+  expect(list).toHaveAttribute('aria-pressed', 'true');
+  await user.click(gantt);
+  expect(gantt).toHaveAttribute('aria-pressed', 'true');
+});
+
+it('discloses the project today on hover and focus and updates it across timezone and day changes', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-08T23:30:00Z'));
+  try {
+    const user = userEvent.setup();
+    const tree = optionalTreeFixture();
+    tree.project.timezone = 'Asia/Tokyo';
+    const p = {
+      tree,
+      selectedId: null,
+      collapsed: new Set<string>(),
+      onToggle: vi.fn(),
+      onSelect: vi.fn(),
+      onAction: vi.fn(),
+      onPlan: vi.fn(),
+      disabled: false,
+      show: true,
+      reveal: null,
+    };
+    const view = render(<TaskTimeline {...p} />);
+    const today = screen.getByRole('button', { name: 'Сегодня' });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    await user.hover(today);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('09.10.2026');
+    expect(today).toHaveAccessibleDescription('09.10.2026');
+    await user.unhover(today);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    today.focus();
+    fireEvent.focus(today);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('09.10.2026');
+    const changed = {
+      ...tree,
+      project: { ...tree.project, timezone: 'America/Los_Angeles' },
+    };
+    view.rerender(<TaskTimeline {...p} tree={changed} />);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('08.10.2026');
+    vi.setSystemTime(new Date('2026-10-09T23:30:00Z'));
+    fireEvent(window, new Event('focus'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('09.10.2026');
+    expect(
+      view.container.querySelector('.gantt-toolbar')?.textContent,
+    ).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(p.onPlan).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

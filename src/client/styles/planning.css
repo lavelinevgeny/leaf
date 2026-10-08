@@ -13,15 +13,24 @@
   max-height: 160px;
   overflow: auto;
 }
-.gantt-toggle {
-  display: flex;
+.task-view-control {
+  display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 8px;
-  margin: 0 auto 0 0;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--leaf-border);
+  border-radius: var(--leaf-radius);
+  background: var(--leaf-surface-muted);
 }
-.gantt-toggle input {
-  width: auto;
-  accent-color: var(--leaf-accent);
+.task-view-control button {
+  border-color: transparent;
+  background: transparent;
+}
+.task-view-control button[aria-pressed='true'] {
+  color: var(--leaf-accent);
+  border-color: #bedec9;
+  background: white;
 }
 .task-timeline {
   flex: 1;
@@ -47,7 +56,7 @@
   overflow-x: auto;
 }
 .timeline-heading {
-  height: 58px;
+  height: var(--plan-header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -58,8 +67,8 @@
   gap: 12px;
 }
 .timeline-tree .task-row {
-  height: 38px;
-  min-height: 38px;
+  height: var(--plan-row-height);
+  min-height: var(--plan-row-height);
   padding-block: 0;
 }
 .timeline-tree .task-title {
@@ -96,14 +105,22 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+.timeline-columns.list-view .timeline-tree {
+  width: 100%;
+  max-width: 100%;
+}
+.timeline-columns > [hidden] {
+  display: none;
+}
 .gantt-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 6px;
   padding-block: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex-shrink: 0;
+  height: 44px;
 }
 .gantt-toolbar label {
   display: flex;
@@ -112,12 +129,31 @@
   margin: 0;
   font-size: 12px;
 }
-.gantt-toolbar .gantt-toggle {
-  margin-right: auto;
-  font-size: 14px;
+.gantt-scale-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
-.gantt-toolbar .gantt-toggle input {
-  margin: 0;
+.today-disclosure {
+  position: relative;
+  display: inline-flex;
+}
+.today-tooltip {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border: 1px solid var(--leaf-border);
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 4px 12px #223e2b1a;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .gantt-toolbar select {
   width: auto;
