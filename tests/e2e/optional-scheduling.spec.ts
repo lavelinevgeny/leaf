@@ -19,7 +19,7 @@ const test = base.extend<{
     }
   },
 });
-test('optional source, conditional display, mismatch rollback, FS conflict, undo and restart', async ({
+test('optional source, linked input, API mismatch rollback, FS conflict, undo and restart', async ({
   page,
   runtime,
 }, info) => {
@@ -46,8 +46,31 @@ test('optional source, conditional display, mismatch rollback, FS conflict, undo
   await page
     .getByLabel('Описание', { exact: true })
     .fill('Синтетический черновик');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  await expect(page.getByText(/Длительность не совпадает/)).toBeVisible();
+  await expect(
+    page.getByLabel('Длительность, рабочих дней', { exact: true }),
+  ).toHaveValue('2');
+  const mismatch = await page.request.post(
+    `${runtime.origin}/api/projects/${tree.project.id}/commands`,
+    {
+      headers: { Origin: runtime.origin, 'X-Leaf-Contract-Version': '2' },
+      data: {
+        contractVersion: 2,
+        expectedRevision: tree.project.revision,
+        operationId: randomUUID(),
+        command: {
+          type: 'task.edit',
+          taskId: c,
+          changes: {
+            inputStart: '2026-10-05',
+            inputFinish: '2026-10-06',
+            durationDays: 3,
+          },
+        },
+      },
+    },
+  );
+  expect(mismatch.status()).toBe(400);
+  expect((await mismatch.json()).code).toBe('DURATION_MISMATCH');
   await expect(page.getByLabel('Описание', { exact: true })).toHaveValue(
     'Синтетический черновик',
   );

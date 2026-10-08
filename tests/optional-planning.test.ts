@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applySourcePatch,
+  completeSourceEdit,
   realInterval,
   validateSourceInput,
 } from '../src/domain/planning.js';
@@ -25,6 +26,167 @@ const emptySource: SourceFields = {
   inputFinish: null,
   durationDays: null,
 };
+
+describe('explicit linked source editor C18', () => {
+  it.each([
+    [
+      'inputStart',
+      '2026-10-09',
+      '2026-10-06',
+      2,
+      '2026-10-09',
+      '2026-10-12',
+      2,
+    ],
+    [
+      'inputFinish',
+      '2026-10-09',
+      '2026-10-13',
+      2,
+      '2026-10-09',
+      '2026-10-13',
+      3,
+    ],
+    [
+      'durationDays',
+      '2026-10-09',
+      '2026-10-12',
+      3,
+      '2026-10-09',
+      '2026-10-13',
+      3,
+    ],
+    ['durationDays', null, '2026-10-12', 2, '2026-10-09', '2026-10-12', 2],
+    ['inputFinish', null, '2026-10-12', 2, '2026-10-09', '2026-10-12', 2],
+    [
+      'inputStart',
+      '2026-10-09',
+      '2026-10-13',
+      null,
+      '2026-10-09',
+      '2026-10-13',
+      3,
+    ],
+    [
+      'inputFinish',
+      '2026-10-09',
+      '2026-10-13',
+      null,
+      '2026-10-09',
+      '2026-10-13',
+      3,
+    ],
+  ] as const)(
+    'completes %s preserving the chosen anchor',
+    (
+      field,
+      start,
+      finish,
+      duration,
+      expectedStart,
+      expectedFinish,
+      expectedDuration,
+    ) => {
+      const source = {
+        inputStart: start,
+        inputFinish: finish,
+        durationDays: duration,
+      };
+      const original = { ...source };
+      expect(completeSourceEdit(source, field, 'weekdays')).toEqual({
+        inputStart: expectedStart,
+        inputFinish: expectedFinish,
+        durationDays: expectedDuration,
+      });
+      expect(source).toEqual(original);
+    },
+  );
+  it.each(['inputStart', 'inputFinish', 'durationDays'] as const)(
+    'does not refill cleared %s',
+    (field) => {
+      const source = {
+        inputStart: '2026-10-09',
+        inputFinish: '2026-10-12',
+        durationDays: 2,
+        [field]: null,
+      };
+      expect(completeSourceEdit(source, field, 'weekdays')).toEqual(source);
+      expect(completeSourceEdit(emptySource, field, 'weekdays')).toEqual(
+        emptySource,
+      );
+    },
+  );
+  it.each([
+    { ...emptySource, inputStart: '2026-10-09' },
+    { ...emptySource, inputFinish: '2026-10-12' },
+    { ...emptySource, durationDays: 6 },
+  ])('does not invent an anchor: %j', (source) => {
+    const field = (Object.keys(source) as (keyof SourceFields)[]).find(
+      (key) => source[key] !== null,
+    )!;
+    expect(completeSourceEdit(source, field, 'weekdays')).toEqual(source);
+  });
+  it.each([
+    ['all-days', '2026-10-09', 2, '2026-10-10'],
+    ['all-days', '2028-02-28', 2, '2028-02-29'],
+    ['weekdays', '2026-12-31', 3, '2027-01-04'],
+    ['all-days', '2026-03-28', 3, '2026-03-30'],
+  ] as const)(
+    'uses %s civil calendar at %s',
+    (calendar, start, duration, finish) => {
+      expect(
+        completeSourceEdit(
+          { inputStart: start, inputFinish: null, durationDays: duration },
+          'durationDays',
+          calendar,
+        ),
+      ).toEqual({
+        inputStart: start,
+        inputFinish: finish,
+        durationDays: duration,
+      });
+      expect(
+        completeSourceEdit(
+          { inputStart: null, inputFinish: finish, durationDays: duration },
+          'durationDays',
+          calendar,
+        ),
+      ).toEqual({
+        inputStart: start,
+        inputFinish: finish,
+        durationDays: duration,
+      });
+    },
+  );
+  it.each([
+    { inputStart: '2026-10-10', inputFinish: null, durationDays: 2 },
+    { inputStart: null, inputFinish: '0001-01-01', durationDays: 2 },
+    { inputStart: '9999-12-31', inputFinish: null, durationDays: 2 },
+    { inputStart: '2026-10-09', inputFinish: null, durationDays: 0 },
+    { inputStart: '2026-10-09', inputFinish: null, durationDays: 1.5 },
+    { inputStart: '2026-10-09', inputFinish: null, durationDays: 1000001 },
+    { inputStart: '2026-02-29', inputFinish: null, durationDays: 2 },
+  ])('rejects invalid calculation without changing source: %j', (source) => {
+    const original = { ...source };
+    expect(() =>
+      completeSourceEdit(source, 'durationDays', 'weekdays'),
+    ).toThrow();
+    expect(source).toEqual(original);
+  });
+  it('rejects reversed finish instead of moving the start', () => {
+    expect(() =>
+      completeSourceEdit(
+        {
+          inputStart: '2026-10-12',
+          inputFinish: '2026-10-09',
+          durationDays: 2,
+        },
+        'inputFinish',
+        'weekdays',
+      ),
+    ).toThrow();
+  });
+});
 const taskId = '00000000-0000-4000-8000-000000000001';
 const projectId = '00000000-0000-4000-8000-000000000002';
 const operationId = '00000000-0000-4000-8000-000000000003';

@@ -84,6 +84,7 @@ export function TaskPanel({
     sourceOf(task),
   );
   const [saved, setSaved] = useState(false);
+  const [planValid, setPlanValid] = useState(true);
   const [moveParent, setMoveParent] = useState(task.parentId ?? '');
   const previousParent = useRef(task.parentId);
   const unavailable = tree.schedule.diagnostics.some(
@@ -133,7 +134,8 @@ export function TaskPanel({
     setSaved(false);
   }
   async function save() {
-    if (busy || removed || conflict || !draft.title.trim()) return;
+    if (busy || removed || conflict || !draft.title.trim() || !planValid)
+      return;
     const fields = { ...draft, title: draft.title.trim() };
     if (!summary && planDirty && !sourceFieldsSchema.safeParse(plan).success)
       return;
@@ -270,6 +272,7 @@ export function TaskPanel({
                   calendar={tree.project.calendarType}
                   summary={summary}
                   disabled={removed}
+                  onValidityChange={setPlanValid}
                   onChange={(next) => {
                     setPlan(next);
                     setSaved(false);
@@ -297,6 +300,7 @@ export function TaskPanel({
                     busy ||
                     removed ||
                     conflict ||
+                    !planValid ||
                     (locked && !retry) ||
                     (!dirty && !retry && !canAdopt) ||
                     !draft.title.trim() ||

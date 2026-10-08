@@ -1,7 +1,60 @@
 import type { CalendarType } from './scheduling-types.js';
 import { DomainError } from './tree.js';
-import { isWorkingDay, workingDaysInclusive } from './calendar.js';
-import type { SourceFields, SourcePatch } from '../shared/contracts.js';
+import { indexToDate, isWorkingDay, workingDaysInclusive } from './calendar.js';
+import {
+  sourceFieldsSchema,
+  type SourceFields,
+  type SourcePatch,
+} from '../shared/contracts.js';
+
+// An explicit editor gesture prepares a patch; stored-source analysis never calls this.
+export function completeSourceEdit(
+  source: SourceFields,
+  field: keyof SourceFields,
+  calendar: CalendarType,
+): SourceFields {
+  if (source[field] === null) return { ...source };
+  if (!sourceFieldsSchema.safeParse(source).success)
+    throw new DomainError('INVALID_INTERVAL', 'Проверьте дату и длительность.');
+  const next = { ...source };
+  const {
+    inputStart: start,
+    inputFinish: finish,
+    durationDays: duration,
+  } = source;
+  try {
+    if (
+      (field === 'inputStart' || field === 'durationDays') &&
+      start &&
+      duration !== null
+    )
+      next.inputFinish = indexToDate(duration - 1, start, calendar);
+    else if (
+      (field === 'inputFinish' || field === 'inputStart') &&
+      start &&
+      finish
+    )
+      next.durationDays = workingDaysInclusive(start, finish, calendar);
+    else if (
+      (field === 'inputFinish' || field === 'durationDays') &&
+      finish &&
+      duration !== null
+    )
+      next.inputStart = indexToDate(1 - duration, finish, calendar);
+    validateSourceInput(next, calendar);
+  } catch {
+    throw new DomainError(
+      'INVALID_INTERVAL',
+      'Проверьте порядок дат, рабочие дни и допустимый диапазон.',
+    );
+  }
+  if (!sourceFieldsSchema.safeParse(next).success)
+    throw new DomainError(
+      'INVALID_INTERVAL',
+      'Длительность должна быть от 1 до 1 000 000 дней.',
+    );
+  return next;
+}
 
 export function validateSourceInput(
   source: SourceFields,
