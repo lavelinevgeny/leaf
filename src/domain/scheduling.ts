@@ -1,10 +1,6 @@
-import {
-  dateToIndex,
-  indexToDate,
-  isWorkingDay,
-  nextWorkingDay,
-  workingDaysInclusive,
-} from './calendar.js';
+import { dateToIndex, isWorkingDay, workingDaysInclusive } from './calendar.js';
+import { conditionalDisplay } from './conditional-display.js';
+export { conditionalFinish } from './conditional-display.js';
 import { realInterval, validateSourceInput } from './planning.js';
 import type {
   ConditionalDisplay,
@@ -14,7 +10,7 @@ import type {
 } from './scheduling-types.js';
 import { analyzeExplicitDates } from './explicit-cpm.js';
 import type { ExplicitProjection, LiveResult } from './scheduling-types.js';
-import type { CalendarType, SchedulingDependency } from './scheduling-types.js';
+import type { SchedulingDependency } from './scheduling-types.js';
 import { DomainError } from './tree.js';
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -25,27 +21,6 @@ const blankReal = (): RealTask => ({
   finishDate: null,
   calendarSpanDays: null,
 });
-
-export function conditionalFinish(
-  anchor: string,
-  duration: number | null,
-  calendar: CalendarType,
-): { finishDate: string; clipped: boolean } {
-  const count = duration ?? 1;
-  if (count === 1) return { finishDate: anchor, clipped: false };
-  try {
-    const base = nextWorkingDay(anchor, calendar);
-    const offset = isWorkingDay(anchor, calendar) ? count - 1 : count - 2;
-    return { finishDate: indexToDate(offset, base, calendar), clipped: false };
-  } catch (error) {
-    if (
-      !(error instanceof RangeError) ||
-      error.message !== 'CALENDAR_RANGE_EXCEEDED'
-    )
-      throw error;
-    return { finishDate: '9999-12-31', clipped: true };
-  }
-}
 
 // Iterative Kosaraju traversal identifies actual cycles, excluding downstream
 // leaves that would remain after an unsuccessful topological traversal.
@@ -394,19 +369,14 @@ export function projectExplicitSchedule(
   const displays = new Map<string, ConditionalDisplay>();
   for (const id of leaves) {
     const task = taskMap.get(id)!;
-    if (
-      task.inputStart !== null ||
-      task.parentId === null ||
-      invalidDisplay.has(id)
-    )
-      continue;
-    const anchor = knownStartMin.get(task.parentId)!;
-    if (anchor === null) continue;
-    displays.set(id, {
-      kind: 'conditional',
-      startDate: anchor,
-      ...conditionalFinish(anchor, task.durationDays, input.calendarType),
-    });
+    if (invalidDisplay.has(id)) continue;
+    const display = conditionalDisplay(
+      task,
+      task.parentId === null ? null : knownStartMin.get(task.parentId)!,
+      null,
+      input.calendarType,
+    );
+    if (display) displays.set(id, display);
   }
   result.display = Object.fromEntries(displays);
 

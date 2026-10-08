@@ -417,7 +417,7 @@ test('conditional unknown keeps partial copy then known FS conflict suppresses a
   ).toBeVisible();
   await expect(
     page.getByRole('button', {
-      name: /U.*Условное размещение; начало не задано/,
+      name: /U.*Условное размещение; полный интервал не задан/,
     }),
   ).toBeVisible();
   expect(await page.locator('.gantt-work.critical').count()).toBe(0);

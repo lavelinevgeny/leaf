@@ -4,6 +4,8 @@
 
 Основание: [DECISIONS, C16/C17](../../DECISIONS.md), [спецификация, разделы 7 и 9](2026-10-07-optional-scheduling-design.md), [план, Tasks 4 и 6](../plans/2026-10-07-optional-scheduling.md), [ADR 007](../../adr/007-legacy-scheduling-migration.md), [ADR 008](../../adr/008-explicit-date-cpm.md). В исторических записях ревью сохраняются проверенные ревизии; их APPROVED не распространяется автоматически на новые изменения.
 
+Уточнение C19, 2026-10-08: [условные own/group/today полосы и создание](2026-10-08-conditional-gantt-design.md) меняют только display и явную подготовку task.create. Они не участвуют в формулах C16; duration-only и отсутствующие source dates остаются unknown. task.create принимает необязательные исходные сроки атомарно, без изменения миграции C17 и frozen replies.
+
 ## 1. Выбор подхода
 
 | Вариант | Следствие |

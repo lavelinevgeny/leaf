@@ -667,7 +667,7 @@ it('C17 valid source remains visible as notes while real bar and ordinary critic
   ).toBeVisible();
   expect(
     screen.getByRole('button', {
-      name: /Работа U.*Условное размещение; начало не задано/,
+      name: /Работа U.*Условное размещение; полный интервал не задан/,
     }),
   ).toBeVisible();
   gantt.unmount();
@@ -923,9 +923,14 @@ it.each(['infeasible', 'pending-policy'] as const)(
         onPlan={vi.fn()}
       />,
     );
-    expect(gantt.container.querySelectorAll('[data-gantt-bar]')).toHaveLength(
-      3,
-    );
+    expect(
+      gantt.container.querySelectorAll('.gantt-work.work [data-gantt-bar]'),
+    ).toHaveLength(3);
+    expect(
+      gantt.container.querySelectorAll(
+        '.gantt-work.conditional [data-gantt-bar]',
+      ),
+    ).toHaveLength(1);
     expect(gantt.container.querySelectorAll('[data-gantt-edge]')).toHaveLength(
       3,
     );

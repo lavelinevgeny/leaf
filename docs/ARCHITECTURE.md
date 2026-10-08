@@ -1,5 +1,7 @@
 # Архитектура: простой модульный монолит
 
+C19: [ADR 010](adr/010-conditional-display-today.md) описывает общий чистый display helper и клиентский today fallback. task.create принимает необязательные source поля и валидирует их в одной серверной транзакции; response DTO, SQL, версия 2 и frozen replies сохранены.
+
 ## Выбор по умолчанию
 
 Один репозиторий и package.json. React + TypeScript + Vite для SPA; Fastify + TypeScript для HTTP; SQLite через better-sqlite3, небольшие версионированные SQL-миграции. Клиент и API одного origin. Один production-процесс обслуживает `/api` и собранную статику. Два dev-процесса допустимы только ради удобства.

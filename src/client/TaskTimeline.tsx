@@ -14,10 +14,10 @@ import {
   ganttInterval,
   sourceMarkers,
   shiftDate,
-  todayInZone,
   type Scale,
 } from './gantt-view.js';
 import { scaleLabels, strings } from './strings.js';
+import { useProjectToday } from './use-project-today.js';
 import {
   emptyTaskFilter,
   filterTasks,
@@ -37,10 +37,12 @@ interface Props {
   reveal: GanttReveal | null;
   filter?: TaskFilter;
 }
-function timelineDate(task: Task, tree: ProjectTree) {
+function timelineDate(task: Task, tree: ProjectTree, today: string) {
   return (
-    ganttInterval(task, tree.schedule)?.start ??
-    sourceMarkers(task, tree.schedule)[0]?.date
+    ganttInterval(task, tree.schedule, {
+      today,
+      calendar: tree.project.calendarType,
+    })?.start ?? sourceMarkers(task, tree.schedule)[0]?.date
   );
 }
 export function TaskTimeline({
@@ -84,12 +86,12 @@ export function TaskTimeline({
     });
   }
   const focusedTask = tree.tasks.find((task) => task.id === selectedId);
-  const today = todayInZone(tree.project.timezone);
+  const today = useProjectToday(tree.project.timezone);
   const [scale, setScale] = useState<Scale>('days');
   const [start, setStart] = useState(() =>
     shiftDate(
       tree.tasks
-        .map((task) => timelineDate(task, tree))
+        .map((task) => timelineDate(task, tree, today))
         .filter((date): date is string => !!date)
         .sort()[0] ?? today,
       -3,
@@ -102,7 +104,7 @@ export function TaskTimeline({
   useEffect(() => {
     if (!reveal) return;
     const task = tree.tasks.find((item) => item.id === reveal.taskId);
-    const date = task && timelineDate(task, tree);
+    const date = task && timelineDate(task, tree, today);
     if (date) setStart(shiftDate(date, -3));
     if (horizontal.current) horizontal.current.scrollLeft = 0;
     requestAnimationFrame(() => {

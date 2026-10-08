@@ -141,7 +141,7 @@ test('scoped keyboard creation preserves main draft, real dates and dependencies
   expect(added.dependencies).toEqual(tree.dependencies);
   expect(created.inputStart).toBeNull();
   expect(created.inputFinish).toBeNull();
-  expect(created.durationDays).toBeNull();
+  expect(created.durationDays).toBe(1);
   expect(added.project.revision).toBe(tree.project.revision + 1);
   // The compact panel overlays the right side of the toolbar. Undo remains
   // available from the task tree with the application's keyboard command.

@@ -84,7 +84,10 @@ export function Gantt({
     return (
       !disabled &&
       task.status !== 'done' &&
-      ganttInterval(task, tree.schedule)?.kind === 'work' &&
+      ganttInterval(task, tree.schedule, {
+        today,
+        calendar: tree.project.calendarType,
+      })?.kind === 'work' &&
       !tree.schedule.summaries[task.id] &&
       !!tree.schedule.tasks[task.id]?.startDate
     );
@@ -95,7 +98,10 @@ export function Gantt({
     kind: 'move' | 'resize',
   ) {
     if (!editable(task) || event.button !== 0) return;
-    const interval = ganttInterval(task, tree.schedule);
+    const interval = ganttInterval(task, tree.schedule, {
+      today,
+      calendar: tree.project.calendarType,
+    });
     if (!interval?.finish) return;
     event.stopPropagation();
     event.preventDefault();
@@ -257,7 +263,10 @@ export function Gantt({
         );
       })}
       {rows.map(({ task }, index) => {
-        const interval = ganttInterval(task, tree.schedule);
+        const interval = ganttInterval(task, tree.schedule, {
+          today,
+          calendar: tree.project.calendarType,
+        });
         const containsCritical =
           schedule.analysisStatus === 'ready' &&
           schedule.summaries[task.id]?.containsCritical === true;
@@ -307,7 +316,7 @@ export function Gantt({
               <g
                 role="button"
                 tabIndex={0}
-                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? ', Условное размещение; начало не задано' : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${criticalLabel ? `, ${criticalLabel}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
+                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? `, ${strings.conditionalPlacement}` : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${criticalLabel ? `, ${criticalLabel}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
                 aria-disabled={disabled}
                 className={`gantt-work ${interval.kind}${critical.has(task.id) ? ' critical' : ''}${partialCritical ? ' partial-critical' : ''}${containsCritical ? ' contains-critical' : ''}${task.status === 'done' ? ' completed' : ''}`}
                 onPointerDown={(event) => begin(event, task, 'move')}
@@ -358,7 +367,7 @@ export function Gantt({
                 <title>
                   {task.title}: {interval.start} – {interval.finish}
                   {interval.kind === 'conditional'
-                    ? ' (Условное размещение; начало не задано)'
+                    ? ` (${strings.conditionalPlacement})`
                     : ''}
                   {interval.clipped
                     ? ' (Отображение ограничено предельной датой)'

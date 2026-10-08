@@ -65,7 +65,7 @@ it('renders a conditional bar without promoting it to task dates or accepting a 
   };
   render(<TaskTimeline {...p} />);
   const bar = screen.getByRole('button', {
-    name: /Работа C.*Условное размещение; начало не задано/,
+    name: /Работа C.*Условное размещение; полный интервал не задан/,
   });
   expect(bar).toBeVisible();
   expect(screen.queryByText('2026-10-05 – 2026-10-07')).toBeNull();
@@ -74,7 +74,7 @@ it('renders a conditional bar without promoting it to task dates or accepting a 
   fireEvent.keyDown(bar, { key: 'Enter' });
   expect(p.onSelect).toHaveBeenCalledWith(tree.tasks[2]);
 });
-it('shows start-only as a source marker without a bar', () => {
+it('shows start-only with its source marker and a conditional bar', () => {
   const tree = optionalTreeFixture();
   tree.tasks[2]!.inputStart = '2026-10-09';
   tree.schedule.display = {};
@@ -86,9 +86,9 @@ it('shows start-only as a source marker without a bar', () => {
   ).toBeVisible();
   expect(
     container.querySelector(`[data-gantt-bar="${optionalIds.c}"]`),
-  ).toBeNull();
+  ).toBeVisible();
 });
-it('keeps finish2 separate from conditional9 and never gestures on markers', () => {
+it('prioritizes finish2 over group9 and never gestures on markers', () => {
   const tree = optionalTreeFixture();
   tree.tasks[2]!.inputFinish = '2026-10-02';
   tree.tasks[2]!.durationDays = null;
@@ -101,7 +101,7 @@ it('keeps finish2 separate from conditional9 and never gestures on markers', () 
   expect(marker).toBeVisible();
   expect(
     view.container.querySelector(`[data-gantt-bar="${optionalIds.c}"]`),
-  ).toBeNull();
+  ).toBeVisible();
   tree.schedule.display[optionalIds.c] = {
     kind: 'conditional',
     startDate: '2026-10-09',
@@ -112,7 +112,7 @@ it('keeps finish2 separate from conditional9 and never gestures on markers', () 
   expect(marker).toBeVisible();
   expect(
     screen.getByRole('button', {
-      name: /Работа C.*2026-10-09.*Условное размещение/,
+      name: /Работа C.*2026-10-02.*Условное размещение/,
     }),
   ).toBeVisible();
   fireEvent.keyDown(marker, { key: 'ArrowRight' });
@@ -212,7 +212,9 @@ it.each([
     })[0]!;
     fireEvent.keyDown(marker, { key: 'ArrowRight', shiftKey: true });
     expect(p.onPlan).not.toHaveBeenCalled();
-    expect(view.container.querySelector('[data-gantt-bar]')).toBeNull();
+    if (count === 2)
+      expect(view.container.querySelector('[data-gantt-bar]')).toBeNull();
+    else expect(view.container.querySelector('[data-gantt-bar]')).toBeVisible();
     expect(JSON.stringify(tree)).toBe(before);
   },
 );

@@ -8,13 +8,15 @@ import type {
 import { completeSourceEdit } from '../domain/planning.js';
 import { CalendarDateInput } from './CalendarDateInput.js';
 import { strings } from './strings.js';
+import { useProjectToday } from './use-project-today.js';
 interface Props {
-  task: Task;
+  task: Pick<Task, 'status'>;
   plan: SourceFields;
   computed?:
     | Pick<ProjectTree['schedule']['tasks'][string], 'startDate' | 'finishDate'>
     | undefined;
   calendar: Project['calendarType'];
+  timezone?: string;
   summary: boolean;
   disabled: boolean;
   onChange: (source: SourceFields) => void;
@@ -25,11 +27,13 @@ export function PlanFields({
   plan,
   computed,
   calendar,
+  timezone,
   summary,
   disabled,
   onChange,
   onValidityChange,
 }: Props) {
+  const today = useProjectToday(timezone ?? 'UTC');
   const hintId = useId();
   const errorId = useId();
   const pending = useRef<Partial<SourceFields>>({});
@@ -126,6 +130,7 @@ export function PlanFields({
               }
               invalid={activeError?.field === field}
               highlighted={flash.includes(field)}
+              {...(field === 'inputStart' && timezone ? { today } : {})}
               onChange={(value) => change(field, value)}
               onCommit={(value) => commit(field, value)}
             />

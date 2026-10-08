@@ -39,3 +39,6 @@ export function gesturePatch(
     requiresDurationChoice: false,
   };
 }
+export function newTaskPlan(): import('../shared/contracts.js').SourceFields {
+  return { inputStart: null, inputFinish: null, durationDays: 1 };
+}

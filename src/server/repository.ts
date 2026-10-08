@@ -30,6 +30,7 @@ import { calculateSchedule } from '../domain/scheduling.js';
 import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import {
   emptyPlanning,
+  validateSourceInput,
   validateDependencies,
   validateDependency,
 } from '../domain/planning.js';
@@ -471,6 +472,12 @@ export class Repository {
         break;
       }
       case 'task.create': {
+        const source = {
+          inputStart: command.inputStart ?? null,
+          inputFinish: command.inputFinish ?? null,
+          durationDays: command.durationDays ?? null,
+        };
+        validateSourceInput(source, snapshot.project.calendarType);
         if (
           command.parentId !== null &&
           !tasks.some((task) => task.id === command.parentId)
@@ -501,7 +508,7 @@ export class Repository {
           description: '',
           sortOrder: position,
           status: 'todo',
-          ...emptyPlanning,
+          ...source,
           createdAt: timestamp,
           updatedAt: timestamp,
         };

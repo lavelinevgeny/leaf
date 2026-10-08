@@ -122,7 +122,7 @@ beforeEach(() => {
       const envelope = JSON.parse(String(init?.body)) as CommandEnvelope;
       commands.push(envelope);
       const command = envelope.command;
-      if (command.type === 'task.create')
+      if (command.type === 'task.create') {
         tree.tasks.push(
           task(
             50 + commands.length,
@@ -131,6 +131,12 @@ beforeEach(() => {
             tree.tasks.length,
           ),
         );
+        Object.assign(tree.tasks.at(-1)!, {
+          inputStart: command.inputStart ?? null,
+          inputFinish: command.inputFinish ?? null,
+          durationDays: command.durationDays ?? null,
+        });
+      }
       if (command.type === 'task.update' || command.type === 'task.edit')
         tree.tasks = tree.tasks.map((t) =>
           t.id === command.taskId
@@ -172,6 +178,78 @@ async function open() {
 }
 
 describe('client HTTP interactions', () => {
+  it('keeps source drafts separate and resets only the confirmed branch on exact retry', async () => {
+    tree.tasks = [task(1, 'Этап')];
+    await open();
+    const user = userEvent.setup();
+    const main = within(screen.getByLabelText('Новая задача').closest('form')!);
+    await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
+    await user.clear(main.getByLabelText('Длительность, рабочих дней'));
+    await user.type(main.getByLabelText('Длительность, рабочих дней'), '5');
+    await user.tab();
+    await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    await user.type(panel.getByLabelText('Новая задача'), 'Ребёнок');
+    await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
+    await user.clear(panel.getByLabelText('Длительность, рабочих дней'));
+    await user.tab();
+    fetchMock.mockImplementationOnce(() =>
+      Promise.reject(new TypeError('synthetic offline')),
+    );
+    await user.click(panel.getByRole('button', { name: 'Добавить задачу' }));
+    await panel.findByText(/Нет связи с сервером/);
+    const firstBody = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith('/commands'))
+      .at(-1)?.[1]?.body;
+    expect(panel.getByLabelText('Длительность, рабочих дней')).toHaveValue(
+      null,
+    );
+    expect(panel.getByLabelText('Длительность, рабочих дней')).toBeDisabled();
+    await user.click(panel.getByRole('button', { name: 'Повторить' }));
+    await waitFor(() =>
+      expect(panel.getByLabelText('Новая задача')).toHaveValue(''),
+    );
+    expect(
+      fetchMock.mock.calls
+        .filter(([url]) => String(url).endsWith('/commands'))
+        .at(-1)?.[1]?.body,
+    ).toBe(firstBody);
+    expect(commands[0]?.command).toMatchObject({
+      durationDays: null,
+      inputStart: null,
+      inputFinish: null,
+    });
+    expect(panel.getByLabelText('Длительность, рабочих дней')).toHaveValue(1);
+    await user.keyboard('{Escape}');
+    await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
+    expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue(5);
+    await user.click(
+      main.getByRole('button', { name: 'Очистить быстрый ввод' }),
+    );
+    expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue(1);
+  });
+
+  it('accounts for a changed source draft without a title when leaving the page', async () => {
+    await open();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    await user.clear(screen.getByLabelText('Длительность, рабочих дней'));
+    await user.tab();
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    await user.click(
+      screen.getByRole('button', { name: 'Очистить быстрый ввод' }),
+    );
+    const clean = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+  });
+
   it('adds nested work inside the subtasks tab without retargeting the main quick draft', async () => {
     tree.tasks = [task(1, 'Этап'), task(2, 'Ребёнок', id(1))];
     await open();
@@ -193,6 +271,9 @@ describe('client HTTP interactions', () => {
     expect(mainInput).toHaveValue('Главный черновик');
     expect(commands[0]?.command).toEqual({
       type: 'task.create',
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
       title: 'Новая работа',
       parentId: id(2),
     });
@@ -492,6 +573,9 @@ describe('client HTTP interactions', () => {
       expectedRevision: 6,
       command: {
         type: 'task.create',
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
         title: 'Черновик ребёнка',
         parentId: null,
       },
@@ -514,6 +598,9 @@ describe('client HTTP interactions', () => {
     await waitFor(() => expect(commands).toHaveLength(3));
     expect(commands[2]?.command).toEqual({
       type: 'task.create',
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
       title: 'Черновик B',
       parentId: null,
     });
@@ -536,6 +623,9 @@ describe('client HTTP interactions', () => {
     await waitFor(() => expect(commands).toHaveLength(3));
     expect(commands[2]?.command).toEqual({
       type: 'task.create',
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
       title: 'Черновик B',
       parentId: null,
     });
@@ -570,6 +660,9 @@ describe('client HTTP interactions', () => {
       await waitFor(() => expect(commands).toHaveLength(2));
       expect(commands[1]?.command).toEqual({
         type: 'task.create',
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
         title: 'Черновик ребёнка',
         parentId: null,
       });
@@ -598,6 +691,9 @@ describe('client HTTP interactions', () => {
     await waitFor(() => expect(commands).toHaveLength(2));
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
       title: 'Черновик корня',
       parentId: null,
     });
@@ -621,6 +717,9 @@ describe('client HTTP interactions', () => {
     await waitFor(() => expect(commands).toHaveLength(2));
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
       title: 'Сосед ребёнка',
       parentId: id(1),
     });
@@ -657,6 +756,9 @@ describe('client HTTP interactions', () => {
     await waitFor(() => expect(commands).toHaveLength(2));
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
       title: 'Сосед ребёнка',
       parentId: id(1),
       afterId: id(2),
@@ -671,7 +773,14 @@ describe('client HTTP interactions', () => {
     await screen.findByRole('treeitem', { name: /Задача A/ });
     expect(commands[0]).toMatchObject({
       expectedRevision: 0,
-      command: { type: 'task.create', title: 'Задача A', parentId: null },
+      command: {
+        type: 'task.create',
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
+        title: 'Задача A',
+        parentId: null,
+      },
     });
     expect(commands[0]?.operationId).toMatch(/^[\da-f-]{36}$/);
     expect(
@@ -1075,6 +1184,9 @@ describe('client HTTP interactions', () => {
     await waitFor(() => expect(commands).toHaveLength(1));
     expect(commands[0]?.command).toMatchObject({
       type: 'task.create',
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
       parentId: id(1),
       afterId: id(2),
     });

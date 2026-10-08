@@ -367,6 +367,7 @@ export const commandV2Schema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('task.create'),
+    ...sourcePatchSchema.shape,
     title: taskTitleSchema,
     parentId: uuidSchema.nullable(),
     afterId: uuidSchema.optional(),

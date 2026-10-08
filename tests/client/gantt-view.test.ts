@@ -78,3 +78,28 @@ it('retained unavailable source pair stays labelled as source rather than a comp
   expect(ganttInterval(a, tree.schedule)).toBeNull();
   expect(sourceMarkers(a, tree.schedule)).toHaveLength(2);
 });
+
+it('shows a no-anchor root today without changing real labels or the schedule', () => {
+  const tree = optionalTreeFixture();
+  const root = task(4);
+  const before = structuredClone(tree);
+  expect(
+    ganttInterval(root, tree.schedule, {
+      today: '2026-10-08',
+      calendar: 'weekdays',
+    }),
+  ).toEqual({
+    start: '2026-10-08',
+    finish: '2026-10-08',
+    kind: 'conditional',
+    clipped: false,
+  });
+  expect(computedDateLabel(root, tree.schedule)).toBe('');
+  expect(
+    ganttInterval(tree.tasks[0]!, tree.schedule, {
+      today: '2026-10-08',
+      calendar: 'weekdays',
+    }),
+  ).toBeNull();
+  expect(tree).toEqual(before);
+});

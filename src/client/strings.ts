@@ -83,6 +83,8 @@ export const strings = {
   gantt: 'Гант',
   scale: 'Масштаб Ганта',
   today: 'Сегодня',
+  conditionalPlacement: 'Условное размещение; полный интервал не задан',
+  newTaskSchedule: 'Сроки новой задачи',
   previousPeriod: 'Предыдущий период',
   nextPeriod: 'Следующий период',
   treeWidth: 'Ширина дерева',

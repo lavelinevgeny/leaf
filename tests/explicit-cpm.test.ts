@@ -330,7 +330,18 @@ it.each([
     constraintFloat: null,
   });
   expect(r.partialAnalysis).toBeNull();
-  expect(r.display).toEqual({});
+  expect(r.display).toEqual(
+    start || finish
+      ? {
+          U: {
+            kind: 'conditional',
+            startDate: '2026-10-09',
+            finishDate: '2026-10-13',
+            clipped: false,
+          },
+        }
+      : {},
+  );
   expect(input.tasks[0]).toEqual(leaf('U', start, finish, duration));
 });
 

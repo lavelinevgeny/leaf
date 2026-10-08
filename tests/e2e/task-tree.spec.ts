@@ -35,6 +35,11 @@ function row(page: Page, title: string) {
     .getByRole('treeitem', { name: new RegExp(`^${title},`) });
 }
 async function add(page: Page, title: string) {
+  // These are hierarchy-only fixtures; C19 defaults are covered separately.
+  const quick = page.locator('form.quick-add');
+  await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
+  await quick.getByLabel('Длительность, рабочих дней').fill('');
+  await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
   const input = page.getByLabel('Новая задача', { exact: true });
   await input.fill(title);
   await input.press('Enter');

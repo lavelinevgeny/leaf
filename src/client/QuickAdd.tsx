@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import type { Task } from '../shared/contracts.js';
+import { useEffect, useId, useRef, useState } from 'react';
+import {
+  sourceFieldsSchema,
+  type Task,
+  type SourceFields,
+  type Project,
+} from '../shared/contracts.js';
+import { PlanFields } from './PlanFields.js';
+import { newTaskPlan } from './planning-view.js';
 import { orderedChildren } from './tree-view.js';
 import { strings } from './strings.js';
 export interface AddContext {
@@ -10,7 +17,15 @@ interface Props {
   tasks: Task[];
   context: AddContext;
   onContext: (context: AddContext) => void;
-  onCreate: (title: string, context: AddContext) => Promise<boolean>;
+  onCreate: (
+    title: string,
+    context: AddContext,
+    plan: SourceFields,
+  ) => Promise<boolean>;
+  plan: SourceFields;
+  onPlan: (plan: SourceFields) => void;
+  calendar: Project['calendarType'];
+  timezone: string;
   busy: boolean;
   blocked: boolean;
   title: string;
@@ -23,6 +38,10 @@ export function QuickAdd({
   context,
   onContext,
   onCreate,
+  plan,
+  onPlan,
+  calendar,
+  timezone,
   busy,
   blocked,
   title,
@@ -31,6 +50,17 @@ export function QuickAdd({
   rootId,
 }: Props) {
   const [editing, setEditing] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [valid, setValid] = useState(true);
+  const rejectedPlan = useRef<string | null>(null);
+  function validityChanged(nextValid: boolean) {
+    const source = JSON.stringify(plan);
+    if (!nextValid) rejectedPlan.current = source;
+    // Closing/reopening the fields must not dismiss the rejected source.
+    if (!nextValid || rejectedPlan.current !== source) setValid(nextValid);
+  }
+  const scheduleId = useId();
+  const canSubmit = valid && sourceFieldsSchema.safeParse(plan).success;
   const [restoreFocus, setRestoreFocus] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const parent = tasks.find((task) => task.id === context.parentId);
@@ -44,8 +74,8 @@ export function QuickAdd({
     setRestoreFocus(false);
   }, [restoreFocus, busy, blocked]);
   async function submit() {
-    if (!title.trim() || busy || blocked) return;
-    if (await onCreate(title, context)) {
+    if (!title.trim() || busy || blocked || !canSubmit) return;
+    if (await onCreate(title, context, plan)) {
       setRestoreFocus(true);
     }
   }
@@ -88,7 +118,10 @@ export function QuickAdd({
             }
           }}
         />
-        <button type="submit" disabled={busy || blocked || !title.trim()}>
+        <button
+          type="submit"
+          disabled={busy || blocked || !title.trim() || !canSubmit}
+        >
           {strings.addTask}
         </button>
       </div>
@@ -97,19 +130,51 @@ export function QuickAdd({
           {strings.parent}: {parent?.title ?? strings.root}
         </span>
         <span>{strings.quickHint}</span>
-        {title && (
+        <button
+          type="button"
+          aria-expanded={scheduleOpen}
+          aria-controls={scheduleId}
+          disabled={busy || blocked}
+          onClick={() => setScheduleOpen((open) => !open)}
+        >
+          {strings.newTaskSchedule}
+        </button>
+        {(title ||
+          plan.inputStart !== null ||
+          plan.inputFinish !== null ||
+          plan.durationDays !== 1) && (
           <>
             <span role="status">{strings.quickDirty}</span>
             <button
               type="button"
               disabled={busy || blocked}
-              onClick={() => onTitle('')}
+              onClick={() => {
+                onTitle('');
+                onPlan(newTaskPlan());
+                rejectedPlan.current = null;
+                setValid(true);
+              }}
             >
               {strings.clearQuick}
             </button>
           </>
         )}
       </div>
+      {!valid && <p className="field-hint">{strings.planInputError}</p>}
+      {scheduleOpen && (
+        <div id={scheduleId} className="quick-plan">
+          <PlanFields
+            task={{ status: 'todo' }}
+            plan={plan}
+            calendar={calendar}
+            timezone={timezone}
+            summary={false}
+            disabled={busy || blocked}
+            onChange={onPlan}
+            onValidityChange={validityChanged}
+          />
+        </div>
+      )}
     </form>
   );
 }

@@ -257,6 +257,7 @@ export function TaskPanel({
                   </select>
                 </label>
                 <PlanFields
+                  timezone={tree.project.timezone}
                   task={{
                     ...task,
                     status:

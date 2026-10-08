@@ -244,7 +244,7 @@ describe('conditional display groups and calendars', () => {
     expect(schedule(tasks).display).toEqual({});
   });
 
-  it('keeps finish-only source independent of its conditional display finish', () => {
+  it('uses own finish before the parent anchor without promoting the missing start', () => {
     const tasks = [
       t('P'),
       t('B', 'P', null, '2026-10-02'),
@@ -254,8 +254,8 @@ describe('conditional display groups and calendars', () => {
     expect(realOnly(result.tasks.B!)).toEqual(unknown);
     expect(result.display.B).toEqual({
       kind: 'conditional',
-      startDate: '2026-10-09',
-      finishDate: '2026-10-09',
+      startDate: '2026-10-02',
+      finishDate: '2026-10-02',
       clipped: false,
     });
     expect(tasks[1]!.inputFinish).toBe('2026-10-02');
@@ -311,7 +311,9 @@ describe('conditional display groups and calendars', () => {
       t('Other'),
       t('D', 'Other'),
     ]);
-    expect(result.display).toEqual({});
+    expect(Object.keys(result.display).sort()).toEqual(['A', 'RootKnown']);
+    expect(result.display.RootKnown?.startDate).toBe('2026-10-05');
+    expect(result.display.A?.startDate).toBe('2026-10-09');
     expect(result.summaries.P!.startDate).toBeNull();
     expect(realOnly(result.tasks.RootMissing!)).toEqual(unknown);
     expect(result.diagnostics).toEqual(

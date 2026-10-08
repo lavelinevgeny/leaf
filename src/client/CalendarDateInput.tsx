@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { calendarDateSchema } from '../shared/contracts.js';
+import { strings } from './strings.js';
 
 function inputDate(value: string): string | null {
   const trimmed = value.trim();
@@ -20,6 +21,7 @@ interface Props {
   invalid?: boolean;
   descriptionId?: string;
   highlighted?: boolean;
+  today?: string;
   onChange?: (value: string | null) => void;
   onCommit?: (value: string | null) => void;
 }
@@ -30,6 +32,7 @@ export function CalendarDateInput({
   invalid,
   descriptionId,
   highlighted,
+  today,
   onChange,
   onCommit,
 }: Props) {
@@ -119,6 +122,20 @@ export function CalendarDateInput({
           />
         </span>
       </div>
+      {today && (
+        <button
+          type="button"
+          className="date-today"
+          aria-label={`${strings.today}: ${label}`}
+          disabled={disabled}
+          onClick={() => {
+            onChange?.(today);
+            onCommit?.(today);
+          }}
+        >
+          {strings.today}
+        </button>
+      )}
     </div>
   );
 }

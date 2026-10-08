@@ -1,6 +1,8 @@
 import { dateToIndex, indexToDate, isWorkingDay } from '../domain/calendar.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { monthLabels } from './strings.js';
+import { conditionalDisplay } from '../domain/conditional-display.js';
+import type { CalendarType } from '../domain/scheduling-types.js';
 export type Scale = 'days' | 'weeks' | 'months';
 export const ROW_HEIGHT = 38;
 export const HEADER_HEIGHT = 58;
@@ -39,6 +41,7 @@ export type TimelineInterval = {
 export function ganttInterval(
   task: Task,
   schedule: ProjectTree['schedule'],
+  context?: { today: string; calendar: CalendarType },
 ): TimelineInterval | null {
   const summary = schedule.summaries[task.id];
   if (summary)
@@ -58,7 +61,15 @@ export function ganttInterval(
       kind: 'work',
       clipped: false,
     };
-  const display = schedule.display[task.id];
+  const savedDisplay = schedule.display[task.id];
+  const display = context
+    ? conditionalDisplay(
+        task,
+        task.parentId === null ? null : (savedDisplay?.startDate ?? null),
+        context.today,
+        context.calendar,
+      )
+    : savedDisplay;
   return display
     ? {
         start: display.startDate,

@@ -7,6 +7,7 @@ import type {
   ProjectTree,
   RenameProject,
   Task,
+  SourceFields,
 } from '../shared/contracts.js';
 import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import { api, ApiError } from './api.js';
@@ -22,7 +23,7 @@ import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
 import { TaskFilters } from './TaskFilters.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
 import { workingDaysInclusive } from '../domain/calendar.js';
-import { gesturePatch } from './planning-view.js';
+import { gesturePatch, newTaskPlan } from './planning-view.js';
 import './styles/app.css';
 import './styles/planning.css';
 
@@ -37,6 +38,7 @@ type Mutation =
   | { kind: 'rename'; projectId: string; envelope: RenameProject };
 interface QuickDraft {
   title: string;
+  plan: SourceFields;
   context: AddContext;
 }
 interface PanelVisit {
@@ -104,7 +106,11 @@ export function App() {
     parentId: null,
   };
   const hasQuickDrafts = Object.values(quickDrafts).some(
-    (draft) => draft.title !== '',
+    (draft) =>
+      draft.title !== '' ||
+      draft.plan.inputStart !== null ||
+      draft.plan.inputFinish !== null ||
+      draft.plan.durationDays !== 1,
   );
   const uncertain = !!pending && !!error?.uncertain;
   const panelRetry =
@@ -124,7 +130,11 @@ export function App() {
     setQuickDrafts((previous) => ({
       ...previous,
       [projectId]: update(
-        previous[projectId] ?? { title: '', context: { parentId: null } },
+        previous[projectId] ?? {
+          title: '',
+          context: { parentId: null },
+          plan: newTaskPlan(),
+        },
       ),
     }));
   }
@@ -166,6 +176,7 @@ export function App() {
         ...previous,
         [next.project.id]: {
           title: saved?.title ?? '',
+          plan: saved?.plan ?? newTaskPlan(),
           context: {
             parentId,
             ...(preview.afterId &&
@@ -351,6 +362,10 @@ export function App() {
         );
         updateQuick(job.quickKey ?? job.projectId, (draft) => ({
           title: draft.title.trim() === added.title.trim() ? '' : draft.title,
+          plan:
+            draft.title.trim() === added.title.trim()
+              ? newTaskPlan()
+              : draft.plan,
           context: created
             ? { parentId: created.parentId, afterId: created.id }
             : draft.context,
@@ -410,6 +425,7 @@ export function App() {
   async function createTask(
     title: string,
     addContext: AddContext,
+    plan: SourceFields,
     quickKey?: string,
   ) {
     if (!canNavigate()) return false;
@@ -418,6 +434,7 @@ export function App() {
     return command(
       {
         type: 'task.create',
+        ...plan,
         title,
         ...addContext,
         ...(preserved ? { preserveWork: true } : {}),
@@ -752,7 +769,7 @@ export function App() {
                   Object.fromEntries(
                     Object.entries(previous).map(([id, draft]) => [
                       id,
-                      { ...draft, title: '' },
+                      { ...draft, title: '', plan: newTaskPlan() },
                     ]),
                   ),
                 );
@@ -1055,6 +1072,13 @@ export function App() {
                 onAction={action}
               />
               <QuickAdd
+                key={tree.project.id}
+                calendar={tree.project.calendarType}
+                timezone={tree.project.timezone}
+                plan={quickDrafts[tree.project.id]?.plan ?? newTaskPlan()}
+                onPlan={(plan) =>
+                  updateQuick(tree.project.id, (draft) => ({ ...draft, plan }))
+                }
                 tasks={tree.tasks}
                 context={context}
                 onContext={setContext}
@@ -1134,6 +1158,17 @@ export function App() {
           feedback={errorView}
           subtaskInput={
             <QuickAdd
+              key={subtaskKey}
+              calendar={tree.project.calendarType}
+              timezone={tree.project.timezone}
+              plan={subtaskDraft?.plan ?? newTaskPlan()}
+              onPlan={(plan) =>
+                updateQuick(subtaskKey, (draft) => ({
+                  ...draft,
+                  context: subtaskContext,
+                  plan,
+                }))
+              }
               tasks={tree.tasks}
               rootId={selectedTask.id}
               inputId="quick-subtask"
@@ -1143,13 +1178,14 @@ export function App() {
               }
               title={subtaskDraft?.title ?? ''}
               onTitle={(title) =>
-                updateQuick(subtaskKey, () => ({
+                updateQuick(subtaskKey, (draft) => ({
+                  ...draft,
                   title,
                   context: subtaskContext,
                 }))
               }
-              onCreate={(title, context) =>
-                createTask(title, context, subtaskKey)
+              onCreate={(title, context, plan) =>
+                createTask(title, context, plan, subtaskKey)
               }
               busy={busy || loading}
               blocked={
