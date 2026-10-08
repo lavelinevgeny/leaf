@@ -210,6 +210,9 @@
   stroke: var(--leaf-critical);
   stroke-width: 1.8;
 }
+.gantt-edge.conditional {
+  stroke-dasharray: 4 3;
+}
 .gantt-work {
   fill: #b9dccc;
   stroke: #78b594;

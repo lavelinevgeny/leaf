@@ -72,7 +72,7 @@ test('own/group/today geometry refreshes across midnight without source writes o
         name: /^Только окончание, 2026-10-09 – 2026-10-12, Условное размещение/,
       }),
     ).toBeVisible();
-    await expect(page.locator('[data-gantt-edge]')).toHaveCount(0);
+    await expect(page.locator('.gantt-edge.conditional')).toHaveCount(1);
     await expect(
       page.locator(
         `[data-gantt-row="${root}"] .critical, [data-gantt-row="${root}"] .partial-critical`,

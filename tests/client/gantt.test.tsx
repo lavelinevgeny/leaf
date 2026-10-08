@@ -124,7 +124,72 @@ it('prioritizes finish2 over group9 and never gestures on markers', () => {
   expect(p.onSelect).toHaveBeenCalled();
   expect(tree.tasks[2]!.inputFinish).toBe('2026-10-02');
 });
-it('shares collapsed rows, hides unknown arrows, and locks done and summary bars', () => {
+it.each(['successor', 'predecessor', 'both', 'start-only', 'finish-only'])(
+  'renders a saved FS edge with a conditional %s without changing source dates or CPM',
+  (kind) => {
+    const tree = optionalTreeFixture();
+    const a = tree.tasks[1]!,
+      c = tree.tasks[2]!;
+    if (kind === 'both') {
+      a.inputStart = null;
+      a.inputFinish = null;
+      tree.schedule.tasks[a.id] = {
+        startDate: null,
+        finishDate: null,
+        calendarSpanDays: null,
+      };
+      tree.schedule.display = {};
+    }
+    if (kind === 'start-only') c.inputStart = '2026-10-09';
+    if (kind === 'finish-only') c.inputFinish = '2026-10-09';
+    const predecessorId = kind === 'predecessor' ? c.id : a.id;
+    const successorId = kind === 'predecessor' ? a.id : c.id;
+    tree.dependencies = [
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        projectId: tree.project.id,
+        predecessorId,
+        successorId,
+      },
+    ];
+    const before = structuredClone(tree);
+    const p = props(tree);
+    const view = render(<Gantt {...p} />);
+    const edge = view.container.querySelector('[data-gantt-edge]');
+    expect(edge).toHaveClass('conditional');
+    expect(edge).not.toHaveClass('critical', 'partial-critical');
+    expect(edge?.querySelector('title')).toHaveTextContent(
+      'Связь; условное размещение, полный интервал не задан',
+    );
+    const from = view.container.querySelector(
+      `[data-gantt-bar="${predecessorId}"]`,
+    )!;
+    const to = view.container.querySelector(
+      `[data-gantt-bar="${successorId}"]`,
+    )!;
+    const fromX =
+      Number(from.getAttribute('x')) + Number(from.getAttribute('width'));
+    const fromY = Number(from.getAttribute('y')) + 10;
+    const toX = Number(to.getAttribute('x'));
+    const toY = Number(to.getAttribute('y')) + 10;
+    expect(edge?.getAttribute('d')).toMatch(
+      new RegExp(`^M${fromX},${fromY} H`),
+    );
+    expect(edge?.getAttribute('d')).toMatch(new RegExp(`V${toY} H${toX}$`));
+    expect(tree).toEqual(before);
+    expect(p.onPlan).not.toHaveBeenCalled();
+    view.rerender(
+      <Gantt
+        {...p}
+        rows={p.rows.filter((row) => row.task.id !== successorId)}
+      />,
+    );
+    expect(view.container.querySelector('[data-gantt-edge]')).toBeNull();
+    view.rerender(<Gantt {...p} start="2027-01-01" />);
+    expect(view.container.querySelector('[data-gantt-edge]')).toBeNull();
+  },
+);
+it('shares collapsed rows, hides collapsed edges, and locks done and summary bars', () => {
   const tree = optionalTreeFixture();
   tree.dependencies = [
     {
@@ -137,7 +202,9 @@ it('shares collapsed rows, hides unknown arrows, and locks done and summary bars
   const p = props(tree);
   const view = render(<Gantt {...p} />);
   expect(view.container.querySelectorAll('[data-gantt-row]')).toHaveLength(3);
-  expect(view.container.querySelector('[data-gantt-edge]')).toBeNull();
+  expect(view.container.querySelector('[data-gantt-edge]')).toHaveClass(
+    'conditional',
+  );
   const work = screen.getByRole('button', { name: /Работа A, 2026/ });
   fireEvent.keyDown(work, { key: 'ArrowRight' });
   expect(p.onPlan).toHaveBeenCalledWith(tree.tasks[1], 'move', '2026-10-06');
@@ -150,6 +217,7 @@ it('shares collapsed rows, hides unknown arrows, and locks done and summary bars
     <Gantt {...p} rows={treeRows(tree.tasks, new Set([optionalIds.p]))} />,
   );
   expect(view.container.querySelectorAll('[data-gantt-row]')).toHaveLength(1);
+  expect(view.container.querySelector('[data-gantt-edge]')).toBeNull();
 });
 it.each([
   ['start-only', '2030-01-02', null, 1],

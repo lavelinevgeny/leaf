@@ -371,11 +371,21 @@ it('clears filters before showing a hidden selected task on Gantt', async () => 
     'Готовая',
   );
   expect(ids()).toEqual([done.id]);
+  const frames: FrameRequestCallback[] = [];
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
   await user.click(screen.getByRole('button', { name: 'Показать на Ганте' }));
   expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
     '',
   );
   expect(ids()).toEqual([root.id, group.id, a.id, b.id, done.id]);
+  const revealed = screen.getByRole('treeitem', { name: /Монтаж A,/ });
+  revealed.scrollIntoView = vi.fn();
+  expect(frames).toHaveLength(1);
+  frames[0]!(0);
+  expect(revealed.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
 });
 
 it('keeps query and dirty draft through conflict loading and disables only the loading controls', async () => {

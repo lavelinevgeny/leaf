@@ -300,6 +300,7 @@ test('list and conditional Gantt use single immediate commands without opening o
   let current = await readTree(page, runtime.origin, tree.project.id);
   expect(current.project.revision).toBe(tree.project.revision + 1);
   expect(current.dependencies).toHaveLength(1);
+  await expect(page.locator('.gantt-edge.conditional')).toHaveCount(1);
   await listTrigger.click();
   await picker(page)
     .getByRole('button', { name: 'Убрать предшественника: A', exact: true })
@@ -309,6 +310,7 @@ test('list and conditional Gantt use single immediate commands without opening o
   current = await readTree(page, runtime.origin, tree.project.id);
   expect(current.project.revision).toBe(tree.project.revision + 2);
   expect(current.dependencies).toEqual([]);
+  await expect(page.locator('[data-gantt-edge]')).toHaveCount(0);
   const bar = page.locator(`[data-gantt-bar="${taskId(tree, 'B')}"]`);
   await bar.focus();
   const ganttTrigger = page
@@ -327,6 +329,7 @@ test('list and conditional Gantt use single immediate commands without opening o
   current = await readTree(page, runtime.origin, tree.project.id);
   expect(current.project.revision).toBe(tree.project.revision + 3);
   expect(current.tasks).toEqual(tree.tasks);
+  await expect(page.locator('.gantt-edge.conditional')).toHaveCount(1);
   expect(commands).toEqual([
     {
       type: 'dependency.create',
@@ -340,6 +343,67 @@ test('list and conditional Gantt use single immediate commands without opening o
       successorId: taskId(tree, 'B'),
     },
   ]);
+});
+
+test('saved FS from a completed task to an undated subtask stays visible after reload and undo', async ({
+  page,
+  runtime,
+}, info) => {
+  await page.clock.install({ time: new Date('2026-10-08T09:00:00Z') });
+  let tree = await project(page, runtime);
+  tree = await create(page, runtime, tree, 'P');
+  tree = await create(
+    page,
+    runtime,
+    tree,
+    'A',
+    taskId(tree, 'P'),
+    '2026-10-08',
+    '2026-10-08',
+  );
+  tree = await create(page, runtime, tree, 'B', taskId(tree, 'P'));
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.update',
+    taskId: taskId(tree, 'A'),
+    changes: { status: 'done' },
+  });
+  await show(page);
+  const trigger = row(page, taskId(tree, 'B')).getByRole('button', {
+    name: 'После окончания: B',
+    exact: true,
+  });
+  await trigger.click();
+  await picker(page).getByRole('searchbox').fill('A');
+  await picker(page).getByRole('searchbox').press('Enter');
+  await expect(picker(page)).toHaveCount(0);
+  const current = await readTree(page, runtime.origin, tree.project.id);
+  expect(current.tasks).toEqual(tree.tasks);
+  expect(current.project.revision).toBe(tree.project.revision + 1);
+  expect(current.dependencies).toHaveLength(1);
+  const edge = page.locator(
+    `[data-gantt-edge="${current.dependencies[0]!.id}"]`,
+  );
+  await expect(edge).toBeVisible();
+  await expect(edge).toHaveClass('gantt-edge conditional');
+  expect(
+    await edge.evaluate((el) => getComputedStyle(el).strokeDasharray),
+  ).toBe('4px, 3px');
+  await page.screenshot({
+    path: `/tmp/leaf-conditional-fs-${info.project.name}.png`,
+  });
+  await show(page);
+  await expect(edge).toBeVisible();
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(
+    current,
+  );
+  await page
+    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .click();
+  await expect(edge).toHaveCount(0);
+  const restored = await readTree(page, runtime.origin, tree.project.id);
+  expect(restored.tasks).toEqual(tree.tasks);
+  expect(restored.dependencies).toEqual(tree.dependencies);
+  expect(restored.schedule).toEqual(tree.schedule);
 });
 
 test('whole-project picker distinguishes hidden duplicate titles and preserves row geometry', async ({
@@ -879,6 +943,7 @@ test('immediate picker waits for genuine server acknowledgement before rendering
     await expect(picker(page).locator('.predecessor-chip')).toHaveCount(0);
     await expect(picker(page).getByRole('option')).toBeDisabled();
     await expect(page.getByText('Сохранено', { exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-gantt-edge]')).toHaveCount(0);
     const current = await readTree(page, runtime.origin, tree.project.id);
     expect(current.project.revision).toBe(tree.project.revision + 1);
     expect(current.dependencies).toHaveLength(1);
@@ -886,6 +951,7 @@ test('immediate picker waits for genuine server acknowledgement before rendering
     await expect(picker(page)).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await expect(panel(page)).toHaveCount(0);
+    await expect(page.locator('.gantt-edge.conditional')).toHaveCount(1);
     await trigger.click();
     await expect(
       picker(page).getByRole('button', {

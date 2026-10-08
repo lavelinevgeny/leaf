@@ -151,6 +151,19 @@ export function Gantt({
     }
   }
   const positions = new Map(rows.map((row, index) => [row.task.id, index]));
+  const intervals = new Map(
+    rows.map(({ task }) => [
+      task.id,
+      task.id === draftTaskId
+        ? draftId
+          ? draftInterval(tree, task, today)
+          : null
+        : ganttInterval(task, schedule, {
+            today,
+            calendar: tree.project.calendarType,
+          }),
+    ]),
+  );
   const cap = (x: number) => Math.max(0, Math.min(view.width, x));
   return (
     <svg
@@ -253,49 +266,54 @@ export function Gantt({
       {tree.dependencies.map((edge) => {
         const fromIndex = positions.get(edge.predecessorId),
           toIndex = positions.get(edge.successorId);
-        const from = tree.schedule.tasks[edge.predecessorId],
-          to = tree.schedule.tasks[edge.successorId];
+        const from = intervals.get(edge.predecessorId),
+          to = intervals.get(edge.successorId);
         if (
           fromIndex === undefined ||
           toIndex === undefined ||
-          !from?.finishDate ||
-          !to?.startDate
+          !from ||
+          !to ||
+          from.kind === 'summary' ||
+          to.kind === 'summary' ||
+          edge.predecessorId === draftTaskId ||
+          edge.successorId === draftTaskId
         )
           return null;
-        const x1 = dateX(from.finishDate, start, view.dayWidth) + view.dayWidth,
-          x2 = dateX(to.startDate, start, view.dayWidth);
+        const x1 = dateX(from.finish, start, view.dayWidth) + view.dayWidth,
+          x2 = dateX(to.start, start, view.dayWidth);
         if (x1 < 0 || x1 > view.width || x2 < 0 || x2 > view.width) return null;
         const y1 = HEADER_HEIGHT + fromIndex * ROW_HEIGHT + ROW_HEIGHT / 2,
           y2 = HEADER_HEIGHT + toIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const bend = x2 >= x1 + 10 ? x1 + 10 : Math.max(x1, x2) + 12;
+        const conditional =
+          from.kind === 'conditional' || to.kind === 'conditional';
+        // Overlapping display intervals need an approach from the left of the
+        // successor so the arrowhead is not covered by its bar.
+        const path =
+          x2 >= x1 + 10
+            ? `M${x1},${y1} H${x1 + 10} V${y2} H${x2}`
+            : `M${x1},${y1} H${cap(x1 + 12)} V${y2 + ((y1 < y2 ? -1 : 1) * ROW_HEIGHT) / 2} H${cap(x2 - 12)} V${y2} H${x2}`;
         return (
           <path
             key={edge.id}
             data-gantt-edge={edge.id}
-            d={`M${x1},${y1} H${bend} V${y2} H${x2}`}
-            className={`gantt-edge${criticalEdges.has(edge.id) ? ' critical' : ''}${partialEdges.has(edge.id) ? ' partial-critical' : ''}`}
+            d={path}
+            className={`gantt-edge${conditional ? ' conditional' : ''}${criticalEdges.has(edge.id) ? ' critical' : ''}${partialEdges.has(edge.id) ? ' partial-critical' : ''}`}
             markerEnd={`url(#${marker}-arrow)`}
           >
             <title>
-              {criticalEdges.has(edge.id)
-                ? strings.criticalEdge
-                : partialEdges.has(edge.id)
-                  ? strings.partialCriticalEdge
-                  : strings.dependencies}
+              {conditional
+                ? strings.conditionalEdge
+                : criticalEdges.has(edge.id)
+                  ? strings.criticalEdge
+                  : partialEdges.has(edge.id)
+                    ? strings.partialCriticalEdge
+                    : strings.dependencies}
             </title>
           </path>
         );
       })}
       {rows.map(({ task }, index) => {
-        const interval =
-          task.id === draftTaskId
-            ? draftId
-              ? draftInterval(tree, task, today)
-              : null
-            : ganttInterval(task, tree.schedule, {
-                today,
-                calendar: tree.project.calendarType,
-              });
+        const interval = intervals.get(task.id);
         const containsCritical =
           schedule.analysisStatus === 'ready' &&
           schedule.summaries[task.id]?.containsCritical === true;

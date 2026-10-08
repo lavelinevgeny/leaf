@@ -104,6 +104,7 @@ export const strings = {
   scale: 'Масштаб Ганта',
   today: 'Сегодня',
   conditionalPlacement: 'Условное размещение; полный интервал не задан',
+  conditionalEdge: 'Связь; условное размещение, полный интервал не задан',
   newTaskSchedule: 'Сроки новой задачи',
   quickScheduleTitle: 'Сроки задачи',
   quickScheduleError: 'Проверьте даты и рабочие дни календаря.',
