@@ -166,14 +166,14 @@ expect(changed.project.revision).toBe(initial.project.revision + 1);
 
 Add pointer drag by boundingBox/data selector, assert fixed right position and persisted finish/reload/undo exact null restoration. Add weekend target reject, one-day overlap/keyboard, done/summary/conditional states, empty/loading/error; Escape/capture/scale/filter cancellation. Add FS GSR03 rejected date and valid later start with canonical source, source/calendar/C18/right regressions. Reuse existing FS E2E lost-response pattern: route.fetch applies first, suppress response, retry sends exact body/operationId; assert one outcome/revision and no premature source change. Real competing send before released route gives 409 and intact snapshot. Dirty panel guard must prevent start edit. Run both configured viewports 1440×900 and 1280×800, no retries/skips. Inspect synthetic captures outside checkout against unchanged approved PNGs.
 
-- [ ] **Step 5: Run complete relevant gates and update facts.**
+- [x] **Step 5: Run complete relevant gates and update facts.**
 
 Run `npm run verify`, `npm run format:check`, `npm run check:kit`, `npm run check:package`, `npx playwright test tests/e2e/planning-ui.spec.ts tests/e2e/conditional-gantt.spec.ts tests/e2e/fs-dependencies.spec.ts`, `git diff --check`. Root runs full E2E/preflight in ordinary checkout after accepted integration. Record failures honestly; no --if-present/skips/timeouts relaxation. docs/STATUS.md lists touched areas/check counts/limitations and next S4–S6, keeping unrelated owner entries.
 
-- [ ] **Step 6: Independent spec/quality review, fixes and final handoff.**
+- [x] **Step 6: Independent spec/quality review, fixes and final handoff.**
 
 Review GSR06–GSR07 plus server/client contract consistency, right resize/C18/done/null safety and focus/cancel. Repeat reviewer cycle until accepted, commit scoped files with subject `feat: resize Gantt starts while preserving finishes`. Root performs final independent reviews and verifies integrated bytes/checks before owner report; no remote changes.
 
-## Integration checkpoint — 2026-10-09
+## Integration completion — 2026-10-09
 
-Server и client выполнены разными агентами; каждый этап прошёл независимые spec/quality reviews. Два цикла исправили boundary repeat и поздний перехват фокуса. Root verify: 831/831 tests; format/kit/package и preflight с 52/52 scanner/hook tests PASS. Первый полный E2E: 162/164; два существующих calendar cases нуждались в hover перед скрытым меню. Однострочное исправление теста прошло независимый review и affected 2/2. Полный повторный E2E и whole-change review выполняются на интегрированной версии перед закрытием Steps 5–6.
+Server и client выполнены разными агентами; каждый этап прошёл независимые spec/quality reviews. Два цикла исправили boundary repeat и поздний перехват фокуса. Root verify: 831/831 tests; format/kit/package и preflight с 52/52 scanner/hook tests PASS. Первый полный E2E: 162/164; два существующих calendar cases нуждались в hover перед скрытым меню. Однострочное исправление теста прошло независимый review и affected 2/2. Полный повторный E2E PASS: 164/164 за 3.8m, оба viewport, без skips/retries. Независимый whole-change review интегрированного commit принят: SpecCompliance Approved, Quality Approved, открытых замечаний нет. Steps 5–6 закрыты; проверенные результаты и ограничения записаны в [STATUS](../../STATUS.md). Production/test bytes после финального review не менялись; заключительное обновление касается только фактического состояния документации.
