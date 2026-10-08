@@ -230,16 +230,11 @@
 }
 .project-plan {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 14px;
   padding: 0 12px;
 }
-.project-plan summary {
-  cursor: pointer;
-  color: #59675f;
-  padding-block: 4px;
-}
 .project-plan form {
-  margin-top: 8px;
+  margin-top: 0;
 }
 .project-plan fieldset {
   display: flex;

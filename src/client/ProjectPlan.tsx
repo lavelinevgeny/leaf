@@ -29,8 +29,7 @@ export function ProjectPlan({ project, disabled, onSave, onDirty }: Props) {
     }
   }, [project, dirty]);
   return (
-    <details className="project-plan">
-      <summary>{strings.projectPlan}</summary>
+    <div className="project-plan">
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -93,6 +92,6 @@ export function ProjectPlan({ project, disabled, onSave, onDirty }: Props) {
           )}
         </fieldset>
       </form>
-    </details>
+    </div>
   );
 }

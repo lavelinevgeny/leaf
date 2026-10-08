@@ -707,7 +707,10 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
   expect(p10.schedule.criticalTaskIds).toEqual([by.A!, by.B!].sort());
   expect(p10.schedule.criticalDependencyIds).toEqual([ab]);
   await page.reload();
-  await page.getByText('Настройки проекта', { exact: true }).click();
+  await page.getByRole('button', { name: 'Действия проекта' }).click();
+  await page
+    .getByRole('button', { name: 'Настройки проекта', exact: true })
+    .click();
   await page.getByLabel('Календарь', { exact: true }).selectOption('all-days');
   const switched = page.waitForResponse(
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
@@ -731,6 +734,7 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
   });
   expect(all.schedule.criticalTaskIds).toEqual([by.B!]);
   expect(all.schedule.criticalDependencyIds).toEqual([]);
+  await page.keyboard.press('Escape');
   await page
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: /^A,/ })

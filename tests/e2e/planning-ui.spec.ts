@@ -75,11 +75,33 @@ test('project settings preserve dirty calendar draft, done requires return and p
   try {
     await seedOptionalRuntime(page, runtime);
     await page.goto(runtime.origin);
-    await page.getByText('Настройки проекта', { exact: true }).click();
+    const projectActions = page.getByRole('button', {
+      name: 'Действия проекта',
+    });
+    await projectActions.focus();
+    await page.keyboard.press('Enter');
+    await expect(
+      page.getByRole('button', { name: 'Настройки проекта', exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(projectActions).toBeFocused();
+    await page.keyboard.press('Space');
+    await page
+      .getByRole('button', { name: 'Настройки проекта', exact: true })
+      .click();
     await page
       .getByLabel('Часовой пояс проекта', { exact: true })
       .fill('Europe/Moscow');
-    await page.getByRole('treeitem', { name: /Работа A,/ }).click();
+    await expect(
+      page.getByRole('button', {
+        name: 'Сохранить настройки проекта',
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await page.keyboard.press('Escape');
+    await expect(
+      page.getByLabel('Часовой пояс проекта', { exact: true }),
+    ).toHaveValue('Europe/Moscow');
     await expect(
       page.getByRole('complementary', { name: 'Задача', exact: true }),
     ).toHaveCount(0);
@@ -92,6 +114,11 @@ test('project settings preserve dirty calendar draft, done requires return and p
         exact: true,
       }),
     ).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: 'Закрыть', exact: true }),
+    ).toBeEnabled();
+    await page.keyboard.press('Escape');
+    await expect(projectActions).toBeFocused();
     await page.getByRole('treeitem', { name: /Работа A,/ }).click();
     await page.getByLabel('Статус', { exact: true }).selectOption('done');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
@@ -111,6 +138,51 @@ test('project settings preserve dirty calendar draft, done requires return and p
       page.getByRole('complementary', { name: 'Задача', exact: true }),
     ).toBeVisible();
     await page.keyboard.press('Tab');
+  } finally {
+    await runtime.close();
+  }
+});
+test('project rename preserves dirty Escape and returns focus after save and clean close', async ({
+  page,
+}) => {
+  const runtime = await syntheticRuntime();
+  try {
+    const initial = await seedOptionalRuntime(page, runtime);
+    await page.goto(runtime.origin);
+    const opener = page.getByRole('button', { name: 'Действия проекта' });
+    await opener.click();
+    await page
+      .getByRole('button', { name: 'Переименовать проект', exact: true })
+      .click();
+    const dialog = page.getByRole('dialog', {
+      name: 'Переименовать проект',
+      exact: true,
+    });
+    const title = dialog.getByLabel('Название проекта', { exact: true });
+    await title.fill('Переименованный демо-проект');
+    await page.keyboard.press('Escape');
+    await expect(title).toHaveValue('Переименованный демо-проект');
+    expect(
+      (await readTree(page, runtime.origin, initial.project.id)).project
+        .revision,
+    ).toBe(initial.project.revision);
+    await dialog
+      .getByRole('button', { name: 'Переименовать проект', exact: true })
+      .click();
+    await expect(
+      page.getByRole('heading', { name: 'Переименованный демо-проект' }),
+    ).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    const renamed = await readTree(page, runtime.origin, initial.project.id);
+    expect(renamed.project.revision).toBe(initial.project.revision + 1);
+    expect(renamed.tasks).toEqual(initial.tasks);
+    await opener.click();
+    await page
+      .getByRole('button', { name: 'Настройки проекта', exact: true })
+      .click();
+    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await expect(opener).toBeFocused();
   } finally {
     await runtime.close();
   }

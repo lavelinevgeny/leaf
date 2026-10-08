@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
+// jsdom has no native modal implementation; browsers exercise showModal in E2E.
+HTMLDialogElement.prototype.showModal = function () {
+  this.setAttribute('open', '');
+};
+HTMLDialogElement.prototype.close = function () {
+  this.removeAttribute('open');
+};
 import {
   cleanup,
   fireEvent,
@@ -1140,6 +1147,7 @@ describe('client HTTP interactions', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Создать проект' }));
     await screen.findByRole('heading', { name: 'Новый демо-проект' });
+    await user.click(screen.getByRole('button', { name: 'Действия проекта' }));
     await user.click(
       screen.getByRole('button', { name: 'Переименовать проект' }),
     );

@@ -28,6 +28,8 @@ export const strings = {
   details: 'Детали',
   dependencies: 'Зависимости',
   planning: 'Планирование',
+  projectActions: 'Действия проекта',
+  closeProjectDialog: 'Закрыть',
   projectPlan: 'Настройки проекта',
   saveProjectPlan: 'Сохранить настройки проекта',
   projectStart: 'Начало проекта',

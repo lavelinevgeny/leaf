@@ -57,18 +57,20 @@ export function TaskFilters({ filter, onChange, disabled }: Props) {
           ))}
         </select>
       </label>
-      <button
-        type="button"
-        className="quiet"
-        aria-label={strings.resetTaskFilters}
-        disabled={disabled || (!filter.query && filter.status === 'all')}
-        onClick={() => {
-          onChange(emptyTaskFilter);
-          input.current?.focus();
-        }}
-      >
-        {strings.reset}
-      </button>
+      {(filter.query !== '' || filter.status !== 'all') && (
+        <button
+          type="button"
+          className="quiet"
+          aria-label={strings.resetTaskFilters}
+          disabled={disabled}
+          onClick={() => {
+            onChange(emptyTaskFilter);
+            input.current?.focus();
+          }}
+        >
+          {strings.reset}
+        </button>
+      )}
     </form>
   );
 }

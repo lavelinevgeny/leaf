@@ -73,6 +73,9 @@ it('reveals matches in collapsed branches and shares literal rows with Gantt wit
   const { container } = await open();
   const user = userEvent.setup();
   const before = structuredClone(tree);
+  expect(
+    screen.queryByRole('button', { name: 'Сбросить поиск и фильтры' }),
+  ).toBeNull();
   await user.click(screen.getByRole('button', { name: 'Свернуть Этап A' }));
   expect(ids()).toEqual([root.id, done.id]);
   const requests = fetchMock.mock.calls.length;
@@ -123,6 +126,9 @@ it('keeps filtered collapse temporary, resets it on criteria changes and restore
   );
   expect(ids()).toEqual([root.id, done.id]);
   expect(screen.getByRole('searchbox')).toHaveFocus();
+  expect(
+    screen.queryByRole('button', { name: 'Сбросить поиск и фильтры' }),
+  ).toBeNull();
   expect(
     screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
   ).toHaveValue('all');

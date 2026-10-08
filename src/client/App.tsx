@@ -17,7 +17,7 @@ import { TaskPanel, type PanelTab } from './TaskPanel.js';
 import { focusTaskRow, type TreeAction } from './TaskTree.js';
 import { orderedChildren, subtreeIds } from './tree-view.js';
 import { strings } from './strings.js';
-import { ProjectPlan } from './ProjectPlan.js';
+import { ProjectControls } from './ProjectControls.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
 import { TaskFilters } from './TaskFilters.js';
@@ -93,6 +93,7 @@ export function App() {
     setProjectDirty(value);
   }, []);
   const [pending, setPending] = useState<Mutation | null>(null);
+  const [projectControlsOpen, setProjectControlsOpen] = useState(false);
   const [rename, setRename] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [createUncertain, setCreateUncertain] = useState(false);
@@ -946,17 +947,20 @@ export function App() {
             <div className="project-title-line">
               <h1>{tree?.project.title ?? strings.app}</h1>
               {tree && (
-                <button
-                  type="button"
-                  className="quiet"
-                  aria-label={strings.renameProject}
-                  disabled={busy || !!pending || conflict}
-                  onClick={() => {
-                    if (canNavigate()) setRename(tree.project.title);
-                  }}
-                >
-                  ✎
-                </button>
+                <ProjectControls
+                  key={tree.project.id}
+                  project={tree.project}
+                  disabled={busy || loading || !!pending || conflict || dirty}
+                  dirty={projectDirty}
+                  onSave={command}
+                  onDirty={setProjectPlanDirty}
+                  rename={rename}
+                  onRenameChange={setRename}
+                  onRename={() => void renameProject()}
+                  onOpen={canNavigate}
+                  onVisibility={setProjectControlsOpen}
+                  feedback={errorView}
+                />
               )}
             </div>
             {tree && (
@@ -969,40 +973,8 @@ export function App() {
           </div>
           <span className="view-label">{strings.tasks}</span>
         </header>
-        {rename !== null && (
-          <form
-            className="rename-project"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void renameProject();
-            }}
-          >
-            <label>
-              {strings.projectTitle}
-              <input
-                value={rename}
-                maxLength={120}
-                disabled={busy || !!pending}
-                onChange={(event) => setRename(event.target.value)}
-              />
-            </label>
-            <button disabled={busy || !!pending || conflict || !rename.trim()}>
-              {strings.renameProject}
-            </button>
-            <button
-              type="button"
-              disabled={busy || !!pending}
-              onClick={() => {
-                setRename(null);
-                setNotice('');
-              }}
-            >
-              {strings.cancel}
-            </button>
-          </form>
-        )}
         <div className="workspace-content planning-workspace">
-          {!selectedTask && errorView}
+          {!selectedTask && !projectControlsOpen && errorView}
           {loading && <p role="status">{strings.loading}</p>}
           {!loading && !tree && !error && (
             <p className="empty-state">
@@ -1011,13 +983,6 @@ export function App() {
           )}
           {tree && (
             <>
-              <ProjectPlan
-                key={`project-${tree.project.id}`}
-                project={tree.project}
-                disabled={busy || loading || !!pending || conflict || dirty}
-                onSave={command}
-                onDirty={setProjectPlanDirty}
-              />
               <ScheduleStatus tree={tree} />
               <div className="tree-toolbar">
                 <span>{strings.tasks}</span>
@@ -1040,9 +1005,11 @@ export function App() {
                     dirty ||
                     projectDirty
                   }
+                  aria-label={strings.undo}
+                  title={strings.undo}
                   onClick={() => void undo()}
                 >
-                  {strings.undo}
+                  <span aria-hidden="true">↶</span>
                 </button>
               </div>
               {!tree.tasks.length && (
@@ -1155,7 +1122,7 @@ export function App() {
           retry={panelRetry}
           conflict={conflict}
           locked={!!pending || loading || projectDirty}
-          feedback={errorView}
+          feedback={projectControlsOpen ? null : errorView}
           subtaskInput={
             <QuickAdd
               key={subtaskKey}

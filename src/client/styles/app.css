@@ -533,3 +533,67 @@ h2 {
     padding-left: 0;
   }
 }
+.project-controls {
+  position: relative;
+  flex-shrink: 0;
+}
+.project-menu {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  width: max-content;
+  padding: 6px;
+  background: white;
+  border: 1px solid var(--leaf-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px #202a2618;
+}
+.project-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+}
+.project-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 20px;
+  color: var(--leaf-text);
+  border: 1px solid var(--leaf-border);
+  border-radius: 10px;
+}
+.project-dialog::backdrop {
+  background: #202a2640;
+}
+.project-dialog h2 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
+.project-dialog .rename-project {
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+}
+.project-dialog .project-plan {
+  padding: 0;
+}
+.project-title-line {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+.project-title-line h1 {
+  min-width: 0;
+  font-size: 20px;
+}
+.workspace-header {
+  padding-top: 12px;
+}
+.view-label {
+  padding-block: 8px 6px;
+  font-size: 13px;
+}
+.tree-toolbar {
+  padding-bottom: 8px;
+}
