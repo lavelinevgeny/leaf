@@ -1,4 +1,11 @@
-import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from 'react';
 import { ControlIcon } from './ControlIcon.js';
 import { indexToDate } from '../domain/calendar.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
@@ -7,7 +14,8 @@ import {
   sourceMarkers,
   dateX,
   HEADER_HEIGHT,
-  ganttInterval,
+  ganttIntervals,
+  type TimelineInterval,
   ROW_HEIGHT,
   shiftDate,
   windowFor,
@@ -28,6 +36,7 @@ export interface GanttProps {
   onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onPlan: (task: Task, kind: 'move' | 'resize', target: string) => void;
   draftId?: string | undefined;
+  intervals?: ReadonlyMap<string, TimelineInterval | null> | undefined;
 }
 interface Gesture {
   task: Task;
@@ -49,7 +58,12 @@ export function Gantt({
   onPlan,
   onPredecessors,
   draftId,
+  intervals: suppliedIntervals,
 }: GanttProps) {
+  const fullIntervals = useMemo(
+    () => suppliedIntervals ?? ganttIntervals(tree, today),
+    [suppliedIntervals, tree, today],
+  );
   const view = windowFor(start, scale);
   const marker = useId().replaceAll(':', '');
   const chainRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -98,10 +112,7 @@ export function Gantt({
     return (
       !disabled &&
       task.status !== 'done' &&
-      ganttInterval(task, tree.schedule, {
-        today,
-        calendar: tree.project.calendarType,
-      })?.kind === 'work' &&
+      fullIntervals.get(task.id)?.kind === 'work' &&
       !tree.schedule.summaries[task.id] &&
       !!tree.schedule.tasks[task.id]?.startDate
     );
@@ -112,10 +123,7 @@ export function Gantt({
     kind: 'move' | 'resize',
   ) {
     if (!editable(task) || event.button !== 0) return;
-    const interval = ganttInterval(task, tree.schedule, {
-      today,
-      calendar: tree.project.calendarType,
-    });
+    const interval = fullIntervals.get(task.id);
     if (!interval?.finish) return;
     event.stopPropagation();
     event.preventDefault();
@@ -158,10 +166,7 @@ export function Gantt({
         ? draftId
           ? draftInterval(tree, task, today)
           : null
-        : ganttInterval(task, schedule, {
-            today,
-            calendar: tree.project.calendarType,
-          }),
+        : fullIntervals.get(task.id),
     ]),
   );
   const cap = (x: number) => Math.max(0, Math.min(view.width, x));

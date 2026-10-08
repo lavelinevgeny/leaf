@@ -3,6 +3,7 @@ import type { ProjectTree, Task } from '../shared/contracts.js';
 import { monthLabels } from './strings.js';
 import { conditionalDisplay } from '../domain/conditional-display.js';
 import type { CalendarType } from '../domain/scheduling-types.js';
+import { projectExplicitSchedule } from '../domain/scheduling.js';
 export type Scale = 'days' | 'weeks' | 'months';
 export const ROW_HEIGHT = 38;
 export const HEADER_HEIGHT = 58;
@@ -38,6 +39,34 @@ export type TimelineInterval = {
   kind: 'work' | 'summary' | 'conditional';
   clipped: boolean;
 };
+export function ganttIntervals(
+  tree: ProjectTree,
+  today: string,
+): ReadonlyMap<string, TimelineInterval | null> {
+  // Full source data provides fresh C19 bases. Server projections retain
+  // authority over real intervals, including private unavailable provenance.
+  const unavailableTaskIds = tree.tasks
+    .filter(
+      (task) =>
+        task.inputStart !== null &&
+        task.inputFinish !== null &&
+        !tree.schedule.tasks[task.id]?.startDate,
+    )
+    .map((task) => task.id);
+  const display = projectExplicitSchedule(
+    {
+      tasks: tree.tasks,
+      dependencies: tree.dependencies,
+      calendarType: tree.project.calendarType,
+      unavailableTaskIds,
+    },
+    today,
+  ).display;
+  const schedule = { ...tree.schedule, display };
+  return new Map(
+    tree.tasks.map((task) => [task.id, ganttInterval(task, schedule)]),
+  );
+}
 export function ganttInterval(
   task: Task,
   schedule: ProjectTree['schedule'],

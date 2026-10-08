@@ -77,6 +77,40 @@ it('renders a conditional bar without promoting it to task dates or accepting a 
   fireEvent.keyDown(bar, { key: 'Enter' });
   expect(p.onSelect).toHaveBeenCalledWith(tree.tasks[2]);
 });
+
+it('C25 renders undated successor after a hidden predecessor without changing labels or enabling writes', () => {
+  const tree = optionalTreeFixture();
+  tree.dependencies = [
+    {
+      id: 'AC',
+      projectId: tree.project.id,
+      predecessorId: optionalIds.a,
+      successorId: optionalIds.c,
+    },
+  ];
+  tree.schedule = calculateSchedule({
+    tasks: tree.tasks,
+    dependencies: tree.dependencies,
+    calendarType: 'weekdays',
+  });
+  const before = structuredClone(tree);
+  const p = props(tree);
+  render(
+    <Gantt
+      {...p}
+      rows={p.rows.filter((row) => row.task.id === optionalIds.c)}
+    />,
+  );
+  const bar = screen.getByRole('button', {
+    name: /Работа C.*2026-10-07 – 2026-10-09.*Условное размещение/,
+  });
+  expect(bar).toBeVisible();
+  expect(document.querySelector('.gantt-edge')).toBeNull();
+  fireEvent.keyDown(bar, { key: 'ArrowRight' });
+  fireEvent.keyDown(bar, { key: 'ArrowRight', shiftKey: true });
+  expect(p.onPlan).not.toHaveBeenCalled();
+  expect(tree).toEqual(before);
+});
 it('shows start-only with its source marker and a conditional bar', () => {
   const tree = optionalTreeFixture();
   tree.tasks[2]!.inputStart = '2026-10-09';

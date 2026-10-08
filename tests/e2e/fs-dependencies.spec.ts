@@ -447,6 +447,15 @@ test('saved FS from a completed task to an undated subtask stays visible after r
   );
   await expect(edge).toBeVisible();
   await expect(edge).toHaveClass('gantt-edge conditional');
+  await expect(
+    page.getByRole('button', {
+      name: /^B, 2026-10-09 – 2026-10-09, Условное размещение/,
+    }),
+  ).toBeVisible();
+  expect(current.schedule.display[taskId(tree, 'B')]).toMatchObject({
+    startDate: '2026-10-09',
+    finishDate: '2026-10-09',
+  });
   expect(
     await edge.evaluate((el) => getComputedStyle(el).strokeDasharray),
   ).toBe('4px, 3px');
@@ -466,6 +475,102 @@ test('saved FS from a completed task to an undated subtask stays visible after r
   expect(restored.tasks).toEqual(tree.tasks);
   expect(restored.dependencies).toEqual(tree.dependencies);
   expect(restored.schedule).toEqual(tree.schedule);
+});
+
+test('C25 fully undated chain follows project today, hidden predecessors, reveal and reload without writes', async ({
+  page,
+  runtime,
+}) => {
+  await page.clock.install({ time: new Date('2026-10-09T09:00:00Z') });
+  let tree = await project(page, runtime);
+  for (const title of ['A', 'B', 'C'])
+    tree = await create(page, runtime, tree, title);
+  tree = await send(page, runtime.origin, tree, {
+    type: 'dependency.create',
+    predecessorId: taskId(tree, 'A'),
+    successorId: taskId(tree, 'B'),
+  });
+  tree = await send(page, runtime.origin, tree, {
+    type: 'dependency.create',
+    predecessorId: taskId(tree, 'B'),
+    successorId: taskId(tree, 'C'),
+  });
+  expect(tree.schedule.display).toEqual({});
+  let writes = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/commands'))
+      writes++;
+  });
+  await show(page);
+  const cBar = () =>
+    page.getByRole('button', {
+      name: /^C, 2026-10-13 – 2026-10-13, Условное размещение/,
+    });
+  await expect(
+    page.getByRole('button', {
+      name: /^A, 2026-10-09 – 2026-10-09, Условное размещение/,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: /^B, 2026-10-12 – 2026-10-12, Условное размещение/,
+    }),
+  ).toBeVisible();
+  await expect(cBar()).toBeVisible();
+  const x = await page
+    .locator(`[data-gantt-bar="${taskId(tree, 'C')}"]`)
+    .getAttribute('x');
+  await page.getByRole('searchbox', { name: 'Поиск задач' }).fill('C');
+  await expect(cBar()).toBeVisible();
+  await expect(
+    page.locator(`[data-gantt-bar="${taskId(tree, 'C')}"]`),
+  ).toHaveAttribute('x', x!);
+  await expect(page.locator('.gantt-edge')).toHaveCount(0);
+  await page.getByRole('searchbox', { name: 'Поиск задач' }).fill('');
+  await cBar().focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect(panel(page).getByLabel('Начало', { exact: true })).toHaveValue(
+    '',
+  );
+  await expect(
+    panel(page).getByLabel('Окончание', { exact: true }),
+  ).toHaveValue('');
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: 'Следующий период', exact: true })
+    .click();
+  await expect(cBar()).toHaveCount(0);
+  await row(page, taskId(tree, 'C')).click();
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await panel(page)
+    .getByRole('button', { name: 'Показать на Ганте', exact: true })
+    .click();
+  await page.keyboard.press('Escape');
+  await expect(cBar()).toBeVisible();
+  await page.clock.setSystemTime(new Date('2026-10-08T09:00:00Z'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(
+    page.getByRole('button', {
+      name: /^C, 2026-10-12 – 2026-10-12, Условное размещение/,
+    }),
+  ).toBeVisible();
+  await page.clock.setSystemTime(new Date('2026-10-12T09:00:00Z'));
+  await page.clock.runFor(61000);
+  await expect(
+    page.getByRole('button', {
+      name: /^C, 2026-10-14 – 2026-10-14, Условное размещение/,
+    }),
+  ).toBeVisible();
+  await show(page);
+  await expect(
+    page.getByRole('button', {
+      name: /^C, 2026-10-14 – 2026-10-14, Условное размещение/,
+    }),
+  ).toBeVisible();
+  expect(writes).toBe(0);
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
 });
 
 test('whole-project picker distinguishes hidden duplicate titles and preserves row geometry', async ({

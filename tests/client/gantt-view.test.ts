@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   ganttInterval,
+  ganttIntervals,
   sourceMarkers,
   computedDateLabel,
   compactDateLabel,
@@ -10,6 +11,7 @@ import {
 } from '../../src/client/gantt-view.js';
 import { gesturePatch, sourceOf } from '../../src/client/planning-view.js';
 import { optionalTreeFixture, optionalIds, task } from './fixtures.js';
+import { calculateSchedule } from '../../src/domain/scheduling.js';
 it('keeps display and original marker dates independent', () => {
   const tree = optionalTreeFixture();
   const c = tree.tasks[2]!;
@@ -29,6 +31,67 @@ it('keeps display and original marker dates independent', () => {
   expect(computedDateLabel(tree.tasks[0]!, tree.schedule)).toBe('');
   expect(sourceMarkers(tree.tasks[1]!, tree.schedule)).toEqual([]);
   expect(tree.schedule.tasks[optionalIds.c]!.startDate).toBeNull();
+});
+
+it('C25 rebuilds full-graph geometry from source rather than shifted cached displays', () => {
+  const tree = optionalTreeFixture();
+  tree.dependencies = [
+    {
+      id: 'AB',
+      projectId: tree.project.id,
+      predecessorId: optionalIds.a,
+      successorId: optionalIds.c,
+    },
+  ];
+  tree.schedule = calculateSchedule({
+    tasks: tree.tasks,
+    dependencies: tree.dependencies,
+    calendarType: 'weekdays',
+  });
+  // A retained shifted display must not become the group's input anchor.
+  tree.schedule.display[optionalIds.c]!.startDate = '2026-10-20';
+  tree.schedule.display[optionalIds.c]!.finishDate = '2026-10-22';
+  const before = structuredClone(tree);
+  expect(ganttIntervals(tree, '2026-10-08').get(optionalIds.c)).toEqual({
+    start: '2026-10-07',
+    finish: '2026-10-09',
+    kind: 'conditional',
+    clipped: false,
+  });
+  expect(tree).toEqual(before);
+});
+it('C25 root-chain client geometry follows today in both directions while server stays timeless', () => {
+  const tree = optionalTreeFixture();
+  tree.tasks = [task(1), task(2), task(3)];
+  tree.dependencies = [
+    {
+      id: 'AB',
+      projectId: tree.project.id,
+      predecessorId: tree.tasks[0]!.id,
+      successorId: tree.tasks[1]!.id,
+    },
+    {
+      id: 'BC',
+      projectId: tree.project.id,
+      predecessorId: tree.tasks[1]!.id,
+      successorId: tree.tasks[2]!.id,
+    },
+  ];
+  tree.schedule = calculateSchedule({
+    tasks: tree.tasks,
+    dependencies: tree.dependencies,
+    calendarType: 'weekdays',
+  });
+  expect(tree.schedule.display).toEqual({});
+  expect(ganttIntervals(tree, '2026-10-09').get(tree.tasks[2]!.id)?.start).toBe(
+    '2026-10-13',
+  );
+  expect(ganttIntervals(tree, '2026-10-08').get(tree.tasks[2]!.id)?.start).toBe(
+    '2026-10-12',
+  );
+  expect(
+    tree.tasks.every((t) => t.inputStart === null && t.inputFinish === null),
+  ).toBe(true);
 });
 it('moves an explicit interval equally and requires an explicit resize duration choice', () => {
   const a = task(1, { inputStart: '2026-10-09', inputFinish: '2026-10-12' });

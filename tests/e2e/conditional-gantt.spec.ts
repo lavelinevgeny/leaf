@@ -52,12 +52,12 @@ test('own/group/today geometry refreshes across midnight without source writes o
     await page.clock.install({ time: new Date('2026-10-08T20:59:30Z') });
     await page.goto(runtime.origin);
     const rootBar = page.getByRole('button', {
-      name: /^Без дат, 2026-10-08 – 2026-10-08, Условное размещение/,
+      name: /^Без дат, 2026-10-13 – 2026-10-13, Условное размещение/,
     });
     await expect(rootBar).toBeVisible();
     await expect(page.locator(`[data-gantt-bar="${root}"]`)).toHaveAttribute(
       'x',
-      '180',
+      '330',
     );
     await expect(page.locator(`[data-gantt-bar="${c}"]`)).toHaveAttribute(
       'x',
@@ -90,12 +90,12 @@ test('own/group/today geometry refreshes across midnight without source writes o
     await page.clock.runFor(61000);
     await expect(
       page.getByRole('button', {
-        name: /^Без дат, 2026-10-09 – 2026-10-09, Условное размещение/,
+        name: /^Без дат, 2026-10-13 – 2026-10-13, Условное размещение/,
       }),
     ).toBeVisible();
     await expect(page.locator(`[data-gantt-bar="${root}"]`)).toHaveAttribute(
       'x',
-      '210',
+      '330',
     );
     await expect(page.locator(`[data-gantt-bar="${c}"]`)).toHaveAttribute(
       'x',
@@ -117,7 +117,7 @@ test('own/group/today geometry refreshes across midnight without source writes o
     await page.keyboard.press('Escape');
     await expect(
       page.getByRole('button', {
-        name: /^Без дат, 2026-10-09 – 2026-10-09, Условное размещение/,
+        name: /^Без дат, 2026-10-13 – 2026-10-13, Условное размещение/,
       }),
     ).toBeVisible();
     expect(writes).toBe(0);

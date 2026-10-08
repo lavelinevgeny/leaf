@@ -22,7 +22,7 @@ import {
   HEADER_HEIGHT,
   ROW_HEIGHT,
   computedDateLabel,
-  ganttInterval,
+  ganttIntervals,
   sourceMarkers,
   shiftDate,
   dateX,
@@ -57,14 +57,6 @@ interface Props {
     input: ReactNode;
     active: boolean;
   };
-}
-function timelineDate(task: Task, tree: ProjectTree, today: string) {
-  return (
-    ganttInterval(task, tree.schedule, {
-      today,
-      calendar: tree.project.calendarType,
-    })?.start ?? sourceMarkers(task, tree.schedule)[0]?.date
-  );
 }
 export function TaskTimeline({
   tree,
@@ -122,6 +114,10 @@ export function TaskTimeline({
   }
   const focusedTask = tree.tasks.find((task) => task.id === selectedId);
   const today = useProjectToday(tree.project.timezone);
+  const intervals = useMemo(() => ganttIntervals(tree, today), [tree, today]);
+  const timelineDate = (task: Task) =>
+    intervals.get(task.id)?.start ??
+    sourceMarkers(task, tree.schedule)[0]?.date;
   const todayDescriptionId = useId();
   const [todayHovered, setTodayHovered] = useState(false);
   const [todayFocused, setTodayFocused] = useState(false);
@@ -130,7 +126,7 @@ export function TaskTimeline({
   const [start, setStart] = useState(() =>
     shiftDate(
       tree.tasks
-        .map((task) => timelineDate(task, tree, today))
+        .map(timelineDate)
         .filter((date): date is string => !!date)
         .sort()[0] ?? today,
       -3,
@@ -175,7 +171,7 @@ export function TaskTimeline({
   useEffect(() => {
     if (!reveal) return;
     const task = tree.tasks.find((item) => item.id === reveal.taskId);
-    const date = task && timelineDate(task, tree, today);
+    const date = task && timelineDate(task);
     if (date) setStart(shiftDate(date, -3));
     if (horizontal.current) horizontal.current.scrollLeft = 0;
     requestAnimationFrame(() => {
@@ -361,6 +357,7 @@ export function TaskTimeline({
             aria-label={strings.gantt}
           >
             <Gantt
+              intervals={intervals}
               tree={tree}
               rows={rows}
               start={start}

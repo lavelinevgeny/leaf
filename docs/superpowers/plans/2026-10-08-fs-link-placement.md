@@ -44,12 +44,12 @@ Files: src/domain/fs-cascade.ts; tests/fs-cascade.test.ts; tests/fs-cascade-repo
 
 Files: новый src/domain/dependency-display.ts; src/domain/scheduling.ts; src/client/gantt-view.ts, Gantt.tsx, TaskTimeline.tsx; tests/conditional-display.test.ts, tests/client/gantt-view.test.ts, tests/client/gantt.test.tsx, tests/e2e/fs-dependencies.spec.ts; при необходимости новые domain tests и package scripts для их включения.
 
-- [ ] Failing literal fixtures L04–L09: real→undated, all-undated chain/today в обе стороны, fan-in/diamond, group/today max, own source priority, invalid/unavailable/full/summary, reverse input order, deep DAG, clipped overflow.
-- [ ] Pure iterative projection: из full tasks/dependencies и C19 bases получить display; реальные проекции оставить неизменными. Общая projectExplicitSchedule(input, today=null) строит C19 bases и вызывает helper; сервер передаёт today=null.
-- [ ] Client переиспользует чистую projectExplicitSchedule для C19 bases от полного дерева и исходных полей, затем dependency display с today; memoize до visible rows. Reveal и initial window используют ту же карту. Не использовать прошлый shifted display как групповую опору.
-- [ ] Browser: новая связь и пунктирная полоса после предшественника, real source null, фильтр/скрытый predecessor, reload/undo, all-undated chain и отсутствие writes от keyboard/reveal.
-- [ ] Полный verify, format:check, check:kit, check:package; E2E зависимостей/conditional и затронутых timeline/filters/view controls. Workspace/staged checks перед коммитом.
-- [ ] Обновить STATUS и отметить выполненные шаги; отдельный агент проверяет этап и полный diff задачи. Исправить и повторно проверить замечания, затем коммит.
+- [x] Failing literal fixtures L04–L09: real→undated, all-undated chain/today в обе стороны, fan-in/diamond, group/today max, own source priority, invalid/unavailable/full/summary, reverse input order, deep DAG, clipped overflow.
+- [x] Pure iterative projection: из full tasks/dependencies и C19 bases получить display; реальные проекции оставить неизменными. Общая projectExplicitSchedule(input, today=null) строит C19 bases и вызывает helper; сервер передаёт today=null.
+- [x] Client переиспользует чистую projectExplicitSchedule для C19 bases от полного дерева и исходных полей, затем dependency display с today; memoize до visible rows. Reveal и initial window используют ту же карту. Не использовать прошлый shifted display как групповую опору.
+- [x] Browser: новая связь и пунктирная полоса после предшественника, real source null, фильтр/скрытый predecessor, reload/undo, all-undated chain и отсутствие writes от keyboard/reveal.
+- [x] Полный verify, format:check, check:kit, check:package; E2E зависимостей/conditional и затронутых timeline/filters/view controls. Workspace/staged checks перед коммитом.
+- [x] Обновить STATUS и отметить выполненные шаги; отдельный агент проверяет этап и полный diff задачи. Исправить и повторно проверить замечания, затем коммит.
 
 ## Исполнение
 

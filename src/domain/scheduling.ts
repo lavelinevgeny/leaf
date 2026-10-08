@@ -1,5 +1,6 @@
 import { dateToIndex, isWorkingDay, workingDaysInclusive } from './calendar.js';
 import { conditionalDisplay } from './conditional-display.js';
+import { dependencyDisplay } from './dependency-display.js';
 export { conditionalFinish } from './conditional-display.js';
 import { realInterval, validateSourceInput } from './planning.js';
 import type {
@@ -88,6 +89,7 @@ const maximum = (a: string | null, b: string | null): string | null =>
 
 export function projectExplicitSchedule(
   input: OptionalInput,
+  today: string | null = null,
 ): ExplicitProjection {
   const tasks = [...input.tasks].sort((a, b) => compare(a.id, b.id));
   const dependencies = [...input.dependencies].sort(
@@ -373,12 +375,18 @@ export function projectExplicitSchedule(
     const display = conditionalDisplay(
       task,
       task.parentId === null ? null : knownStartMin.get(task.parentId)!,
-      null,
+      today,
       input.calendarType,
     );
     if (display) displays.set(id, display);
   }
-  result.display = Object.fromEntries(displays);
+  result.display = dependencyDisplay(
+    tasks,
+    dependencies,
+    result.tasks,
+    Object.fromEntries(displays),
+    input.calendarType,
+  );
 
   for (const edge of dependencies) {
     const predecessor = taskMap.get(edge.predecessorId)!;

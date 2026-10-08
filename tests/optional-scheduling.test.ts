@@ -507,15 +507,17 @@ describe('explicit FS preparation', () => {
     },
   );
 
-  it('never uses conditional edges or parent hierarchy as FS', () => {
+  it('C25 uses conditional edges only for geometry and never hierarchy as FS', () => {
     const tasks = [
       t('P'),
       t('A', 'P', '2026-10-09', '2026-10-09'),
       t('B', 'P', null, null, 3),
     ];
     expect(schedule(tasks).diagnostics).toEqual(unknownDiagnostics(['B']));
+    expect(schedule(tasks).display.B!.finishDate).toBe('2026-10-13');
     const result = schedule(tasks, [e('AB', 'A', 'B')]);
-    expect(result.display.B!.finishDate).toBe('2026-10-13');
+    expect(result.display.B!.startDate).toBe('2026-10-12');
+    expect(result.display.B!.finishDate).toBe('2026-10-14');
     expect(result.feasibility).toBe('incomplete');
     expect(result.diagnostics).toEqual([
       ...unknownDiagnostics(['B']),
