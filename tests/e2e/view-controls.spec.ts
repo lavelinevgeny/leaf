@@ -153,6 +153,16 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
       .getByRole('group', { name: 'Представление задач' })
       .boundingBox())!.x;
     expect(before.scrollTop).toBe(400);
+    const scale = page.getByLabel('Масштаб Ганта', { exact: true });
+    await scale.focus();
+    await list.click();
+    await expect(list).toBeFocused();
+    await expect(scale).toHaveCount(0);
+    await sameGeometry(page, row, before);
+    await gantt.click();
+    await expect(gantt).toBeFocused();
+    await expect(scale).toHaveValue('weeks');
+    await sameGeometry(page, row, before);
     await list.focus();
     await list.press('Space');
     await expect(list).toHaveAttribute('aria-pressed', 'true');

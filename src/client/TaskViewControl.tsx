@@ -5,6 +5,7 @@ function preserveEditorFocus(
   event: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>,
 ) {
   const active = document.activeElement;
+  if (active instanceof HTMLElement && active.closest('.gantt-toolbar')) return;
   if (
     active instanceof HTMLInputElement ||
     active instanceof HTMLTextAreaElement ||

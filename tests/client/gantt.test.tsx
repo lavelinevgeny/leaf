@@ -325,6 +325,38 @@ it('switches two pressed-state view buttons with mouse and keyboard', async () =
   expect(gantt).toHaveAttribute('aria-pressed', 'true');
 });
 
+it('focuses List on a pointer click when the focused Gantt scale is removed', async () => {
+  const user = userEvent.setup();
+  const tree = optionalTreeFixture();
+  function Views() {
+    const [show, setShow] = useState(true);
+    return (
+      <TaskTimeline
+        tree={tree}
+        selectedId={null}
+        collapsed={new Set<string>()}
+        onToggle={vi.fn()}
+        onSelect={vi.fn()}
+        onAction={vi.fn()}
+        onPlan={vi.fn()}
+        disabled={false}
+        show={show}
+        reveal={null}
+        viewControl={<TaskViewControl showGantt={show} onChange={setShow} />}
+      />
+    );
+  }
+  render(<Views />);
+  const scale = screen.getByRole('combobox', { name: 'Масштаб Ганта' });
+  const list = screen.getByRole('button', { name: 'Список' });
+  scale.focus();
+  expect(scale).toHaveFocus();
+  await user.click(list);
+  expect(list).toHaveFocus();
+  expect(list).toHaveAttribute('aria-pressed', 'true');
+  expect(scale).not.toBeInTheDocument();
+});
+
 it('preserves active editor focus and selection on pointer switching without changing keyboard focus', async () => {
   const user = userEvent.setup();
   const blur = vi.fn();
