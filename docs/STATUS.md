@@ -1,5 +1,11 @@
 # Статус разработки
 
+## Фавикон из логотипа — 2026-10-08
+
+`src/client/favicon.svg` теперь использует тот же знак `❧` и системный стек шрифтов, что и логотип в sidebar. Фон прозрачный, зелёный цвет взят из предоставленного образца. Конкретная форма глифа зависит от системного шрифта, как и в логотипе. Обновлён хеш public-assets; ранее проверенная версия сохранена в historicalAssets.
+
+PASS: `npm run build`, `npm run format:check`, `npm run check:package`, `npm run check:kit`, `npm run security:staged`, `git diff --cached --check`; Chromium загрузил production SVG с серверной CSP в размерах 16/32/64/128 px, preview просмотрен. Полные application suites и Docker build не запускались для замены статического значка. Push/deployment не выполнялись. Следующая продуктовая задача — проверка доски O03.
+
 ## Фавикон — 2026-10-08
 
 В `index.html` подключён локальный `src/client/favicon.svg`: белый лист на зелёном фоне из палитры leaf. Vite выпускает отдельный asset с хешем (`?no-inline`), совместимый с действующей CSP. Docker allowlist и package check разрешают только этот дополнительный файл. Исходник и preview проверены, точные байты добавлены в public-assets manifest; внешних ссылок, шрифтов и метаданных нет. Модель и поведение приложения не менялись.
