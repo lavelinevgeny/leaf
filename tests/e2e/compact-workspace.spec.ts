@@ -134,6 +134,94 @@ function reply(page: Page) {
   );
 }
 
+test('project dots follow row hover and keyboard focus without shifting the title', async ({
+  page,
+  runtime,
+}) => {
+  const tree = await seedOptionalRuntime(page, runtime);
+  await page.goto(runtime.origin);
+  const row = page.locator('.project-item.active');
+  const link = row.getByRole('button', {
+    name: tree.project.title,
+    exact: true,
+  });
+  const opener = row.getByRole('button', {
+    name: 'Действия проекта',
+    exact: true,
+  });
+  const search = page.getByRole('searchbox', {
+    name: 'Поиск задач',
+    exact: true,
+  });
+  await expect(link).toBeVisible();
+  await search.hover();
+  await expect(opener).toHaveCSS('opacity', '0');
+  const titleBox = await row.locator('.project-name').boundingBox();
+  await link.hover();
+  await expect(opener).toHaveCSS('opacity', '1');
+  expect(await row.locator('.project-name').boundingBox()).toEqual(titleBox);
+  await search.hover();
+  await expect(opener).toHaveCSS('opacity', '0');
+  await link.click();
+  await search.hover();
+  await expect(opener).toHaveCSS('opacity', '0');
+
+  await link.hover();
+  await opener.click();
+  await search.hover();
+  await expect(opener).toHaveAttribute('aria-expanded', 'true');
+  await expect(opener).toHaveCSS('opacity', '1');
+  await expect(page.locator('.project-menu')).toBeVisible();
+  await search.click();
+  await expect(page.locator('.project-menu')).toHaveCount(0);
+  await expect(opener).toHaveCSS('opacity', '0');
+
+  await link.focus();
+  await page.keyboard.press('Tab');
+  await expect(opener).toBeFocused();
+  await expect(opener).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Enter');
+  await expect(
+    page.getByRole('button', { name: 'Настройки проекта', exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(opener).toBeFocused();
+  await expect(opener).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Tab');
+  await expect(opener).not.toBeFocused();
+  await expect(opener).toHaveCSS('opacity', '0');
+});
+
+test.describe('project menu on touch screens', () => {
+  test.use({ hasTouch: true });
+  test('project dots remain available without hover', async ({
+    page,
+    runtime,
+  }) => {
+    const tree = await seedOptionalRuntime(page, runtime);
+    await page.goto(runtime.origin);
+    await expect(
+      page.getByRole('heading', { name: tree.project.title, exact: true }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(
+      true,
+    );
+    const opener = page.getByRole('button', {
+      name: 'Действия проекта',
+      exact: true,
+    });
+    await expect(opener).toHaveCSS('opacity', '1');
+    await opener.tap();
+    await expect(page.locator('.project-menu')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Настройки проекта', exact: true })
+      .tap();
+    await expect(
+      page.getByRole('dialog', { name: 'Настройки проекта', exact: true }),
+    ).toBeVisible();
+  });
+});
+
 test('compact geometry, local diagnostics and view actions preserve the authoritative tree', async ({
   page,
   runtime,

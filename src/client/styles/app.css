@@ -762,6 +762,18 @@ h2 {
 .project-item .project-controls {
   margin-right: 4px;
 }
+@media (hover: hover) {
+  .project-item .project-menu-trigger {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .project-item:hover .project-menu-trigger,
+  .project-item:has(:focus-visible) .project-menu-trigger,
+  .project-item .project-menu-trigger[aria-expanded='true'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 .project-item .project-menu {
   left: auto;
   right: 0;

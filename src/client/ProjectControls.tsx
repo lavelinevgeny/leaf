@@ -90,7 +90,7 @@ export function ProjectControls(props: Props) {
       <button
         ref={opener}
         type="button"
-        className="quiet"
+        className="quiet project-menu-trigger"
         aria-label={strings.projectActions}
         title={strings.projectActions}
         aria-expanded={menu}

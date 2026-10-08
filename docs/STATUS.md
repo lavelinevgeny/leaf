@@ -882,3 +882,11 @@ PASS: doctor; verify — typecheck, lint, 774/774 unit/integration tests в 42 �
 При подготовке локального коммита полный preflight PASS: doctor, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. Staged diff проверен; прежняя несвязанная запись STATUS оставлена вне index.
 
 Не запускались полный E2E и Docker smoke; публикация/deployment не выполнялись. Следующая продуктовая задача — продолжение S4–S6.
+
+## Меню проекта — точки при наведении, 2026-10-08
+
+Кнопка `⋯` в левой панели скрыта на устройствах с hover до наведения на строку проекта. Клавиатурный focus-visible и открытое меню сохраняют показ; на touch кнопка доступна постоянно. Название не сдвигается, pointer-фокус после выбора проекта не удерживает точки. Изменены ProjectControls, app.css, UI и browser-регрессии compact-workspace; прежние незакоммиченные записи STATUS сохранены.
+
+Tests-first: новая actual-server регрессия воспроизвела постоянную opacity 1, после исправления прошла в обоих viewport. PASS на закреплённом Node: doctor; verify — typecheck, lint, 774/774 unit/integration tests, production build; format:check; check:kit; security:workspace; git diff --check. Профильный E2E compact-workspace — 8/8 в 1440×900 и 1280×800 без skips/retries: hover/уход курсора, выбор проекта, открытое меню, Tab/Enter/Escape, touch, геометрия и существующие settings/rename/undo. Синтетические screenshots основного экрана и меню просмотрены. Первоначальный doctor на незакреплённой версии Node отказал; повтор на уже установленной закреплённой версии прошёл.
+
+При подготовке локального коммита полный preflight PASS: doctor, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. Staged diff проверен; прежние несвязанные записи STATUS оставлены вне index. Не запускались полный E2E, Docker и sandbox probe; push/deployment не выполнялись. Следующий шаг — проверка интерфейса владельцем и продолжение S4–S6.
