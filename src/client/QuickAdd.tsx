@@ -123,7 +123,22 @@ export function QuickAdd({
     >
       <div className="quick-line">
         <span className="draft-dot" aria-hidden="true">
-          ＋
+          {inline ? (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              focusable="false"
+            >
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+          ) : (
+            '＋'
+          )}
         </span>
         <input
           id={inputId}
@@ -189,7 +204,24 @@ export function QuickAdd({
           type="submit"
           disabled={busy || blocked || !title.trim() || !canSubmit}
         >
-          {inline ? '✓' : strings.addTask}
+          {inline ? (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="m4 8 3 3 5-6" />
+            </svg>
+          ) : (
+            strings.addTask
+          )}
         </button>
         {inline && (
           <button
@@ -200,7 +232,19 @@ export function QuickAdd({
             disabled={busy || blocked}
             onClick={cancel}
           >
-            ×
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="m4 4 8 8m0-8-8 8" />
+            </svg>
           </button>
         )}
       </div>

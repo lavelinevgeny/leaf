@@ -633,7 +633,16 @@
   flex: 0 0 30px;
   width: 30px;
   padding: 0;
+  border-color: var(--leaf-accent);
+  border-radius: 8px;
   line-height: 1;
+}
+.inline-quick-add .quick-cancel {
+  color: var(--leaf-accent);
+}
+.inline-quick-add .quick-line svg {
+  display: block;
+  flex: none;
 }
 .inline-quick-add .quick-line > .draft-dot {
   display: inline-flex;
@@ -644,7 +653,6 @@
   height: 20px;
   border: 1px dashed transparent;
   border-radius: 50%;
-  font-size: 16px;
   line-height: 1;
 }
 .inline-quick-add:focus-within .draft-dot {
