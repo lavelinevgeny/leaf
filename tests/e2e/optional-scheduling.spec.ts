@@ -34,11 +34,21 @@ test('optional source, linked input, API mismatch rollback, FS conflict, undo an
         exact: true,
       },
     ),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: /Работа C.*Условное размещение/ }),
   ).toBeVisible();
   await page.getByRole('treeitem', { name: /Работа C,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await expect(
+    panel.getByText(
+      'Анализ датированной части; полный критический путь неизвестен',
+      { exact: true },
+    ),
+  ).toBeVisible();
   await expect(page.getByLabel('Начало', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue('');
   await page.getByLabel('Начало', { exact: true }).fill('2026-10-05');
@@ -93,10 +103,30 @@ test('optional source, linked input, API mismatch rollback, FS conflict, undo an
   });
   expect(tree.schedule.feasibility).toBe('infeasible');
   await page.reload();
+  for (const id of [a, c])
+    await expect(
+      page.locator(`[role="treeitem"][data-task-id="${id}"]`),
+    ).toHaveAttribute(
+      'aria-description',
+      /Предшественник заканчивается после явного начала/,
+    );
+  await expect(
+    page.getByRole('treeitem', { name: /^Этап P,/ }),
+  ).not.toHaveAttribute('aria-description', /Предшественник/);
+  await expect(
+    page.getByText('Предшественник заканчивается после явного начала.', {
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await page.getByRole('treeitem', { name: /Работа C,/ }).click();
+  await expect(
+    panel.getByText('Предшественник заканчивается после явного начала.', {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
   await expect(
-    page.getByText('Предшественник заканчивается после явного начала.').first(),
+    page.locator('[data-dependency-edge="' + tree.dependencies[0]!.id + '"]'),
   ).toBeVisible();
   await page.screenshot({
     path: `/tmp/leaf-task5-${info.project.name}-dependencies.png`,
