@@ -18,7 +18,6 @@ import { focusTaskRow, type TreeAction } from './TaskTree.js';
 import { orderedChildren, subtreeIds } from './tree-view.js';
 import { strings } from './strings.js';
 import { ProjectControls } from './ProjectControls.js';
-import { ScheduleStatus } from './ScheduleStatus.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
 import { TaskFilters } from './TaskFilters.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
@@ -983,7 +982,6 @@ export function App() {
           )}
           {tree && (
             <>
-              <ScheduleStatus tree={tree} />
               <div className="tree-toolbar">
                 <span>{strings.tasks}</span>
                 <label className="gantt-toggle">

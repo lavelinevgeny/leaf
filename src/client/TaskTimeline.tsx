@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -87,6 +88,18 @@ export function TaskTimeline({
   }
   const focusedTask = tree.tasks.find((task) => task.id === selectedId);
   const today = useProjectToday(tree.project.timezone);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpId = useId();
+  const helpButton = useRef<HTMLButtonElement>(null);
+  const helpPanel = useRef<HTMLDivElement>(null);
+  function closeHelp() {
+    setHelpOpen(false);
+    helpButton.current?.focus();
+  }
+  useEffect(() => {
+    if (!show) setHelpOpen(false);
+    else if (helpOpen) helpPanel.current?.focus();
+  }, [show, helpOpen]);
   const [scale, setScale] = useState<Scale>('days');
   const [start, setStart] = useState(() =>
     shiftDate(
@@ -196,6 +209,51 @@ export function TaskTimeline({
           ›
         </button>
         <span>{start}</span>
+        <div
+          className="gantt-help"
+          onKeyDown={(event) => {
+            if (helpOpen && event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              closeHelp();
+            }
+          }}
+        >
+          <button
+            type="button"
+            ref={helpButton}
+            aria-label={strings.ganttHelp}
+            title={strings.ganttHelp}
+            aria-expanded={helpOpen}
+            aria-controls={helpOpen ? helpId : undefined}
+            aria-haspopup="dialog"
+            onClick={() => {
+              if (helpOpen) closeHelp();
+              else setHelpOpen(true);
+            }}
+          >
+            ?
+          </button>
+          {helpOpen && (
+            <div
+              id={helpId}
+              ref={helpPanel}
+              className="gantt-help-panel"
+              role="dialog"
+              aria-label={strings.ganttHelp}
+              tabIndex={-1}
+            >
+              <p>{strings.gestureHint}</p>
+              <button
+                type="button"
+                aria-label={strings.closeGanttHelp}
+                onClick={closeHelp}
+              >
+                {strings.close}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="plan-scroll" ref={vertical} data-plan-scroll>
         <div className="timeline-columns">
@@ -276,7 +334,6 @@ export function TaskTimeline({
           </div>
         </div>
       </div>
-      <p className="gantt-hint">{strings.gestureHint}</p>
       <span className="sr-only">
         {focusedTask ? computedDateLabel(focusedTask, tree.schedule) : ''}
       </span>

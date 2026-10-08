@@ -103,6 +103,7 @@ it('labels partial criticality and never substitutes ordinary/global floats', ()
       'Анализ датированной части; полный критический путь неизвестен',
     ),
   ).toBeVisible();
+  expect(screen.queryByText('Неполные сроки')).toBeNull();
   expect(screen.getByText(/Резерв до известного горизонта: 0/)).toBeVisible();
   expect(
     screen.queryByText(/^Критична для окончания проекта$/),
@@ -323,6 +324,7 @@ const readyN06Tree = (doneB = false) =>
 it('renders N06 project/local floats separately and does not promote done to critical', () => {
   const tree = readyN06Tree();
   render(<ScheduleStatus tree={tree} task={tree.tasks[0]!} />);
+  expect(screen.getByText('Критический путь рассчитан')).toBeVisible();
   expect(screen.getByText(/Резерв проекта: 7/)).toBeVisible();
   expect(screen.getByText(/Резерв текущего размещения: 3/)).toBeVisible();
   expect(

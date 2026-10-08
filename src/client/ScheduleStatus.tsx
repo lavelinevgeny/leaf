@@ -1,4 +1,8 @@
 import type { ProjectTree, Task } from '../shared/contracts.js';
+import {
+  actionableDiagnostics,
+  isAbsenceOnlyDiagnostic,
+} from './schedule-diagnostics.js';
 import { diagnosticLabels, strings } from './strings.js';
 export function ScheduleStatus({
   tree,
@@ -21,7 +25,9 @@ export function ScheduleStatus({
   const known = partial && task ? partial.tasks[task.id] : undefined;
   const names = new Map(tree.tasks.map((item) => [item.id, item.title]));
   const diagnostics = schedule.diagnostics.filter(
-    (item) => !task || item.taskIds.includes(task.id),
+    (item) =>
+      !isAbsenceOnlyDiagnostic(item) &&
+      (!task || item.taskIds.includes(task.id)),
   );
   return (
     <div className="schedule-status" aria-live="polite">
@@ -36,9 +42,7 @@ export function ScheduleStatus({
       {schedule.analysisStatus === 'pending-policy' && (
         <p>{strings.frozenPending}</p>
       )}
-      {schedule.analysisStatus === 'ready' && !task && (
-        <p>{strings.readyCritical}</p>
-      )}
+      {schedule.analysisStatus === 'ready' && <p>{strings.readyCritical}</p>}
       {schedule.analysisStatus === 'incomplete' && (
         <p>{partial ? strings[partial.labelKey] : strings.unknownCritical}</p>
       )}
@@ -76,12 +80,10 @@ export function ScheduleStatus({
             {strings.partialContainsCritical}
           </p>
         )}
-      {schedule.feasibility === 'incomplete' && (
-        <span className="schedule-warning">Неполные сроки</span>
-      )}
-      {schedule.feasibility === 'infeasible' && (
-        <span className="schedule-error">{strings.infeasible}</span>
-      )}
+      {schedule.feasibility === 'infeasible' &&
+        (!task || actionableDiagnostics(diagnostics).length > 0) && (
+          <span className="schedule-error">{strings.infeasible}</span>
+        )}
       {diagnostics.length > 0 && (
         <ul className="schedule-diagnostics">
           {diagnostics.map((item, index) => (

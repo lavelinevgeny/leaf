@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { calculateSchedule } from '../../src/domain/scheduling.js';
 import { Gantt } from '../../src/client/Gantt.js';
@@ -258,4 +259,55 @@ it('explains a clipped conditional display in its title and accessible label', (
     'Отображение ограничено предельной датой',
   );
   expect(JSON.stringify(tree)).toBe(before);
+});
+
+it('opens Gantt help by keyboard, closes with Escape and returns focus without planning', async () => {
+  const tree = optionalTreeFixture(),
+    before = structuredClone(tree);
+  const p = {
+    tree,
+    selectedId: null,
+    collapsed: new Set<string>(),
+    onToggle: vi.fn(),
+    onSelect: vi.fn(),
+    onAction: vi.fn(),
+    onPlan: vi.fn(),
+    disabled: false,
+    show: true,
+    reveal: null,
+  };
+  const user = userEvent.setup();
+  const view = render(<TaskTimeline {...p} />);
+  const opener = screen.getByRole('button', { name: 'Помощь Ганта' });
+  expect(screen.queryByText(/Перенос — обе даты/)).toBeNull();
+  opener.focus();
+  await user.keyboard('{Enter}');
+  const help = screen.getByRole('dialog', { name: 'Помощь Ганта' });
+  expect(help).toBeVisible();
+  expect(help).toHaveFocus();
+  expect(opener).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText(/Перенос — обе даты/)).toBeVisible();
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(opener).toHaveFocus();
+  await user.keyboard(' ');
+  expect(screen.getByRole('dialog')).toBeVisible();
+  await user.click(
+    screen.getByRole('button', { name: 'Закрыть помощь Ганта' }),
+  );
+  expect(opener).toHaveFocus();
+  await user.click(opener);
+  view.rerender(<TaskTimeline {...p} show={false} />);
+  expect(screen.queryByRole('button', { name: 'Помощь Ганта' })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('combobox', { name: 'Масштаб' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Сегодня' })).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: 'Предыдущий период' }),
+  ).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Следующий период' })).toBeNull();
+  view.rerender(<TaskTimeline {...p} />);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(tree).toEqual(before);
+  expect(p.onPlan).not.toHaveBeenCalled();
 });

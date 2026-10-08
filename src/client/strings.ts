@@ -91,6 +91,8 @@ export const strings = {
   nextPeriod: 'Следующий период',
   treeWidth: 'Ширина дерева',
   showOnGantt: 'Показать на Ганте',
+  ganttHelp: 'Помощь Ганта',
+  closeGanttHelp: 'Закрыть помощь Ганта',
   gestureHint:
     'Перенос — обе даты; правый край — окончание. ←/→ — рабочий день, Shift+←/→ — окончание. Esc — отмена жеста.',
   invalidGesture:
@@ -215,6 +217,7 @@ export const diagnosticLabels: Record<string, string> = {
     'Предшественник заканчивается после явного начала.',
   UNKNOWN_INTERVAL: 'Полная пара дат не задана.',
   UNKNOWN_PRECEDENCE: 'Интервал связанной задачи неизвестен.',
+  INVALID_DURATION: 'Проверьте длительность задачи.',
   INVALID_INTERVAL: 'Проверьте даты и длительность задачи.',
   DURATION_MISMATCH: 'Длительность не совпадает с введёнными датами.',
   INVALID_PRECEDENCE_BOUNDARY: 'Граница связанной задачи недопустима.',

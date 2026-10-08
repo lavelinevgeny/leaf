@@ -185,6 +185,41 @@ async function open() {
 }
 
 describe('client HTTP interactions', () => {
+  it('keeps schedule explanations out of workspace and opens the existing panel from a row conflict', async () => {
+    tree.tasks = [
+      task(1, 'Работа A'),
+      task(2, 'Работа B'),
+      task(3, 'Работа C'),
+    ];
+    tree.schedule = {
+      ...emptySchedule,
+      feasibility: 'infeasible',
+      diagnostics: [
+        {
+          code: 'EXPLICIT_PRECEDENCE_CONFLICT',
+          taskIds: [id(1), id(2)],
+          dependencyIds: [],
+          messageKey: 'scheduling.EXPLICIT_PRECEDENCE_CONFLICT',
+        },
+      ],
+    };
+    const before = structuredClone(tree);
+    await open();
+    expect(document.querySelector('.schedule-status')).toBeNull();
+    await userEvent.click(
+      within(screen.getByRole('treeitem', { name: /^Работа A,/ })).getByRole(
+        'img',
+        { name: /Конфликт плана/ },
+      ),
+    );
+    expect(
+      within(screen.getByRole('complementary', { name: 'Задача' })).getByText(
+        'Предшественник заканчивается после явного начала.',
+      ),
+    ).toBeVisible();
+    expect(commands).toEqual([]);
+    expect(tree).toEqual(before);
+  });
   it('keeps source drafts separate and resets only the confirmed branch on exact retry', async () => {
     tree.tasks = [task(1, 'Этап')];
     await open();

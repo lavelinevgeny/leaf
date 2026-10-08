@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { compactDateLabel, computedDateLabel } from './gantt-view.js';
 import { treeRows } from './tree-view.js';
-import { statusLabels, strings } from './strings.js';
+import { actionableDiagnostics } from './schedule-diagnostics.js';
+import { diagnosticLabels, statusLabels, strings } from './strings.js';
 export type TreeAction =
   'sibling' | 'child' | 'delete' | 'up' | 'down' | 'in' | 'out';
 interface Props {
@@ -46,6 +47,7 @@ export function TaskTree({
     schedule?.analysisStatus === 'incomplete' ? schedule.partialAnalysis : null;
   const partialTasks = new Set(partial?.partialCriticalTaskIds ?? []);
   const partialSummaries = new Set(partial?.partialCriticalSummaryIds ?? []);
+  const errors = actionableDiagnostics(schedule?.diagnostics ?? []);
   const rows = suppliedRows ?? treeRows(tasks, collapsed, rootId);
   const [focusedId, setFocusedId] = useState<string | null>(selectedId);
   const refs = useRef(new Map<string, HTMLDivElement>());
@@ -89,6 +91,12 @@ export function TaskTree({
       }}
     >
       {rows.map(({ task, depth, hasChildren }, index) => {
+        const taskErrors = errors.filter((item) =>
+          item.taskIds.includes(task.id),
+        );
+        const errorLabel = taskErrors.length
+          ? `${strings.infeasible}: ${taskErrors.map((item) => diagnosticLabels[item.code]).join(' ')}`
+          : '';
         const contextOnly = matchIds !== undefined && !matchIds.has(task.id);
         const containsCritical =
           schedule?.analysisStatus === 'ready' &&
@@ -114,7 +122,11 @@ export function TaskTree({
             role="treeitem"
             aria-label={`${task.title}, ${statusLabels[task.status]}${computedDateLabel(task, schedule) ? `, ${computedDateLabel(task, schedule)}` : ''}`}
             aria-level={depth + 1}
-            aria-description={contextOnly ? strings.parentContext : undefined}
+            aria-description={
+              [contextOnly ? strings.parentContext : '', errorLabel]
+                .filter(Boolean)
+                .join('. ') || undefined
+            }
             aria-expanded={hasChildren ? !collapsed.has(task.id) : undefined}
             aria-selected={selectedId === task.id}
             tabIndex={focusId === task.id ? 0 : -1}
@@ -214,6 +226,16 @@ export function TaskTree({
                 title={strings.parentContext}
               >
                 {strings.context}
+              </span>
+            )}
+            {errorLabel && (
+              <span
+                role="img"
+                className="schedule-error-indicator"
+                title={errorLabel}
+                aria-label={errorLabel}
+              >
+                !
               </span>
             )}
             {indicator && (
