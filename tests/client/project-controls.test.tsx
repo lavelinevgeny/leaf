@@ -100,6 +100,41 @@ it('contains Tab, preserves dirty Escape draft and explicitly discards it', asyn
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(opener).toHaveFocus();
 });
+it('keeps the settings dialog open when parent dirty state has not rendered yet', async () => {
+  const onDirty = vi.fn();
+  const onSave = vi.fn(async () => true);
+  render(
+    <ProjectControls
+      project={project}
+      disabled={false}
+      dirty={false}
+      onSave={onSave}
+      onDirty={onDirty}
+      rename={null}
+      onRenameChange={vi.fn()}
+      onRename={vi.fn()}
+      onOpen={() => true}
+      onVisibility={vi.fn()}
+      feedback={null}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Действия проекта' }),
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Настройки проекта' }),
+  );
+  const timezone = screen.getByLabelText('Часовой пояс проекта');
+  await userEvent.clear(timezone);
+  await userEvent.type(timezone, 'Europe/Moscow');
+  expect(onDirty).toHaveBeenCalledWith(true);
+  await userEvent.keyboard('{Escape}');
+  expect(
+    screen.getByRole('dialog', { name: 'Настройки проекта' }),
+  ).toBeVisible();
+  expect(timezone).toHaveValue('Europe/Moscow');
+  expect(onSave).not.toHaveBeenCalled();
+});
 it('saves settings atomically and closes only the clean dialog', async () => {
   const opener = await openSettings();
   await userEvent.selectOptions(screen.getByLabelText('Календарь'), 'all-days');

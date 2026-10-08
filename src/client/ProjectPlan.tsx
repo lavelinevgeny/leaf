@@ -18,6 +18,10 @@ export function ProjectPlan({ project, disabled, onSave, onDirty }: Props) {
   const [draft, setDraft] = useState(() => settingsOf(project));
   const [baseline, setBaseline] = useState(() => settingsOf(project));
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  function updateDraft(next: Settings) {
+    onDirty(JSON.stringify(next) !== JSON.stringify(baseline));
+    setDraft(next);
+  }
   useEffect(() => {
     onDirty(dirty);
   }, [dirty, onDirty]);
@@ -50,7 +54,7 @@ export function ProjectPlan({ project, disabled, onSave, onDirty }: Props) {
               aria-label={strings.calendar}
               value={draft.calendarType}
               onChange={(event) =>
-                setDraft({
+                updateDraft({
                   ...draft,
                   calendarType: event.target.value as Project['calendarType'],
                 })
@@ -70,7 +74,7 @@ export function ProjectPlan({ project, disabled, onSave, onDirty }: Props) {
               maxLength={100}
               value={draft.timezone}
               onChange={(event) =>
-                setDraft({ ...draft, timezone: event.target.value })
+                updateDraft({ ...draft, timezone: event.target.value })
               }
             />
           </label>
@@ -82,7 +86,7 @@ export function ProjectPlan({ project, disabled, onSave, onDirty }: Props) {
               type="button"
               className="quiet"
               onClick={() => {
-                setDraft(settingsOf(project));
+                updateDraft(settingsOf(project));
                 setBaseline(settingsOf(project));
                 onDirty(false);
               }}

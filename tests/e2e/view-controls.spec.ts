@@ -12,6 +12,63 @@ import {
 
 const captures = mkdtempSync(join(tmpdir(), 'leaf-c22-views-'));
 
+test('outside clicks from quick schedule date and duration focus the selected view and retain the draft', async ({
+  page,
+}) => {
+  const runtime = await syntheticRuntime();
+  try {
+    const before = await seedOptionalRuntime(page, runtime);
+    await page.goto(runtime.origin);
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (!['GET', 'HEAD'].includes(request.method()))
+        writes.push(request.method());
+    });
+    const row = page.getByRole('treeitem', { name: /^Этап P,/ });
+    await row.focus();
+    await row.press('Shift+Enter');
+    const title = page.getByLabel('Новая задача', { exact: true });
+    await title.fill('Synthetic quick schedule draft');
+    const chip = page.getByRole('button', { name: 'Сроки новой задачи' });
+    await chip.click();
+    const popup = page.getByRole('dialog', { name: 'Сроки задачи' });
+    const start = popup.getByLabel('Начало', { exact: true });
+    await start.fill('09.10.2026');
+    await start.press('Tab');
+    await start.focus();
+    const list = page.getByRole('button', { name: 'Список', exact: true });
+    await list.click();
+    await expect(popup).toHaveCount(0);
+    await expect(list).toBeFocused();
+    await expect(list).toHaveAttribute('aria-pressed', 'true');
+    await expect(chip).toHaveAccessibleDescription(/9 окт/);
+    await chip.click();
+    const duration = popup.getByLabel('Длительность, рабочих дней');
+    await duration.fill('3');
+    await duration.press('Tab');
+    await duration.focus();
+    const gantt = page.getByRole('button', { name: 'Гант', exact: true });
+    await gantt.click();
+    await expect(popup).toHaveCount(0);
+    await expect(gantt).toBeFocused();
+    await expect(gantt).toHaveAttribute('aria-pressed', 'true');
+    await expect(title).toHaveValue('Synthetic quick schedule draft');
+    await chip.click();
+    await expect(popup.getByLabel('Начало', { exact: true })).toHaveValue(
+      '09.10.2026',
+    );
+    await expect(popup.getByLabel('Длительность, рабочих дней')).toHaveValue(
+      '3',
+    );
+    expect(writes).toEqual([]);
+    expect(await readTree(page, runtime.origin, before.project.id)).toEqual(
+      before,
+    );
+  } finally {
+    await runtime.close();
+  }
+});
+
 async function geometry(page: Page, row: Locator) {
   const boxes = await Promise.all([
     page.locator('.workspace-header').boundingBox(),

@@ -73,7 +73,8 @@ test('project settings preserve dirty calendar draft, done requires return and p
 }) => {
   const runtime = await syntheticRuntime();
   try {
-    await seedOptionalRuntime(page, runtime);
+    const initial = await seedOptionalRuntime(page, runtime);
+    expect(initial.project.timezone).toBe('UTC');
     await page.goto(runtime.origin);
     const projectActions = page.getByRole('button', {
       name: 'Действия проекта',
@@ -102,6 +103,10 @@ test('project settings preserve dirty calendar draft, done requires return and p
     await expect(
       page.getByLabel('Часовой пояс проекта', { exact: true }),
     ).toHaveValue('Europe/Moscow');
+    expect(
+      (await readTree(page, runtime.origin, initial.project.id)).project
+        .revision,
+    ).toBe(initial.project.revision);
     await expect(
       page.getByRole('complementary', { name: 'Задача', exact: true }),
     ).toHaveCount(0);

@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { Command, Project } from '../shared/contracts.js';
 import { ProjectPlan } from './ProjectPlan.js';
 import { strings } from './strings.js';
@@ -36,6 +42,14 @@ export function ProjectControls(props: Props) {
   const opener = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const settingsDirty = useRef(dirty);
+  const setSettingsDirty = useCallback(
+    (value: boolean) => {
+      settingsDirty.current = value;
+      onDirty(value);
+    },
+    [onDirty],
+  );
   const visibilityCallback = useRef(onVisibility);
   useEffect(() => {
     visibilityCallback.current = onVisibility;
@@ -44,7 +58,8 @@ export function ProjectControls(props: Props) {
   const unsaved =
     action === 'settings' ? dirty : rename !== null && rename !== project.title;
   const close = () => {
-    if (unsaved || disabled) return;
+    if ((action === 'settings' ? settingsDirty.current : unsaved) || disabled)
+      return;
     dialog.current?.close();
     setAction(null);
     onRenameChange(null);
@@ -180,7 +195,7 @@ export function ProjectControls(props: Props) {
               project={project}
               disabled={disabled}
               onSave={onSave}
-              onDirty={onDirty}
+              onDirty={setSettingsDirty}
             />
           ) : (
             <form
