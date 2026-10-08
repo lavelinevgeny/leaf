@@ -32,9 +32,18 @@ export function TaskFilters({ filter, onChange, disabled }: Props) {
       )
         setOpen(false);
     };
+    const endOpenerPress = () => {
+      openerPointerDown.current = false;
+    };
     document.addEventListener('pointerdown', closeOutside, true);
-    return () =>
+    document.addEventListener('pointerup', endOpenerPress, true);
+    document.addEventListener('pointercancel', endOpenerPress, true);
+    return () => {
       document.removeEventListener('pointerdown', closeOutside, true);
+      document.removeEventListener('pointerup', endOpenerPress, true);
+      document.removeEventListener('pointercancel', endOpenerPress, true);
+      endOpenerPress();
+    };
   }, [open]);
 
   return (
@@ -89,12 +98,6 @@ export function TaskFilters({ filter, onChange, disabled }: Props) {
           disabled={disabled}
           onPointerDown={() => {
             openerPointerDown.current = true;
-          }}
-          onPointerUp={() => {
-            openerPointerDown.current = false;
-          }}
-          onPointerCancel={() => {
-            openerPointerDown.current = false;
           }}
           onClick={() => {
             openerPointerDown.current = false;
