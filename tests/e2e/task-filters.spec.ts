@@ -201,6 +201,36 @@ test('search and status reveal parent context, share Gantt rows and leave the re
   expect(mutations).toEqual([]);
 });
 
+test('Shift+Tab leaves the popover and pointer toggling still closes it', async ({
+  page,
+  runtime,
+}) => {
+  const { tree } = await seed(page, runtime);
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (!['GET', 'HEAD'].includes(request.method()))
+      writes.push(request.method());
+  });
+  const filters = page.getByRole('button', { name: 'Фильтры', exact: true });
+  await filters.focus();
+  await filters.press('Enter');
+  const status = page.getByRole('combobox', {
+    name: 'Фильтр по статусу',
+    exact: true,
+  });
+  await expect(status).toBeFocused();
+  await status.press('Shift+Tab');
+  await expect(filters).toBeFocused();
+  await expect(filters).toHaveAttribute('aria-expanded', 'false');
+  await filters.click();
+  await expect(status).toBeFocused();
+  await filters.click();
+  await expect(filters).toHaveAttribute('aria-expanded', 'false');
+  await expect(filters).toBeFocused();
+  expect(writes).toEqual([]);
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+});
+
 test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', async ({
   page,
   runtime,

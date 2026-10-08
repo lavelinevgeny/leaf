@@ -13,6 +13,7 @@ export function TaskFilters({ filter, onChange, disabled }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const select = useRef<HTMLSelectElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const openerPointerDown = useRef(false);
   const popover = useRef<HTMLDivElement>(null);
   const popoverId = useId();
   const active = filter.query !== '' || filter.status !== 'all';
@@ -86,7 +87,19 @@ export function TaskFilters({ filter, onChange, disabled }: Props) {
           aria-expanded={open}
           aria-controls={popoverId}
           disabled={disabled}
-          onClick={() => setOpen((value) => !value)}
+          onPointerDown={() => {
+            openerPointerDown.current = true;
+          }}
+          onPointerUp={() => {
+            openerPointerDown.current = false;
+          }}
+          onPointerCancel={() => {
+            openerPointerDown.current = false;
+          }}
+          onClick={() => {
+            openerPointerDown.current = false;
+            setOpen((value) => !value);
+          }}
         >
           {filter.status === 'all' ? strings.filters : `${strings.filters} · 1`}
         </button>
@@ -98,7 +111,10 @@ export function TaskFilters({ filter, onChange, disabled }: Props) {
             onBlur={(event) => {
               if (
                 !event.currentTarget.contains(event.relatedTarget) &&
-                event.relatedTarget !== button.current
+                !(
+                  event.relatedTarget === button.current &&
+                  openerPointerDown.current
+                )
               )
                 setOpen(false);
             }}

@@ -159,6 +159,33 @@ it('closes the popover when loading disables its controls', async () => {
   );
 });
 
+it('closes on Shift+Tab back to the opener and still toggles by pointer', async () => {
+  const user = userEvent.setup();
+  render(
+    <TaskFilters
+      filter={emptyTaskFilter}
+      onChange={vi.fn()}
+      disabled={false}
+    />,
+  );
+  const opener = screen.getByRole('button', { name: 'Фильтры' });
+  opener.focus();
+  await user.keyboard('{Enter}');
+  expect(
+    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toHaveFocus();
+  await user.tab({ shift: true });
+  expect(opener).toHaveFocus();
+  expect(opener).toHaveAttribute('aria-expanded', 'false');
+  await user.click(opener);
+  expect(
+    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toHaveFocus();
+  await user.click(opener);
+  expect(opener).toHaveAttribute('aria-expanded', 'false');
+  expect(opener).toHaveFocus();
+});
+
 it('reveals matches in collapsed branches and shares literal rows with Gantt without requests', async () => {
   const { container } = await open();
   const user = userEvent.setup();
