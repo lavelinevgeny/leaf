@@ -58,7 +58,7 @@ expect(screen.getByLabelText('Часовой пояс проекта')).toHaveVa
 
 **Interfaces:** Consumes unmodified `ProjectTree['schedule'].diagnostics` containing `code`, `taskIds`, `dependencyIds`, `messageKey`. Produces client-only `actionableDiagnostics(diagnostics)` to select row errors, and a predicate/helper to suppress absence-only diagnostics in panel. Keep legacy availability/frozen pending explanations in panel. TaskTree already receives schedule in main tree and subtasks, and existing row selection opens details; no new event contract.
 
-- [ ] Step 1: Add independent diagnostic fixtures: EXPLICIT_PRECEDENCE_CONFLICT involving A/B; unrelated C; unknown-only D; invalid input E. Assert localized accessible indicators, detailed panel conflict, no global infeasible badge on C, no missing-date warning, partial/global labels unchanged, and full server fixture unchanged. Add help open/Escape/keyboard tests and Gantt-off control absence.
+- [x] Step 1: Add independent diagnostic fixtures: EXPLICIT_PRECEDENCE_CONFLICT involving A/B; unrelated C; unknown-only D; invalid input E. Assert localized accessible indicators, detailed panel conflict, no global infeasible badge on C, no missing-date warning, partial/global labels unchanged, and full server fixture unchanged. Add help open/Escape/keyboard tests and Gantt-off control absence.
 
 ```tsx
 const diagnostics = [
@@ -69,8 +69,8 @@ expect(actionableDiagnostics(diagnostics).map(d => d.code)).toEqual(['EXPLICIT_P
 expect(diagnostics).toHaveLength(2);
 ```
 
-- [ ] Step 2: Run `npx vitest run tests/client/schedule-diagnostics.test.tsx tests/client/explicit-cpm.test.tsx tests/client/gantt.test.tsx`; record RED.
-- [ ] Step 3: Remove global ScheduleStatus mount/import from App. Filter UNKNOWN_INTERVAL, UNKNOWN_PRECEDENCE, UNKNOWN_DEPENDENCY, BLOCKED_BY_UNKNOWN and historical missing-origin-only messages from normal panel warnings; retain real errors and migration explanation. Remove `Неполные сроки`. Add localized indicator using explicit actionable allowlist from spec, text title plus accessible name; keep row height stable and existing row selection/keyboard. Do not show general infeasible on a task without actionable diagnostics. Preserve ready/incomplete/pending analysis text in panel and legacy component tests where relevant.
+- [x] Step 2: Run `npx vitest run tests/client/schedule-diagnostics.test.tsx tests/client/explicit-cpm.test.tsx tests/client/gantt.test.tsx`; record RED.
+- [x] Step 3: Remove global ScheduleStatus mount/import from App. Filter UNKNOWN_INTERVAL, UNKNOWN_PRECEDENCE, UNKNOWN_DEPENDENCY, BLOCKED_BY_UNKNOWN and historical missing-origin-only messages from normal panel warnings; retain real errors and migration explanation. Remove `Неполные сроки`. Add localized indicator using explicit actionable allowlist from spec, text title plus accessible name; keep row height stable and existing row selection/keyboard. Do not show general infeasible on a task without actionable diagnostics. Preserve ready/incomplete/pending analysis text in panel and legacy component tests where relevant.
 
 ```ts
 const actionableCodes = new Set([
@@ -80,8 +80,8 @@ const actionableCodes = new Set([
 ]);
 ```
 
-- [ ] Step 4: Replace permanent `.gantt-hint` paragraph with `?` anchored help overlay in toolbar, using existing gestureHint text; keyboard open/close and return focus. Keep toolbar only in show=true branch; remove obsolete persistent-height CSS. Tighten toolbar spacing without changing shared Gantt/tree heading height independently.
-- [ ] Step 5: Run covering client tests, typecheck/lint and formatting; report and commit. Task review and integration precede Task 3.
+- [x] Step 4: Replace permanent `.gantt-hint` paragraph with `?` anchored help overlay in toolbar, using existing gestureHint text; keyboard open/close and return focus. Keep toolbar only in show=true branch; remove obsolete persistent-height CSS. Tighten toolbar spacing without changing shared Gantt/tree heading height independently.
+- [x] Step 5: Run covering client tests, typecheck/lint and formatting; report and commit. Task review and integration precede Task 3.
 
 ### Task 3: Browser acceptance and regression verification
 
