@@ -936,6 +936,24 @@ export function App() {
         }}
         onCreate={createProject}
         onLogout={() => void logout()}
+        controls={
+          tree && (
+            <ProjectControls
+              key={tree.project.id}
+              project={tree.project}
+              disabled={busy || loading || !!pending || conflict || dirty}
+              dirty={projectDirty}
+              onSave={command}
+              onDirty={setProjectPlanDirty}
+              rename={rename}
+              onRenameChange={setRename}
+              onRename={() => void renameProject()}
+              onOpen={canNavigate}
+              onVisibility={setProjectControlsOpen}
+              feedback={errorView}
+            />
+          )
+        }
         busy={busy || !!pending || conflict || loading || createUncertain}
       />
       <main className="workspace">
@@ -945,53 +963,9 @@ export function App() {
           <div className="workspace-heading">
             <div className="project-title-line">
               <h1>{tree?.project.title ?? strings.app}</h1>
-              {tree && (
-                <ProjectControls
-                  key={tree.project.id}
-                  project={tree.project}
-                  disabled={busy || loading || !!pending || conflict || dirty}
-                  dirty={projectDirty}
-                  onSave={command}
-                  onDirty={setProjectPlanDirty}
-                  rename={rename}
-                  onRenameChange={setRename}
-                  onRename={() => void renameProject()}
-                  onOpen={canNavigate}
-                  onVisibility={setProjectControlsOpen}
-                  feedback={errorView}
-                />
-              )}
             </div>
             {tree && (
-              <TaskFilters
-                filter={taskFilter}
-                onChange={setTaskFilter}
-                disabled={loading}
-              />
-            )}
-          </div>
-          <span className="view-label">{strings.tasks}</span>
-        </header>
-        <div className="workspace-content planning-workspace">
-          {!selectedTask && !projectControlsOpen && errorView}
-          {loading && <p role="status">{strings.loading}</p>}
-          {!loading && !tree && !error && (
-            <p className="empty-state">
-              {projects.length ? strings.chooseProject : strings.noProjects}
-            </p>
-          )}
-          {tree && (
-            <>
-              <div className="tree-toolbar">
-                <span>{strings.tasks}</span>
-                <label className="gantt-toggle">
-                  <input
-                    type="checkbox"
-                    checked={showGantt}
-                    onChange={(event) => setShowGantt(event.target.checked)}
-                  />
-                  {strings.gantt}
-                </label>
+              <div className="workspace-actions">
                 <button
                   type="button"
                   disabled={
@@ -1007,9 +981,28 @@ export function App() {
                   title={strings.undo}
                   onClick={() => void undo()}
                 >
-                  <span aria-hidden="true">↶</span>
+                  <span aria-hidden="true">↶</span> {strings.undoShort}
                 </button>
+                <TaskFilters
+                  filter={taskFilter}
+                  onChange={setTaskFilter}
+                  disabled={loading}
+                />
               </div>
+            )}
+          </div>
+          <span className="view-label">{strings.tasks}</span>
+        </header>
+        <div className="workspace-content planning-workspace">
+          {!selectedTask && !projectControlsOpen && errorView}
+          {loading && <p role="status">{strings.loading}</p>}
+          {!loading && !tree && !error && (
+            <p className="empty-state">
+              {projects.length ? strings.chooseProject : strings.noProjects}
+            </p>
+          )}
+          {tree && (
+            <>
               {!tree.tasks.length && (
                 <p className="empty-state">{strings.empty}</p>
               )}
@@ -1017,6 +1010,16 @@ export function App() {
                 key={`timeline-${tree.project.id}`}
                 tree={tree}
                 show={showGantt}
+                viewControl={
+                  <label className="gantt-toggle">
+                    <input
+                      type="checkbox"
+                      checked={showGantt}
+                      onChange={(event) => setShowGantt(event.target.checked)}
+                    />
+                    {strings.gantt}
+                  </label>
+                }
                 reveal={ganttReveal}
                 disabled={
                   busy ||

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Project } from '../shared/contracts.js';
 import { strings } from './strings.js';
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
   onCreate: (title: string) => Promise<boolean>;
   onLogout: () => void;
   busy: boolean;
+  controls?: ReactNode;
 }
 export function ProjectSidebar({
   projects,
@@ -16,6 +17,7 @@ export function ProjectSidebar({
   onCreate,
   onLogout,
   busy,
+  controls,
 }: Props) {
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
@@ -38,17 +40,23 @@ export function ProjectSidebar({
       </div>
       <nav aria-label={strings.projects}>
         {projects.map((project) => (
-          <button
-            type="button"
+          <div
             key={project.id}
-            className={`project-link${project.id === selectedId ? ' active' : ''}`}
-            aria-current={project.id === selectedId ? 'page' : undefined}
-            onClick={() => onSelect(project.id)}
-            disabled={busy}
+            className={`project-item${project.id === selectedId ? ' active' : ''}`}
           >
-            <span aria-hidden="true">♧</span>
-            {project.title}
-          </button>
+            <button
+              type="button"
+              className={`project-link${project.id === selectedId ? ' active' : ''}`}
+              title={project.title}
+              aria-current={project.id === selectedId ? 'page' : undefined}
+              onClick={() => onSelect(project.id)}
+              disabled={busy}
+            >
+              <span aria-hidden="true">♧</span>
+              <span className="project-name">{project.title}</span>
+            </button>
+            {project.id === selectedId && controls}
+          </div>
         ))}
       </nav>
       {adding && (

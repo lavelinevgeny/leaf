@@ -220,14 +220,6 @@ h2 {
   padding: 16px 24px;
   overflow: auto;
 }
-.tree-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 12px 16px;
-  color: var(--leaf-text-muted);
-  border-bottom: 1px solid var(--leaf-border);
-}
 .task-tree {
   min-width: 0;
 }
@@ -606,9 +598,6 @@ h2 {
   padding-block: 4px;
   font-size: 13px;
 }
-.tree-toolbar {
-  padding-bottom: 8px;
-}
 
 .workspace-content {
   padding-top: 8px;
@@ -624,4 +613,53 @@ h2 {
 .task-filters label input,
 .task-filters label select {
   margin-top: 0;
+}
+
+.project-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--leaf-radius);
+}
+.project-item.active {
+  background: var(--leaf-accent-soft);
+}
+.project-item .project-link {
+  flex: 1;
+  min-width: 0;
+}
+.project-link > span {
+  flex-shrink: 0;
+}
+.project-link .project-name {
+  min-width: 0;
+  flex-shrink: 1;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-item .project-controls {
+  margin-right: 4px;
+}
+.project-item .project-menu {
+  left: auto;
+  right: 0;
+  width: min(calc(var(--leaf-sidebar-width) - 32px), calc(100vw - 32px));
+}
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.workspace-actions > button {
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .project-item {
+    flex-shrink: 0;
+    max-width: 300px;
+  }
 }

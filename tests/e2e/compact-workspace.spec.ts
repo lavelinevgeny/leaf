@@ -78,6 +78,20 @@ async function open(page: Page, action = 'Настройки проекта') {
     name: 'Действия проекта',
     exact: true,
   });
+  await expect(
+    page
+      .getByRole('complementary', { name: 'Проекты', exact: true })
+      .getByRole('button', {
+        name: 'Действия проекта',
+        exact: true,
+      }),
+  ).toBeVisible();
+  const undo = page.locator('.workspace-header').getByRole('button', {
+    name: 'Отменить последнее изменение',
+    exact: true,
+  });
+  await expect(undo).toHaveText(/↶\s*Отменить/);
+  await expect(page.getByText('Задачи', { exact: true })).toHaveCount(1);
   await opener.focus();
   await page.keyboard.press('Enter');
   const settings = page.getByRole('button', {
@@ -151,6 +165,17 @@ test('compact geometry, local diagnostics and view actions preserve the authorit
   await expect(
     page.getByRole('button', { name: 'Настройки проекта', exact: true }),
   ).toBeFocused();
+  const sidebar = (await page.locator('.project-sidebar').boundingBox())!;
+  const projectItem = (await page
+    .locator('.project-item.active')
+    .boundingBox())!;
+  const menu = (await page.locator('.project-menu').boundingBox())!;
+  expect(projectItem.height).toBeLessThanOrEqual(60);
+  expect(menu.x).toBeGreaterThanOrEqual(sidebar.x);
+  expect(menu.x + menu.width).toBeLessThanOrEqual(sidebar.x + sidebar.width);
+  const menuCapture = join(captures, info.project.name + '-menu.png');
+  await page.screenshot({ path: menuCapture });
+  console.log('C20 menu capture', menuCapture);
   await page.keyboard.press('Escape');
   await expect(opener).toBeFocused();
   const dialog = await open(page);
@@ -166,17 +191,25 @@ test('compact geometry, local diagnostics and view actions preserve the authorit
   await page.keyboard.press('Escape');
   await expect(opener).toBeFocused();
   const help = page.getByRole('button', { name: 'Помощь Ганта', exact: true });
-  await help.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByText(/Перенос — обе даты/)).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(help).toBeFocused();
-  await page.getByRole('checkbox', { name: 'Гант', exact: true }).uncheck();
+  await expect(help).toHaveCount(0);
+  await expect(page.getByText(/Перенос — обе даты/)).toHaveCount(0);
+  await expect(
+    page
+      .locator('.gantt-toolbar')
+      .getByRole('checkbox', { name: 'Гант', exact: true }),
+  ).toBeVisible();
+  const toggle = page.getByRole('checkbox', { name: 'Гант', exact: true });
+  await toggle.focus();
+  await page.keyboard.press('Space');
+  await expect(toggle).not.toBeChecked();
+  await expect(toggle).toBeFocused();
   await expect(help).toHaveCount(0);
   await expect(page.getByLabel('Масштаб Ганта', { exact: true })).toHaveCount(
     0,
   );
-  await page.getByRole('checkbox', { name: 'Гант', exact: true }).check();
+  await page.keyboard.press('Space');
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeFocused();
   const search = page.getByRole('searchbox', {
     name: 'Поиск задач',
     exact: true,

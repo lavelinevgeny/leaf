@@ -13,11 +13,6 @@
   max-height: 160px;
   overflow: auto;
 }
-.planning-workspace .tree-toolbar {
-  flex-shrink: 0;
-  padding-block: 6px;
-  gap: 12px;
-}
 .gantt-toggle {
   display: flex;
   align-items: center;
@@ -117,6 +112,13 @@
   margin: 0;
   font-size: 12px;
 }
+.gantt-toolbar .gantt-toggle {
+  margin-right: auto;
+  font-size: 14px;
+}
+.gantt-toolbar .gantt-toggle input {
+  margin: 0;
+}
 .gantt-toolbar select {
   width: auto;
   margin: 0;
@@ -212,25 +214,6 @@
   fill: #17472d;
   font-size: 12px;
   font-weight: 600;
-}
-.gantt-help {
-  position: relative;
-}
-.gantt-help-panel {
-  position: absolute;
-  z-index: 3;
-  right: 0;
-  top: calc(100% + 4px);
-  width: min(320px, calc(100vw - 32px));
-  padding: 12px;
-  border: 1px solid var(--leaf-border);
-  border-radius: 6px;
-  background: white;
-  box-shadow: 0 4px 16px #202a2620;
-  font-size: 12px;
-}
-.gantt-help-panel p {
-  margin: 0 0 8px;
 }
 .schedule-error-indicator {
   display: inline-flex;
