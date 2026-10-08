@@ -1,6 +1,6 @@
 # Compact workspace implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deliver C20: tasks immediately below compact controls, contextual diagnostics and settings/help on request.
 
@@ -106,7 +106,7 @@ expect(lastVisible!.y + lastVisible!.height).toBeLessThanOrEqual(scroll!.y + scr
 
 ## Final integration gates
 
-- [ ] Integrator runs `npm run verify`, `npm run format:check`, complete `npm run test:e2e`, `npm run check:package`, `npm run check:kit`, `npm run test:kit`, `npm run security:workspace` and `git diff --check` on pinned runtime. No skipped tests or --if-present.
-- [ ] Review synthetic captures in both viewports and previously approved three PNGs; new external image is not copied.
-- [ ] Independent whole-change review using immutable base/head diff; fix assigned findings through agents and scoped re-review.
-- [ ] Update `docs/STATUS.md` with exact passed/failed/not-run facts and remaining S4–S6 scope; mark completed plan checkboxes. Run doc/security checks after final documentation edits. Local commits use enabled guards; no push/deploy/release.
+- [x] Integrator runs `npm run verify`, `npm run format:check`, complete `npm run test:e2e`, `npm run check:package`, `npm run check:kit`, `npm run test:kit`, `npm run security:workspace` and `git diff --check` on pinned runtime. No skipped tests or --if-present.
+- [x] Review synthetic captures in both viewports and previously approved three PNGs; new external image is not copied.
+- [x] Independent whole-change review using immutable base/head diff; fix assigned findings through agents and scoped re-review.
+- [x] Update `docs/STATUS.md` with exact passed/failed/not-run facts and remaining S4–S6 scope; mark completed plan checkboxes. Run doc/security checks after final documentation edits. Local commits use enabled guards; no push/deploy/release.
