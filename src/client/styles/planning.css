@@ -885,9 +885,8 @@
   opacity: 0;
   background: #fff;
 }
-[data-gantt-row].selected .gantt-predecessor,
 [data-gantt-row]:hover .gantt-predecessor,
-[data-gantt-row]:focus-within .gantt-predecessor {
+[data-gantt-row]:has(:focus-visible) .gantt-predecessor {
   opacity: 1;
 }
 @media (hover: none) {

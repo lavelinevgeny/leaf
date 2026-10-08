@@ -864,3 +864,11 @@ PASS: полный verify (typecheck, lint, 774/774 tests в 42 files, productio
 Независимое stage3 и whole-task review: spec compliance approved, quality approved, замечаний нет. После browser correction scoped re-review подтвердило approval; assertions сохранены. Предыдущие spec/server stages также reviewed и закоммичены отдельно. Hooks выполняют staged guard/Gitleaks и commit-message checks перед каждым коммитом. Чужая незакоммиченная запись аудита сохранена отдельно.
 
 Не запускались: полный test:e2e вне затронутых файлов, test:kit, Docker smoke, OS sandbox probe, history/preflight и deployment/release/push. Новых dependencies, SQL/DTO/migrations нет; использованы только синтетические fixtures. Done/invalid/unavailable ограничения и direct source conflict без нового входящего ребра сохраняются. S4–S6 и первый релиз остаются незавершёнными; следующий шаг — повседневная проверка владельцем и продолжение S4.
+
+## Гант — скрытие значка связи после выбора, 2026-10-08
+
+Исправлен показ кнопки «После окончания»: на устройствах с наведением она появляется при hover строки или видимом клавиатурном фокусе. Выбор задачи и возвращённый после pointer-выбора фокус больше не удерживают значок. Возврат фокуса и показ на touch сохранены; FS-команды, даты и расчёты не менялись. Изменены planning.css и browser-регрессия fs-dependencies; прежние незакоммиченные записи сохранены.
+
+Tests-first: новая actual-server регрессия воспроизвела opacity 1 после ухода курсора; после исправления прошла в 1440×900 и 1280×800. Проверены pointer selection, выбранная задача, keyboard open/Escape и сохранение стрелки зависимости. Профильный набор с существующим сценарием immediate FS прошёл 4/4 без skips/retries. PASS: verify (typecheck, lint, 774/774 unit/integration tests, production build), check:kit, security:workspace. Первичная format:check выявила форматирование нового теста; файл отформатирован, повторная format:check PASS.
+
+При подготовке локального коммита полный preflight PASS: doctor, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. Staged diff проверен; отдельная прежняя запись аудита оставлена вне index. Не запускались полный E2E, Docker и deployment; push не выполнялся. Использованы только синтетические данные. Следующий шаг — проверка повседневного интерфейса владельцем и продолжение S4–S6.

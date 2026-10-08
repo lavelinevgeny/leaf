@@ -407,6 +407,49 @@ test('list and conditional Gantt use single immediate commands without opening o
   ]);
 });
 
+test('Gantt chain hides after pointer selection and stays available to keyboard focus', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await project(page, runtime);
+  tree = await create(page, runtime, tree, 'A');
+  tree = await create(page, runtime, tree, 'B');
+  await show(page);
+  const ganttRow = page.locator(`[data-gantt-row="${taskId(tree, 'B')}"]`);
+  const trigger = ganttRow.getByRole('button', {
+    name: 'После окончания: B',
+    exact: true,
+  });
+  await ganttRow.hover();
+  await expect(trigger).toHaveCSS('opacity', '1');
+  await trigger.click();
+  await picker(page).getByRole('searchbox').fill('A');
+  await picker(page).getByRole('option').click();
+  await expect(picker(page)).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await page.getByRole('heading', { name: 'Демо FS', exact: true }).hover();
+  await expect(trigger).toHaveCSS('opacity', '0');
+  await expect(page.locator('.gantt-edge.conditional')).toHaveCount(1);
+
+  await ganttRow.getByRole('button', { name: /^B,/ }).click();
+  await expect(panel(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('heading', { name: 'Демо FS', exact: true }).hover();
+  await page
+    .getByRole('searchbox', { name: 'Поиск задач', exact: true })
+    .click();
+  await expect(trigger).toHaveCSS('opacity', '0');
+
+  await page.keyboard.press('Tab');
+  await trigger.focus();
+  await expect(trigger).toHaveCSS('opacity', '1');
+  await trigger.press('Enter');
+  await expect(picker(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveCSS('opacity', '1');
+});
+
 test('saved FS from a completed task to an undated subtask stays visible after reload and undo', async ({
   page,
   runtime,
