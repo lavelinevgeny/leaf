@@ -872,3 +872,13 @@ PASS: полный verify (typecheck, lint, 774/774 tests в 42 files, productio
 Tests-first: новая actual-server регрессия воспроизвела opacity 1 после ухода курсора; после исправления прошла в 1440×900 и 1280×800. Проверены pointer selection, выбранная задача, keyboard open/Escape и сохранение стрелки зависимости. Профильный набор с существующим сценарием immediate FS прошёл 4/4 без skips/retries. PASS: verify (typecheck, lint, 774/774 unit/integration tests, production build), check:kit, security:workspace. Первичная format:check выявила форматирование нового теста; файл отформатирован, повторная format:check PASS.
 
 При подготовке локального коммита полный preflight PASS: doctor, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. Staged diff проверен; отдельная прежняя запись аудита оставлена вне index. Не запускались полный E2E, Docker и deployment; push не выполнялся. Использованы только синтетические данные. Следующий шаг — проверка повседневного интерфейса владельцем и продолжение S4–S6.
+
+## C26 — цвет критичности датированной части, 2026-10-08
+
+Критичность датированной части выделяется цветом без пунктирной границы и без дополнительного утолщения стрелок. Изменены только стили planning.css и правила UI/DECISIONS; пунктир условных полос/связей и несохранённого preview сохранён, поясняющие подписи критичности остаются. Исходная несвязанная правка STATUS сохранена.
+
+PASS: doctor; verify — typecheck, lint, 774/774 unit/integration tests в 42 файлах, production build; format:check; check:kit; git diff --check. Отдельная проверка вычисленных стилей Chromium на синтетическом SVG подтвердила цвет и сплошную обводку partial-critical, обычную толщину стрелок и сохранение conditional dash при совмещении классов. Relevant actual-server E2E explicit-cpm и conditional-gantt — 20/20 в двух viewport, без skips/retries.
+
+При подготовке локального коммита полный preflight PASS: doctor, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. Staged diff проверен; прежняя несвязанная запись STATUS оставлена вне index.
+
+Не запускались полный E2E и Docker smoke; публикация/deployment не выполнялись. Следующая продуктовая задача — продолжение S4–S6.

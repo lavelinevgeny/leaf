@@ -516,17 +516,14 @@
   margin-top: 10px;
 }
 
-/* Partial analysis has its own outline and text, separate from project criticality. */
+/* Partial analysis uses color and text; dashes indicate conditional placement. */
 .gantt-edge.partial-critical,
 .dependency-arrow.partial-critical {
   stroke: #806029;
-  stroke-width: 1.8;
-  stroke-dasharray: 5 3;
 }
 .gantt-work.partial-critical {
   fill: #f1deb9;
   stroke: #806029;
-  stroke-dasharray: 4 2;
 }
 .partial-critical-indicator,
 .partial-critical-label,
