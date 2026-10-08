@@ -252,6 +252,80 @@ it('F10 rejects explicit conflicting dates, but pushes relation-only additions',
   );
   expect(relation.tasks[1]).toEqual(leaf('B', '2026-10-08', '2026-10-09'));
 });
+it.each([
+  ['weekdays', '2026-10-12', '2026-10-12', '2026-10-13'],
+  ['all-days', '2026-10-10', '2026-10-10', '2026-10-11'],
+] as const)(
+  'C25 normalizes an edited interval plus new incoming link in %s',
+  (calendarType, finish, expectedStart, expectedFinish) => {
+    const before = {
+      ...input(
+        [
+          leaf('A', '2026-10-08', '2026-10-09'),
+          leaf('B', '2026-10-05', '2026-10-06'),
+        ],
+        [],
+      ),
+      calendarType,
+    };
+    const candidate = {
+      ...before,
+      tasks: [before.tasks[0]!, leaf('B', '2026-10-09', finish)],
+      dependencies: [edge('AB', 'A', 'B')],
+    };
+    expect(
+      cascadeFs(before, candidate, {
+        changedSourceTaskIds: ['B'],
+        addedDependencyIds: ['AB'],
+        explicitlyEditedTaskId: 'B',
+      }).tasks[1],
+    ).toEqual(leaf('B', expectedStart, expectedFinish));
+  },
+);
+it('C25 added incoming link normalizes against all predecessors and cascades downstream', () => {
+  const before = input(
+    [
+      leaf('A', null, '2026-10-09'),
+      leaf('X', null, '2026-10-11'),
+      leaf('U', null, null),
+      leaf('B', '2026-10-12', '2026-10-13', 2),
+      leaf('C', '2026-10-14', '2026-10-14', 1),
+    ],
+    [edge('XB', 'X', 'B'), edge('UB', 'U', 'B'), edge('BC', 'B', 'C')],
+  );
+  const candidate = {
+    ...before,
+    tasks: before.tasks.map((task) =>
+      task.id === 'B' ? leaf('B', '2026-10-11', '2026-10-14', 4) : task,
+    ),
+    dependencies: [...before.dependencies, edge('AB', 'A', 'B')],
+  };
+  const result = cascadeFs(before, candidate, {
+    changedSourceTaskIds: ['B'],
+    addedDependencyIds: ['AB'],
+    explicitlyEditedTaskId: 'B',
+  });
+  expect(result.tasks[3]).toEqual(leaf('B', '2026-10-12', '2026-10-15', 4));
+  expect(result.tasks[4]).toEqual(leaf('C', '2026-10-16', '2026-10-16', 1));
+});
+it('C25 leaves a later explicit interval intact when adding a predecessor', () => {
+  const before = input(
+    [leaf('A', null, '2026-10-09'), leaf('B', '2026-10-05', '2026-10-06')],
+    [],
+  );
+  const candidate = {
+    ...before,
+    tasks: [before.tasks[0]!, leaf('B', '2026-10-12', '2026-10-13')],
+    dependencies: [edge('AB', 'A', 'B')],
+  };
+  const result = cascadeFs(before, candidate, {
+    changedSourceTaskIds: ['B'],
+    addedDependencyIds: ['AB'],
+    explicitlyEditedTaskId: 'B',
+  });
+  expect(result.tasks).toEqual(candidate.tasks);
+  expect(result.changedTaskIds).toEqual([]);
+});
 it('F11 rejects required done push but leaves optional done pull alone', () => {
   const before = input([
     leaf('A', '2026-10-05', '2026-10-06'),

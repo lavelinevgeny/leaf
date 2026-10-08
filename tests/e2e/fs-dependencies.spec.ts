@@ -266,6 +266,68 @@ test('Details relation-only save adopts canonical weekday dates, clean baseline 
   expect(restored.schedule).toEqual(tree.schedule);
 });
 
+test('C25 Details saves edited dates and new predecessor together with canonical fields and undo', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await project(page, runtime);
+  tree = await create(
+    page,
+    runtime,
+    tree,
+    'A',
+    null,
+    '2026-10-09',
+    '2026-10-09',
+  );
+  tree = await create(
+    page,
+    runtime,
+    tree,
+    'B',
+    null,
+    '2026-10-05',
+    '2026-10-06',
+  );
+  await show(page);
+  await row(page, taskId(tree, 'B')).click();
+  const start = panel(page).getByLabel('Начало', { exact: true });
+  const finish = panel(page).getByLabel('Окончание', { exact: true });
+  await start.fill('09.10.2026');
+  await start.press('Tab');
+  await finish.fill('12.10.2026');
+  await finish.press('Tab');
+  await panel(page)
+    .getByRole('button', { name: 'После окончания', exact: true })
+    .click();
+  await choose(page, 'A');
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+  await save(page);
+  const saved = await readTree(page, runtime.origin, tree.project.id);
+  expect(saved.project.revision).toBe(tree.project.revision + 1);
+  expect(saved.tasks.find((t) => t.title === 'B')).toMatchObject({
+    inputStart: '2026-10-12',
+    inputFinish: '2026-10-13',
+    durationDays: 2,
+  });
+  await expect(start).toHaveValue('12.10.2026');
+  await expect(finish).toHaveValue('13.10.2026');
+  await expect(
+    panel(page).getByRole('button', {
+      name: 'Отбросить изменения',
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .click();
+  await expect(page.locator('.gantt-edge')).toHaveCount(0);
+  const restored = await readTree(page, runtime.origin, tree.project.id);
+  expect(restored.tasks).toEqual(tree.tasks);
+  expect(restored.dependencies).toEqual(tree.dependencies);
+});
+
 test('list and conditional Gantt use single immediate commands without opening or dragging task', async ({
   page,
   runtime,

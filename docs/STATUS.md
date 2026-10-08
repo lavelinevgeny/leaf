@@ -844,3 +844,11 @@ Task ID:
 Подготовлены спецификация C25 и план из трёх этапов: документация, нормализация server cascade, условная геометрия полного DAG. C25 уточняет совместное сохранение сроков/новой связи; D18 фиксирует рабочие правила отображения без обеих дат. Реализация ещё не выполнена. Чужая запись аудита публикации сохранена и не включается в эти коммиты.
 
 PASS: doctor на закреплённом Node/npm; check:kit (58 Markdown, 275 links, три утверждённых PNG просмотрены). Независимое review: spec compliance и quality approved; уточнены literal anchor L04 и сложность отдельного display pass. Application checks не запускались на документационном этапе. Следующий этап — server cascade C25.
+
+## C25 — server cascade, 2026-10-08
+
+Сервер нормализует прямое изменение валидных сроков при новом входящем ребре в той же команде. Проверка direct-source конфликта без нового ребра сохранена. Nullable duration/span, fan-in, downstream, exact retry и один undo проверены domain/repository tests. Browser проверяет совместный draft, keyboard picker, канонические поля и clean baseline. Исходные даты бездатных задач не материализуются.
+
+Tests-first: четыре новых сценария воспроизвели прежний EXPLICIT_PRECEDENCE_CONFLICT. Исправлены literal span одной weekdays fixture и readonly typing тестового envelope; повторный полный verify PASS: typecheck, lint, 761/761 tests, production build. Affected format PASS; actual-server FS Details E2E PASS 8/8 в двух viewports без retries/skips. Следующий этап — условная геометрия DAG. Docker/sandbox/pубликация не запускались.
+
+Независимое scoped review server этапа: spec compliance approved, code quality approved, замечаний нет. Проверены detection новых endpoints/IDs, pre-cascade source/done/provenance validation, causal activation и same-bound barriers.

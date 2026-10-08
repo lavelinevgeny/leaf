@@ -143,6 +143,7 @@ export function cascadeFs(
     const newBound = maximum(newFinishes);
     const oldBound = maximum(oldFinishes);
     const currentStart = sourceStart(task, calendar);
+    const addedIncoming = edges.some((edge) => added.has(edge.id));
     const chain = [
       ...edges
         .filter((edge, i) => newFinishes[i] === newBound)
@@ -152,6 +153,7 @@ export function cascadeFs(
     if (
       changedSource.has(id) &&
       intent.explicitlyEditedTaskId === id &&
+      !addedIncoming &&
       currentStart !== null &&
       newBound !== null &&
       currentStart < newBound
@@ -163,7 +165,6 @@ export function cascadeFs(
       );
 
     if (!active.has(id)) continue;
-    const addedIncoming = edges.some((edge) => added.has(edge.id));
     if (!addedIncoming && newBound === oldBound) continue;
     if (currentStart === null || newBound === null) continue;
     const oldStart = sourceStart(previous.get(id), before.calendarType);

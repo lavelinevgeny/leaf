@@ -641,7 +641,7 @@ it('a late done node rolls back the predecessor and already shifted intermediate
   );
   expect(rows()).toEqual(before);
 });
-it('source edit checks final replacement relations, while equal supplied source remains relation-only', () => {
+it('C25 source edit and new incoming relation normalize atomically with exact retry and undo', () => {
   let tree = create(
     create(fresh(), 'A', '2026-10-05', '2026-10-07'),
     'B',
@@ -651,6 +651,33 @@ it('source edit checks final replacement relations, while equal supplied source 
   const a = task(tree, 'A').id,
     b = task(tree, 'B').id,
     before = rows();
+  const original = tree;
+  const envelope = {
+    contractVersion: 2 as const,
+    expectedRevision: tree.project.revision,
+    operationId: randomUUID(),
+    command: {
+      type: 'task.edit',
+      taskId: b,
+      changes: {
+        inputStart: '2026-10-07',
+        inputFinish: '2026-10-08',
+        predecessorIds: [a],
+      },
+    } satisfies Command,
+  };
+  tree = repository.applyCommand(tree.project.id, envelope, session);
+  expect(tree.project.revision).toBe(original.project.revision + 1);
+  expect(task(tree, 'B')).toMatchObject({
+    inputStart: '2026-10-08',
+    inputFinish: '2026-10-09',
+    durationDays: null,
+  });
+  const saved = rows();
+  expect(repository.applyCommand(tree.project.id, envelope, session)).toEqual(
+    tree,
+  );
+  expect(rows()).toEqual(saved);
   expect(() =>
     step(tree, {
       type: 'task.edit',
@@ -662,14 +689,28 @@ it('source edit checks final replacement relations, while equal supplied source 
       },
     }),
   ).toThrow(expect.objectContaining({ code: 'EXPLICIT_PRECEDENCE_CONFLICT' }));
-  expect(rows()).toEqual(before);
+  expect(rows()).toEqual(saved);
+  const undone = step(tree, { type: 'undo' });
+  expect(undone.tasks).toEqual(original.tasks);
+  expect(undone.dependencies).toEqual(original.dependencies);
+  expect(undone.schedule).toEqual(original.schedule);
+  expect(before).not.toEqual(saved);
+});
+
+it('equal supplied source remains relation-only and receives the new incoming bound', () => {
+  let tree = create(
+    create(fresh(), 'A', '2026-10-05', '2026-10-07'),
+    'B',
+    '2026-10-06',
+    '2026-10-07',
+  );
   tree = step(tree, {
     type: 'task.edit',
-    taskId: b,
+    taskId: task(tree, 'B').id,
     changes: {
       inputStart: '2026-10-06',
       inputFinish: '2026-10-07',
-      predecessorIds: [a],
+      predecessorIds: [task(tree, 'A').id],
     },
   });
   expect(task(tree, 'B')).toMatchObject({

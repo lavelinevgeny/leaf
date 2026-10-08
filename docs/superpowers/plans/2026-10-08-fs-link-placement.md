@@ -33,12 +33,12 @@ Files: новая spec/plan; START_HERE.md, docs/DECISIONS.md, docs/SCHEDULING.m
 
 Files: src/domain/fs-cascade.ts; tests/fs-cascade.test.ts; tests/fs-cascade-repository.test.ts; tests/e2e/fs-dependencies.spec.ts.
 
-- [ ] Добавить сначала failing domain/repository tests L01–L03/L08: edited source + added edge, max fan-in, поздняя дата, span/null duration, done/rollback, retry/undo.
-- [ ] Разрешить push явно редактируемой задачи только при новом входящем ребре; без нового ребра оставить direct-source rejection. Existing validation не обходить.
-- [ ] Актуализировать прежний тест, ожидавший отказ совместного edit/add.
-- [ ] Browser test L02: сроки + picker keyboard, save, canonical fields, clean baseline, undo.
-- [ ] Запустить typecheck/lint, unit/integration и соответствующий actual-server E2E после build. Записать результаты в STATUS.
-- [ ] Отдельный агент делает scoped review; исправления и повторное review, затем коммит.
+- [x] Добавить сначала failing domain/repository tests L01–L03/L08: edited source + added edge, max fan-in, поздняя дата, span/null duration, done/rollback, retry/undo.
+- [x] Разрешить push явно редактируемой задачи только при новом входящем ребре; без нового ребра оставить direct-source rejection. Existing validation не обходить.
+- [x] Актуализировать прежний тест, ожидавший отказ совместного edit/add.
+- [x] Browser test L02: сроки + picker keyboard, save, canonical fields, clean baseline, undo.
+- [x] Запустить typecheck/lint, unit/integration и соответствующий actual-server E2E после build. Записать результаты в STATUS.
+- [x] Отдельный агент делает scoped review; исправления и повторное review, затем коммит.
 
 ## Task 3: геометрия зависимостей для бездатных работ
 
