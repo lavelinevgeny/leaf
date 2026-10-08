@@ -71,6 +71,66 @@ function ids() {
     .map((row) => row.dataset.taskId);
 }
 
+async function chooseStatus(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+) {
+  await user.click(screen.getByRole('checkbox', { name: 'Все статусы' }));
+  await user.click(screen.getByRole('checkbox', { name: label }));
+  await user.click(screen.getByRole('button', { name: 'Применить (1)' }));
+}
+
+it('edits multiple statuses as a draft, applies together and discards uncommitted changes', async () => {
+  await open();
+  const user = userEvent.setup();
+  const requests = fetchMock.mock.calls.length;
+  const opener = screen.getByRole('button', { name: 'Фильтры' });
+  await user.click(opener);
+  const all = screen.getByRole('checkbox', { name: 'Все статусы' });
+  expect(all).toBeChecked();
+  expect(within(all.closest('label')!).getByText('5')).toBeVisible();
+  const doing = screen.getByRole('checkbox', { name: 'В работе' });
+  expect(within(doing.closest('label')!).getByText('1')).toBeVisible();
+  await user.click(screen.getByRole('checkbox', { name: 'К выполнению' }));
+  expect(all).toBePartiallyChecked();
+  expect(ids()).toEqual([root.id, group.id, a.id, b.id, done.id]);
+  expect(opener).toHaveAccessibleName('Фильтры');
+  await user.click(screen.getByRole('button', { name: 'Применить (2)' }));
+  expect(ids()).toEqual([root.id, group.id, a.id, done.id]);
+  expect(screen.getByRole('button', { name: 'Фильтры · 2' })).toHaveFocus();
+  expect(screen.getByText('Найдено задач: 2')).toBeVisible();
+  await user.click(opener);
+  await user.click(screen.getByRole('checkbox', { name: 'Готово' }));
+  await user.keyboard('{Escape}');
+  expect(ids()).toEqual([root.id, group.id, a.id, done.id]);
+  await user.click(opener);
+  expect(screen.getByRole('checkbox', { name: 'Готово' })).toBeChecked();
+  await user.click(screen.getByRole('searchbox'));
+  expect(ids()).toEqual([root.id, group.id, a.id, done.id]);
+  expect(fetchMock.mock.calls).toHaveLength(requests);
+});
+
+it('supports empty selection and selecting all, and counts project tasks independently of search', async () => {
+  await open();
+  const user = userEvent.setup();
+  await user.type(screen.getByRole('searchbox'), 'Монтаж');
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
+  const all = screen.getByRole('checkbox', { name: 'Все статусы' });
+  expect(within(all.closest('label')!).getByText('5')).toBeVisible();
+  await user.keyboard(' ');
+  expect(all).not.toBeChecked();
+  await user.click(screen.getByRole('button', { name: 'Применить (0)' }));
+  expect(ids()).toEqual([]);
+  expect(
+    screen.getByText('Ничего не найдено. Измените поиск или статус.'),
+  ).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Фильтры · 0' }));
+  await user.click(screen.getByRole('checkbox', { name: 'Все статусы' }));
+  await user.click(screen.getByRole('button', { name: 'Применить' }));
+  expect(ids()).toEqual([root.id, group.id, a.id, b.id]);
+  expect(screen.getByRole('button', { name: 'Фильтры' })).toBeVisible();
+});
+
 it('opens a status popover, contains Escape and keeps status when clearing text', async () => {
   await open();
   const user = userEvent.setup();
@@ -78,20 +138,19 @@ it('opens a status popover, contains Escape and keeps status when clearing text'
   const opener = screen.getByRole('button', { name: 'Фильтры' });
   opener.focus();
   await user.keyboard('{Enter}');
-  const status = screen.getByRole('combobox', { name: 'Фильтр по статусу' });
+  const status = screen.getByRole('checkbox', { name: 'Все статусы' });
   expect(status).toHaveFocus();
-  await user.selectOptions(status, 'doing');
+  await chooseStatus(user, 'В работе');
   expect(screen.getByRole('button', { name: 'Фильтры · 1' })).toHaveAttribute(
     'aria-expanded',
-    'true',
+    'false',
   );
+  await user.click(screen.getByRole('button', { name: 'Фильтры · 1' }));
   await user.keyboard('{Escape}');
   expect(screen.getByRole('button', { name: 'Фильтры · 1' })).toHaveFocus();
   expect(screen.getByRole('complementary', { name: 'Задача' })).toBeVisible();
   await user.keyboard(' ');
-  expect(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toHaveFocus();
+  expect(screen.getByRole('checkbox', { name: 'Все статусы' })).toHaveFocus();
   await user.keyboard('{Escape}');
   const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
   await user.type(search, 'Монтаж');
@@ -110,26 +169,18 @@ it('closes on outside focus, Tab departure and a project switch', async () => {
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
   await user.click(screen.getByRole('searchbox', { name: 'Поиск задач' }));
-  expect(
-    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Все статусы' })).toBeNull();
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
   await user.click(screen.getByRole('button', { name: 'Список' }));
-  expect(
-    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Все статусы' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Список' })).toHaveFocus();
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
-  await user.tab();
-  expect(
-    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toBeNull();
+  for (let i = 0; i < 6; i++) await user.tab();
+  expect(screen.queryByRole('checkbox', { name: 'Все статусы' })).toBeNull();
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
   await user.click(screen.getByRole('button', { name: /Другой демо-проект/ }));
   await screen.findByRole('heading', { name: other.title });
-  expect(
-    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Все статусы' })).toBeNull();
 });
 
 it('closes the popover when loading disables its controls', async () => {
@@ -137,22 +188,24 @@ it('closes the popover when loading disables its controls', async () => {
   const onChange = vi.fn();
   const view = render(
     <TaskFilters
+      tasks={tree.tasks}
       filter={emptyTaskFilter}
       onChange={onChange}
       disabled={false}
     />,
   );
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
-  expect(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toHaveFocus();
+  expect(screen.getByRole('checkbox', { name: 'Все статусы' })).toHaveFocus();
   view.rerender(
-    <TaskFilters filter={emptyTaskFilter} onChange={onChange} disabled />,
+    <TaskFilters
+      tasks={tree.tasks}
+      filter={emptyTaskFilter}
+      onChange={onChange}
+      disabled
+    />,
   );
   expect(screen.getByRole('button', { name: 'Фильтры' })).toBeDisabled();
-  expect(
-    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Все статусы' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Фильтры' })).toHaveAttribute(
     'aria-expanded',
     'false',
@@ -163,6 +216,7 @@ it('closes on Shift+Tab back to the opener and still toggles by pointer', async 
   const user = userEvent.setup();
   render(
     <TaskFilters
+      tasks={tree.tasks}
       filter={emptyTaskFilter}
       onChange={vi.fn()}
       disabled={false}
@@ -171,16 +225,12 @@ it('closes on Shift+Tab back to the opener and still toggles by pointer', async 
   const opener = screen.getByRole('button', { name: 'Фильтры' });
   opener.focus();
   await user.keyboard('{Enter}');
-  expect(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toHaveFocus();
+  expect(screen.getByRole('checkbox', { name: 'Все статусы' })).toHaveFocus();
   await user.tab({ shift: true });
   expect(opener).toHaveFocus();
   expect(opener).toHaveAttribute('aria-expanded', 'false');
   await user.click(opener);
-  expect(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toHaveFocus();
+  expect(screen.getByRole('checkbox', { name: 'Все статусы' })).toHaveFocus();
   await user.click(opener);
   expect(opener).toHaveAttribute('aria-expanded', 'false');
   expect(opener).toHaveFocus();
@@ -202,10 +252,7 @@ it('reveals matches in collapsed branches and shares literal rows with Gantt wit
   );
   expect(ids()).toEqual([root.id, group.id, a.id, b.id]);
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
-  await user.selectOptions(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-    'doing',
-  );
+  await chooseStatus(user, 'В работе');
   expect(ids()).toEqual([root.id, group.id, a.id]);
   expect(
     [...container.querySelectorAll('[data-gantt-row]')].map((node) =>
@@ -235,11 +282,9 @@ it('keeps filtered collapse temporary, resets it on criteria changes and restore
     'false',
   );
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
-  await user.selectOptions(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-    'doing',
-  );
+  await chooseStatus(user, 'В работе');
   expect(ids()).toEqual([root.id, group.id, a.id]);
+  await user.click(screen.getByRole('button', { name: 'Фильтры · 1' }));
   await user.click(
     screen.getByRole('button', { name: 'Сбросить поиск и фильтры' }),
   );
@@ -302,10 +347,7 @@ it('resets filters on a project switch and uses the actual empty-project message
   const user = userEvent.setup();
   await user.type(screen.getByRole('searchbox'), 'Монтаж');
   await user.click(screen.getByRole('button', { name: 'Фильтры' }));
-  await user.selectOptions(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-    'doing',
-  );
+  await chooseStatus(user, 'В работе');
   await user.click(screen.getByRole('button', { name: /Другой демо-проект/ }));
   await screen.findByRole('heading', { name: other.title });
   await waitFor(() => expect(screen.getByRole('searchbox')).toHaveValue(''));
@@ -368,9 +410,7 @@ it('keeps query and dirty draft through conflict loading and disables only the l
   await user.click(reload);
   expect(search).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Фильтры' })).toBeDisabled();
-  expect(
-    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Все статусы' })).toBeNull();
   expect(screen.getByLabelText('Описание')).toHaveValue('Черновик');
   reply(
     new Response(

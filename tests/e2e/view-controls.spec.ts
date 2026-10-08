@@ -388,8 +388,8 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
     const filterBaseline = await geometry(page, parentRow);
     const filters = page.getByRole('button', { name: /^Фильтры/ });
     await filters.click();
-    const status = page.getByRole('combobox', {
-      name: 'Фильтр по статусу',
+    const status = page.getByRole('checkbox', {
+      name: 'Все статусы',
       exact: true,
     });
     await expect(status).toBeFocused();
@@ -399,8 +399,15 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
       info.project.name + '-filter-open.png',
     );
     await page.screenshot({ path: filterCapture });
-    await status.selectOption('todo');
-    await expect(filters).toHaveText('Фильтры · 1');
+    await status.uncheck();
+    await page
+      .getByRole('checkbox', { name: 'К выполнению', exact: true })
+      .check();
+    await page
+      .getByRole('button', { name: 'Применить (1)', exact: true })
+      .click();
+    await expect(filters).toHaveAccessibleName('Фильтры · 1');
+    await filters.click();
     await expect(
       page
         .getByRole('status')
@@ -431,7 +438,7 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
     const zeroCapture = join(captures, info.project.name + '-filter-zero.png');
     await page.screenshot({ path: zeroCapture });
     await page.getByRole('button', { name: 'Очистить поиск' }).click();
-    await expect(filters).toHaveText('Фильтры · 1');
+    await expect(filters).toHaveAccessibleName('Фильтры · 1');
     await expect(search).toHaveValue('');
     await filters.click();
     await status.press('Escape');
@@ -442,7 +449,7 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
       .getByRole('button', { name: 'Сбросить поиск и фильтры' })
       .click();
     await expect(search).toBeFocused();
-    await expect(filters).toHaveText('Фильтры');
+    await expect(filters).toHaveAccessibleName('Фильтры');
     await sameGeometry(page, parentRow, filterBaseline);
     await expect(description).toHaveValue('Synthetic unsaved panel draft');
     await expect(editor).toHaveValue('Synthetic dirty quick draft');

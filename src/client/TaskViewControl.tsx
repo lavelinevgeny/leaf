@@ -1,5 +1,6 @@
 import type { MouseEvent, PointerEvent } from 'react';
 import { strings } from './strings.js';
+import { ControlIcon } from './ControlIcon.js';
 
 function preserveEditorFocus(
   event: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>,
@@ -40,6 +41,7 @@ export function TaskViewControl({
         onMouseDown={preserveEditorFocus}
         onClick={() => onChange(false)}
       >
+        <ControlIcon name="list" />
         {strings.list}
       </button>
       <button
@@ -49,6 +51,7 @@ export function TaskViewControl({
         onMouseDown={preserveEditorFocus}
         onClick={() => onChange(true)}
       >
+        <ControlIcon name="gantt" />
         {strings.gantt}
       </button>
     </div>

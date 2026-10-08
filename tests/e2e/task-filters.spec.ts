@@ -102,9 +102,21 @@ async function chooseStatus(page: Page, value: string) {
   const opener = page.getByRole('button', { name: /^Фильтры/ });
   if ((await opener.getAttribute('aria-expanded')) !== 'true')
     await opener.click();
-  await page
-    .getByRole('combobox', { name: 'Фильтр по статусу', exact: true })
-    .selectOption(value);
+  const all = page.getByRole('checkbox', { name: 'Все статусы', exact: true });
+  if (value === 'all') await all.check();
+  else {
+    await all.check();
+    await all.uncheck();
+    const labels: Record<string, string> = {
+      todo: 'К выполнению',
+      doing: 'В работе',
+      done: 'Готово',
+    };
+    await page
+      .getByRole('checkbox', { name: labels[value]!, exact: true })
+      .check();
+  }
+  await page.getByRole('button', { name: /^Применить/ }).click();
 }
 function counts(path: string, projectId: string) {
   const db = new Database(path, { readonly: true });
@@ -121,6 +133,77 @@ function counts(path: string, projectId: string) {
     db.close();
   }
 }
+
+test('multiple status draft applies atomically, overlays Gantt and keeps the server snapshot', async ({
+  page,
+  runtime,
+}, info) => {
+  const { tree, root, group, a, b, done } = await seed(page, runtime);
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (!['GET', 'HEAD'].includes(request.method()))
+      mutations.push(request.method());
+  });
+  const header = page.locator('.workspace-header');
+  const toolbar = page.locator('.gantt-toolbar');
+  const beforeHeader = (await header.boundingBox())!;
+  const beforeToolbar = (await toolbar.boundingBox())!;
+  const opener = page.getByRole('button', { name: /^Фильтры/ });
+  await opener.click();
+  const all = page.getByRole('checkbox', { name: 'Все статусы', exact: true });
+  await expect(all).toBeFocused();
+  await page
+    .getByRole('checkbox', { name: 'К выполнению', exact: true })
+    .uncheck();
+  expect(await rowIds(page)).toEqual([root, group, a, b, done]);
+  await expect(opener).toHaveAccessibleName('Фильтры');
+  await page
+    .getByRole('button', { name: 'Применить (2)', exact: true })
+    .click();
+  expect(await rowIds(page)).toEqual([root, group, a, done]);
+  await expect(opener).toHaveAccessibleName('Фильтры · 2');
+  await expect(opener).toBeFocused();
+  await opener.click();
+  const popover = page.locator('.task-filter-popover');
+  const popoverBox = (await popover.boundingBox())!;
+  const openerBox = (await opener.boundingBox())!;
+  expect(
+    Math.abs(popoverBox.x + popoverBox.width - openerBox.x - openerBox.width),
+  ).toBeLessThanOrEqual(1);
+  expect(popoverBox.y).toBeGreaterThanOrEqual(openerBox.y + openerBox.height);
+  expect(popoverBox.x).toBeGreaterThanOrEqual(0);
+  expect(popoverBox.x + popoverBox.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  );
+  expect((await header.boundingBox())!.height).toBe(beforeHeader.height);
+  expect((await toolbar.boundingBox())!.y).toBe(beforeToolbar.y);
+  await page.screenshot({
+    path: `/tmp/leaf-multi-status-${info.project.name}.png`,
+  });
+  await page.getByRole('checkbox', { name: 'Готово', exact: true }).uncheck();
+  await all.press('Escape');
+  await expect(opener).toBeFocused();
+  await opener.click();
+  await expect(
+    page.getByRole('checkbox', { name: 'Готово', exact: true }),
+  ).toBeChecked();
+  await page
+    .getByRole('button', { name: 'Сбросить поиск и фильтры', exact: true })
+    .click();
+  await expect(page.getByRole('searchbox')).toBeFocused();
+  await expect(opener).toHaveAccessibleName('Фильтры');
+  await opener.click();
+  await all.uncheck();
+  await page
+    .getByRole('button', { name: 'Применить (0)', exact: true })
+    .click();
+  await expect(taskTree(page).getByRole('treeitem')).toHaveCount(0);
+  await expect(
+    page.getByText('Ничего не найдено. Измените поиск или статус.'),
+  ).toBeVisible();
+  expect(mutations).toEqual([]);
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+});
 
 test('search and status reveal parent context, share Gantt rows and leave the real plan untouched', async ({
   page,
@@ -214,8 +297,8 @@ test('Shift+Tab leaves the popover and pointer toggling still closes it', async 
   const filters = page.getByRole('button', { name: 'Фильтры', exact: true });
   await filters.focus();
   await filters.press('Enter');
-  const status = page.getByRole('combobox', {
-    name: 'Фильтр по статусу',
+  const status = page.getByRole('checkbox', {
+    name: 'Все статусы',
     exact: true,
   });
   await expect(status).toBeFocused();

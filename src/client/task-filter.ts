@@ -2,9 +2,17 @@ import type { Task } from '../shared/contracts.js';
 
 export interface TaskFilter {
   query: string;
-  status: Task['status'] | 'all';
+  statuses: readonly Task['status'][];
 }
-export const emptyTaskFilter: TaskFilter = { query: '', status: 'all' };
+export const taskStatuses = ['todo', 'doing', 'done'] as const;
+export const emptyTaskFilter: TaskFilter = {
+  query: '',
+  statuses: taskStatuses,
+};
+
+export function hasStatusFilter(statuses: TaskFilter['statuses']) {
+  return !taskStatuses.every((status) => statuses.includes(status));
+}
 
 function normalized(value: string) {
   return value.normalize('NFC').toLocaleLowerCase('ru');
@@ -12,12 +20,12 @@ function normalized(value: string) {
 
 export function filterTasks(tasks: readonly Task[], filter: TaskFilter) {
   const query = normalized(filter.query.trim());
-  const active = query !== '' || filter.status !== 'all';
+  const active = query !== '' || hasStatusFilter(filter.statuses);
   const matchIds = new Set(
     tasks
       .filter(
         (task) =>
-          (filter.status === 'all' || task.status === filter.status) &&
+          filter.statuses.includes(task.status) &&
           normalized(task.title).includes(query),
       )
       .map((task) => task.id),

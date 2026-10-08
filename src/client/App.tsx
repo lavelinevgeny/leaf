@@ -21,6 +21,7 @@ import { ProjectControls } from './ProjectControls.js';
 import { TaskViewControl } from './TaskViewControl.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
 import { TaskFilters } from './TaskFilters.js';
+import { ControlIcon } from './ControlIcon.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
 import { workingDaysInclusive } from '../domain/calendar.js';
 import { gesturePatch, newTaskPlan } from './planning-view.js';
@@ -996,11 +997,12 @@ export function App() {
                   title={strings.undo}
                   onClick={() => void undo()}
                 >
-                  <span aria-hidden="true">↶</span>
+                  <ControlIcon name="undo" />
                 </button>
                 <TaskFilters
                   key={tree.project.id}
                   filter={taskFilter}
+                  tasks={tree.tasks}
                   onChange={setTaskFilter}
                   disabled={loading}
                 />

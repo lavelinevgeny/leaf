@@ -24,13 +24,18 @@
   background: var(--leaf-surface-muted);
 }
 .task-view-control button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border-color: transparent;
   background: transparent;
+  color: var(--leaf-text-muted);
 }
 .task-view-control button[aria-pressed='true'] {
-  color: var(--leaf-accent);
-  border-color: #bedec9;
-  background: white;
+  color: var(--leaf-control-accent);
+  border-color: #b8ceb9;
+  background: var(--leaf-control-soft);
+  font-weight: 600;
 }
 .task-timeline {
   flex: 1;
@@ -487,8 +492,8 @@
 .gantt-work.conditional {
   opacity: 0.8;
   stroke-dasharray: 4 3;
-  stroke: #5d836a;
-  stroke-width: 1.5;
+  stroke: #a9bfb0;
+  stroke-width: 0.75;
   fill: #dbe8df;
   cursor: pointer;
 }

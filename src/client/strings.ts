@@ -18,6 +18,8 @@ export const strings = {
   searchTasks: 'Поиск задач',
   clearTaskSearch: 'Очистить поиск',
   filterStatus: 'Фильтр по статусу',
+  taskStatus: 'Статус задачи',
+  applyFilters: 'Применить',
   allStatuses: 'Все статусы',
   resetTaskFilters: 'Сбросить поиск и фильтры',
   reset: 'Сбросить',
