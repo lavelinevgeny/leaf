@@ -26,7 +26,7 @@
 
 **Interfaces:** Consumes current `ProjectPlan` props `project`, `disabled`, `onSave: (project.schedule command) => Promise<boolean>`, `onDirty`; App retains `command`, `renameProject`, `rename`, `setProjectPlanDirty`, errorView and navigation protection. Produces compact project controls/dialog rendering and accessible menu opener `Действия проекта`. Settings/rename keep existing names. No new API contracts. Local errors/retry must remain visible when a modal is open; reuse App feedback instead of obscuring it behind modal content.
 
-- [ ] Step 1: Add interaction tests before implementation. Cover initial absence of settings fields/rename form, menu keyboard open/Escape focus return, dialog Tab containment, saved/discarded/failed settings drafts, rename persistence, guards against project switch/task selection while dirty, no writes from menu actions. Adapt existing rename and project-settings browser flows to explicitly open the new menu. Test reset absence initially and after reset.
+- [x] Step 1: Add interaction tests before implementation. Cover initial absence of settings fields/rename form, menu keyboard open/Escape focus return, dialog Tab containment, saved/discarded/failed settings drafts, rename persistence, guards against project switch/task selection while dirty, no writes from menu actions. Adapt existing rename and project-settings browser flows to explicitly open the new menu. Test reset absence initially and after reset.
 
 ```tsx
 expect(screen.queryByRole('button', { name: 'Сбросить поиск и фильтры' })).toBeNull();
@@ -38,8 +38,8 @@ await user.keyboard('{Escape}');
 expect(screen.getByLabelText('Часовой пояс проекта')).toHaveValue('UTC/invalid');
 ```
 
-- [ ] Step 2: Run `npx vitest run tests/client/project-controls.test.tsx tests/client/App.test.tsx tests/client/task-filters.test.tsx`; record real RED cases, not only pre-existing failures.
-- [ ] Step 3: Implement focused project controls; menu contains settings and rename only. Reuse existing command ownership and ProjectPlan form; mount it on demand, never silently unmount dirty drafts. Use native dialog or equivalent complete focus handling, return focus and explicit discard. Successful save may leave a clean dialog open; closing clean dialog restores opener. Handle project changes and close stale clean forms. Remove original large rename form and permanently mounted ProjectPlan. Use compact spacing, conditional reset and icon undo with existing accessible name/title and all disabled guards.
+- [x] Step 2: Run `npx vitest run tests/client/project-controls.test.tsx tests/client/App.test.tsx tests/client/task-filters.test.tsx`; record real RED cases, not only pre-existing failures.
+- [x] Step 3: Implement focused project controls; menu contains settings and rename only. Reuse existing command ownership and ProjectPlan form; mount it on demand, never silently unmount dirty drafts. Use native dialog or equivalent complete focus handling, return focus and explicit discard. Successful save may leave a clean dialog open; closing clean dialog restores opener. Handle project changes and close stale clean forms. Remove original large rename form and permanently mounted ProjectPlan. Use compact spacing, conditional reset and icon undo with existing accessible name/title and all disabled guards.
 
 ```tsx
 {(filter.query !== '' || filter.status !== 'all') && (
@@ -50,7 +50,7 @@ expect(screen.getByLabelText('Часовой пояс проекта')).toHaveVa
 )}
 ```
 
-- [ ] Step 4: Run covering tests, `npm run typecheck`, `npm run lint`, format affected files. Do not remove assertions about dirty/conflict/uncertain saves to accommodate a dialog. Agent report records RED/GREEN, commands, limitations; commit only scoped changes with an English subject. Task review and integration precede Task 2.
+- [x] Step 4: Run covering tests, `npm run typecheck`, `npm run lint`, format affected files. Do not remove assertions about dirty/conflict/uncertain saves to accommodate a dialog. Agent report records RED/GREEN, commands, limitations; commit only scoped changes with an English subject. Task review and integration precede Task 2.
 
 ### Task 2: Contextual schedule diagnostics and on-demand Gantt help
 
@@ -90,7 +90,7 @@ const actionableCodes = new Set([
 **Interfaces:** Consumes Task 1 accessible project menu/dialog and Task 2 local row diagnostics/help. Uses `syntheticRuntime`, `seedOptionalRuntime`, `readTree`, `send` from existing helpers; fixture task names remain synthetic. Produces browser evidence for CW01–CW08 in both configured viewports.
 
 - [ ] Step 1: Seed at least 24 tasks through real API and add independent A/B FS-conflict case; collect mutation request counts and a before tree snapshot. Navigate to application; assert absent global coverage/unknown-date warnings and menu/help/filter view actions produce no writes and identical tree/revision/canUndo.
-- [ ] Step 2: Test menu/dialog keyboard/Escape/focus, settings save/discard/failed response plus retry, rename and compact undo persisted behavior, Gantt toggle/help, local conflict and unrelated task. Preserve real backend assertions; no browser mocks for successful writes.
+- [ ] Step 2: Test menu/dialog keyboard/Escape/focus, settings save/discard/failed response plus exact retry, 409 conflict reload with retained settings draft, real Tab/Shift+Tab boundary assertions in the browser, rename and compact undo persisted behavior, Gantt toggle/help, local conflict and unrelated task. Preserve real backend assertions; no browser mocks for successful writes.
 - [ ] Step 3: Verify concrete geometry in both viewport projects. Capture synthetic screenshots to temp outside checkout for manual review, reporting exact paths only in scratch report. Verify alignment/order of tree/Gantt after filter/collapse and enough complete visible rows.
 
 ```ts
