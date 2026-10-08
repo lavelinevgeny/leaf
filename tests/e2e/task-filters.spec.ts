@@ -98,6 +98,14 @@ async function rowIds(page: Page) {
       nodes.map((node) => node.getAttribute('data-task-id')),
     );
 }
+async function chooseStatus(page: Page, value: string) {
+  const opener = page.getByRole('button', { name: /^Фильтры/ });
+  if ((await opener.getAttribute('aria-expanded')) !== 'true')
+    await opener.click();
+  await page
+    .getByRole('combobox', { name: 'Фильтр по статусу', exact: true })
+    .selectOption(value);
+}
 function counts(path: string, projectId: string) {
   const db = new Database(path, { readonly: true });
   try {
@@ -135,9 +143,7 @@ test('search and status reveal parent context, share Gantt rows and leave the re
   });
   await search.fill(' МОНТАЖ ');
   expect(await rowIds(page)).toEqual([root, group, a, b]);
-  await page
-    .getByRole('combobox', { name: 'Фильтр по статусу', exact: true })
-    .selectOption('doing');
+  await chooseStatus(page, 'doing');
   expect(await rowIds(page)).toEqual([root, group, a]);
   expect(
     await page
@@ -167,11 +173,12 @@ test('search and status reveal parent context, share Gantt rows and leave the re
     .click();
   expect(await rowIds(page)).toEqual([root, group]);
   await search.fill('Группа');
-  await page
-    .getByRole('combobox', { name: 'Фильтр по статусу', exact: true })
-    .selectOption('all');
+  await chooseStatus(page, 'all');
   expect(await rowIds(page)).toEqual([root, group]);
   await search.fill('Монтаж A');
+  const filters = page.getByRole('button', { name: 'Фильтры', exact: true });
+  if ((await filters.getAttribute('aria-expanded')) !== 'true')
+    await filters.click();
   expect(await rowIds(page)).toEqual([root, group, a]);
   await page
     .getByRole('button', { name: 'Сбросить поиск и фильтры', exact: true })
@@ -204,9 +211,7 @@ test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', 
     exact: true,
   });
   await search.fill('Монтаж');
-  await page
-    .getByRole('combobox', { name: 'Фильтр по статусу', exact: true })
-    .selectOption('doing');
+  await chooseStatus(page, 'doing');
   const first = taskTree(page).getByRole('treeitem', { name: /^Этап P,/ });
   await first.focus();
   await first.press('ArrowDown');
@@ -236,9 +241,10 @@ test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', 
     .getByRole('button', { name: 'Показать на Ганте', exact: true })
     .click();
   await expect(search).toHaveValue('');
-  await expect(
-    page.getByRole('combobox', { name: 'Фильтр по статусу', exact: true }),
-  ).toHaveValue('all');
+  await expect(page.getByRole('button', { name: 'Фильтры' })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
   expect(await rowIds(page)).toEqual([root, group, a, b, done]);
   await page.screenshot({
     path: `/tmp/leaf-s4-${info.project.name}-panel.png`,

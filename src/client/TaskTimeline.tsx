@@ -205,14 +205,6 @@ export function TaskTimeline({
     onSelect,
     onAction,
   };
-  const results = projection.active && (
-    <p role="status" className="filter-results">
-      {strings.taskMatchCount} {projection.matchIds.size}
-      {tree.tasks.length > 0 && projection.matchIds.size === 0 && (
-        <span className="no-task-matches">{strings.noTaskMatches}</span>
-      )}
-    </p>
-  );
   return (
     <div
       className="task-timeline"
@@ -224,9 +216,13 @@ export function TaskTimeline({
         } as CSSProperties
       }
     >
-      {results}
       <div className="gantt-toolbar">
         {viewControl}
+        {projection.active && (
+          <span role="status" className="filter-results">
+            {strings.taskMatchCount} {projection.matchIds.size}
+          </span>
+        )}
         {show && (
           <div className="gantt-scale-controls">
             <label>
@@ -295,6 +291,11 @@ export function TaskTimeline({
               </span>
             </div>
             <TaskTree {...treeProps} />
+            {projection.active &&
+              tree.tasks.length > 0 &&
+              projection.matchIds.size === 0 && (
+                <p className="no-task-matches">{strings.noTaskMatches}</p>
+              )}
           </div>
           <div
             className="timeline-divider"

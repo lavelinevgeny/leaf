@@ -324,6 +324,71 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
     ).toEqual(filteredIds);
     await expect(editor).toHaveValue('Synthetic dirty quick draft');
     await expect(description).toHaveValue('Synthetic unsaved panel draft');
+    await search.fill('');
+    await page.locator('[data-plan-scroll]').evaluate((node) => {
+      node.scrollTop = 0;
+    });
+    const filterBaseline = await geometry(page, parentRow);
+    const filters = page.getByRole('button', { name: /^Фильтры/ });
+    await filters.click();
+    const status = page.getByRole('combobox', {
+      name: 'Фильтр по статусу',
+      exact: true,
+    });
+    await expect(status).toBeFocused();
+    await sameGeometry(page, parentRow, filterBaseline);
+    const filterCapture = join(
+      captures,
+      info.project.name + '-filter-open.png',
+    );
+    await page.screenshot({ path: filterCapture });
+    await status.selectOption('todo');
+    await expect(filters).toHaveText('Фильтры · 1');
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: `Найдено задач: ${tree.tasks.length}` }),
+    ).toBeVisible();
+    await sameGeometry(page, parentRow, filterBaseline);
+    await list.click();
+    await expect(list).toBeFocused();
+    await expect(status).toHaveCount(0);
+    await expect(filters).toHaveAttribute('aria-expanded', 'false');
+    await gantt.click();
+    await search.fill('Нет совпадений');
+    await expect(
+      page.getByText('Ничего не найдено. Измените поиск или статус.'),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Найдено задач: 0' }),
+    ).toBeVisible();
+    expect((await page.locator('.gantt-toolbar').boundingBox())!.y).toBe(
+      filterBaseline.boxes[1]!.y,
+    );
+    expect((await page.locator('.timeline-heading').boundingBox())!.y).toBe(
+      filterBaseline.boxes[2]!.y,
+    );
+    expect((await page.locator('[data-plan-scroll]').boundingBox())!.y).toBe(
+      filterBaseline.boxes[3]!.y,
+    );
+    const zeroCapture = join(captures, info.project.name + '-filter-zero.png');
+    await page.screenshot({ path: zeroCapture });
+    await page.getByRole('button', { name: 'Очистить поиск' }).click();
+    await expect(filters).toHaveText('Фильтры · 1');
+    await expect(search).toHaveValue('');
+    await filters.click();
+    await status.press('Escape');
+    await expect(filters).toBeFocused();
+    await expect(panel).toBeVisible();
+    await filters.click();
+    await page
+      .getByRole('button', { name: 'Сбросить поиск и фильтры' })
+      .click();
+    await expect(search).toBeFocused();
+    await expect(filters).toHaveText('Фильтры');
+    await sameGeometry(page, parentRow, filterBaseline);
+    await expect(description).toHaveValue('Synthetic unsaved panel draft');
+    await expect(editor).toHaveValue('Synthetic dirty quick draft');
     expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
     expect(writes).toEqual([]);
     console.log(
@@ -340,6 +405,8 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
           ganttCapture,
           panelCapture,
           panelGanttCapture,
+          filterCapture,
+          zeroCapture,
         ],
       }),
     );

@@ -236,6 +236,7 @@ test('compact geometry, local diagnostics and view actions preserve the authorit
       .boundingBox())!;
     expect(Math.abs(row.y - gantt.y)).toBeLessThanOrEqual(2);
   }
+  await page.getByRole('button', { name: 'Фильтры' }).click();
   await page
     .getByRole('button', { name: 'Сбросить поиск и фильтры', exact: true })
     .click();

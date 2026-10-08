@@ -6,6 +6,8 @@ function preserveEditorFocus(
 ) {
   const active = document.activeElement;
   if (active instanceof HTMLElement && active.closest('.gantt-toolbar')) return;
+  if (active instanceof HTMLElement && active.closest('.task-filter-popover'))
+    return;
   if (
     active instanceof HTMLInputElement ||
     active instanceof HTMLTextAreaElement ||

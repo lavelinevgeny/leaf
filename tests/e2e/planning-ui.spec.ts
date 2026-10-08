@@ -246,7 +246,7 @@ test('long project title keeps the first task within the compact header limit', 
     for (const control of [
       page.getByRole('button', { name: 'Действия проекта' }),
       page.getByRole('searchbox', { name: 'Поиск задач' }),
-      page.getByRole('combobox', { name: 'Фильтр по статусу' }),
+      page.getByRole('button', { name: /^Фильтры/ }),
     ]) {
       const box = await control.boundingBox();
       expect(box).not.toBeNull();

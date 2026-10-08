@@ -999,6 +999,7 @@ export function App() {
                   <span aria-hidden="true">↶</span>
                 </button>
                 <TaskFilters
+                  key={tree.project.id}
                   filter={taskFilter}
                   onChange={setTaskFilter}
                   disabled={loading}

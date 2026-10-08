@@ -10,6 +10,8 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { App } from '../../src/client/App.js';
+import { TaskFilters } from '../../src/client/TaskFilters.js';
+import { emptyTaskFilter } from '../../src/client/task-filter.js';
 import { project, task, emptySchedule } from './fixtures.js';
 import type { ProjectTree } from '../../src/shared/contracts.js';
 
@@ -69,6 +71,94 @@ function ids() {
     .map((row) => row.dataset.taskId);
 }
 
+it('opens a status popover, contains Escape and keeps status when clearing text', async () => {
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /Монтаж A,/ }));
+  const opener = screen.getByRole('button', { name: 'Фильтры' });
+  opener.focus();
+  await user.keyboard('{Enter}');
+  const status = screen.getByRole('combobox', { name: 'Фильтр по статусу' });
+  expect(status).toHaveFocus();
+  await user.selectOptions(status, 'doing');
+  expect(screen.getByRole('button', { name: 'Фильтры · 1' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await user.keyboard('{Escape}');
+  expect(screen.getByRole('button', { name: 'Фильтры · 1' })).toHaveFocus();
+  expect(screen.getByRole('complementary', { name: 'Задача' })).toBeVisible();
+  await user.keyboard(' ');
+  expect(
+    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toHaveFocus();
+  await user.keyboard('{Escape}');
+  const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
+  await user.type(search, 'Монтаж');
+  await user.click(screen.getByRole('button', { name: 'Очистить поиск' }));
+  expect(search).toHaveValue('');
+  expect(search).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'Фильтры · 1' })).toBeVisible();
+  await user.type(search, 'Монтаж{Escape}');
+  expect(search).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Фильтры · 1' })).toBeVisible();
+  expect(ids()).toEqual([root.id, group.id, a.id]);
+});
+
+it('closes on outside focus, Tab departure and a project switch', async () => {
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
+  await user.click(screen.getByRole('searchbox', { name: 'Поиск задач' }));
+  expect(
+    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
+  await user.click(screen.getByRole('button', { name: 'Список' }));
+  expect(
+    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toBeNull();
+  expect(screen.getByRole('button', { name: 'Список' })).toHaveFocus();
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
+  await user.tab();
+  expect(
+    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
+  await user.click(screen.getByRole('button', { name: /Другой демо-проект/ }));
+  await screen.findByRole('heading', { name: other.title });
+  expect(
+    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toBeNull();
+});
+
+it('closes the popover when loading disables its controls', async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  const view = render(
+    <TaskFilters
+      filter={emptyTaskFilter}
+      onChange={onChange}
+      disabled={false}
+    />,
+  );
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
+  expect(
+    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toHaveFocus();
+  view.rerender(
+    <TaskFilters filter={emptyTaskFilter} onChange={onChange} disabled />,
+  );
+  expect(screen.getByRole('button', { name: 'Фильтры' })).toBeDisabled();
+  expect(
+    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toBeNull();
+  expect(screen.getByRole('button', { name: 'Фильтры' })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+});
+
 it('reveals matches in collapsed branches and shares literal rows with Gantt without requests', async () => {
   const { container } = await open();
   const user = userEvent.setup();
@@ -84,6 +174,7 @@ it('reveals matches in collapsed branches and shares literal rows with Gantt wit
     ' МОНТАЖ ',
   );
   expect(ids()).toEqual([root.id, group.id, a.id, b.id]);
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
   await user.selectOptions(
     screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
     'doing',
@@ -116,6 +207,7 @@ it('keeps filtered collapse temporary, resets it on criteria changes and restore
     'aria-expanded',
     'false',
   );
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
   await user.selectOptions(
     screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
     'doing',
@@ -129,9 +221,10 @@ it('keeps filtered collapse temporary, resets it on criteria changes and restore
   expect(
     screen.queryByRole('button', { name: 'Сбросить поиск и фильтры' }),
   ).toBeNull();
-  expect(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toHaveValue('all');
+  expect(screen.getByRole('button', { name: 'Фильтры' })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
 });
 
 it('distinguishes no matches, clears search with Escape and supports list-only keyboard navigation', async () => {
@@ -181,6 +274,7 @@ it('resets filters on a project switch and uses the actual empty-project message
   await open();
   const user = userEvent.setup();
   await user.type(screen.getByRole('searchbox'), 'Монтаж');
+  await user.click(screen.getByRole('button', { name: 'Фильтры' }));
   await user.selectOptions(
     screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
     'doing',
@@ -188,9 +282,10 @@ it('resets filters on a project switch and uses the actual empty-project message
   await user.click(screen.getByRole('button', { name: /Другой демо-проект/ }));
   await screen.findByRole('heading', { name: other.title });
   await waitFor(() => expect(screen.getByRole('searchbox')).toHaveValue(''));
-  expect(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toHaveValue('all');
+  expect(screen.getByRole('button', { name: 'Фильтры' })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
   expect(screen.getByText('В проекте пока нет задач.')).toBeVisible();
   expect(
     screen.queryByText('Ничего не найдено. Измените поиск или статус.'),
@@ -245,9 +340,10 @@ it('keeps query and dirty draft through conflict loading and disables only the l
   );
   await user.click(reload);
   expect(search).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Фильтры' })).toBeDisabled();
   expect(
-    screen.getByRole('combobox', { name: 'Фильтр по статусу' }),
-  ).toBeDisabled();
+    screen.queryByRole('combobox', { name: 'Фильтр по статусу' }),
+  ).toBeNull();
   expect(screen.getByLabelText('Описание')).toHaveValue('Черновик');
   reply(
     new Response(
