@@ -709,13 +709,27 @@ it('status-only calendar and edge commands retain marker and source bytes', () =
   ]);
   expect(weekdayUndo.tasks).toEqual(deleted.tasks);
 });
-it('marked raw FS conflict commits once, suppresses analysis and undo restores unknown partial', () => {
-  const { tree: before, by } = c17Stored(),
-    state = rawState(before.project.id);
+it('marked raw FS conflict rejects atomically; historical conflict still suppresses analysis and survives undo', () => {
+  const { tree: original, by } = c17Stored();
+  const originalState = rawState(original.project.id);
+  expect(() =>
+    step(original, {
+      type: 'task.edit',
+      taskId: by.K!,
+      changes: { inputStart: '2026-10-07' },
+    }),
+  ).toThrow(expect.objectContaining({ code: 'EXPLICIT_PRECEDENCE_CONFLICT' }));
+  expect(rawState(original.project.id)).toEqual(originalState);
+  db.prepare('UPDATE tasks SET inputStart=? WHERE id=?').run(
+    '2026-10-07',
+    by.K!,
+  );
+  const before = repository.getTree(original.project.id, session);
+  const state = rawState(before.project.id);
   const after = step(before, {
     type: 'task.edit',
     taskId: by.K!,
-    changes: { inputStart: '2026-10-07' },
+    changes: { description: 'Synthetic historical diagnostic retained' },
   });
   expect(after.project.revision).toBe(before.project.revision + 1);
   expect(rawState(before.project.id).operations).toHaveLength(
@@ -749,7 +763,10 @@ it('marked raw FS conflict commits once, suppresses analysis and undo restores u
   );
   const undone = step(after, { type: 'undo' });
   expect(undone.schedule).toEqual(before.schedule);
-  assertC17Unknown(undone, by);
+  expect(undone.tasks).toEqual(before.tasks);
+  expect(provenance(before.project.id)).toEqual([
+    { taskId: by.D!, reason: 'legacy-interval-unavailable' },
+  ]);
 });
 it('preserveWork transfers marker to original work child and undo restores original marked leaf', () => {
   const { tree: before, by } = c17Stored(),

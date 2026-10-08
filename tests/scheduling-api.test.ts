@@ -389,7 +389,7 @@ it('fresh pending injection gives internal500 and rolls back HTTP mutation and G
   }
   spy.mockRestore();
 });
-it('HTTP conflict plus unknown commits once while invalid user triple rolls back', async () => {
+it('HTTP predecessor delay cascades once with unknown work while invalid user triple rolls back', async () => {
   let t = await step(tree, {
     type: 'project.schedule',
     changes: { calendarType: 'all-days' },
@@ -423,9 +423,6 @@ it('HTTP conflict plus unknown commits once while invalid user triple rolls back
     taskId: by.A!,
     changes: { inputFinish: '2026-10-07' },
   });
-  const ab = after.dependencies.find(
-    (e) => e.predecessorId === by.A && e.successorId === by.B,
-  )!.id;
   const bu = after.dependencies.find(
     (e) => e.predecessorId === by.B && e.successorId === by.U,
   )!.id;
@@ -434,19 +431,23 @@ it('HTTP conflict plus unknown commits once while invalid user triple rolls back
     previous.operations.length + 1,
   );
   expect(apiState(t.project.id).undo).toHaveLength(previous.undo.length + 1);
-  expect(after.schedule.analysisStatus).toBe('infeasible');
-  if (after.schedule.analysisStatus !== 'infeasible')
-    throw new Error('Expected infeasible');
-  expect(after.schedule.partialAnalysis).toBeNull();
+  expect(after.tasks.find((task) => task.id === by.B)).toMatchObject({
+    inputStart: '2026-10-08',
+    inputFinish: '2026-10-10',
+    durationDays: null,
+  });
+  expect(after.schedule.analysisStatus).toBe('incomplete');
+  if (after.schedule.analysisStatus !== 'incomplete')
+    throw new Error('Expected incomplete');
+  expect(after.schedule.partialAnalysis).toMatchObject({
+    knownHorizonFinishDate: '2026-10-10',
+    coverage: { analyzedLeafCount: 0, blockedLeafCount: 3 },
+    tasks: {},
+    partialCriticalTaskIds: [],
+  });
   expect(after.schedule.criticalTaskIds).toEqual([]);
   expect(after.schedule.criticalDependencyIds).toEqual([]);
   expect(after.schedule.diagnostics).toEqual([
-    {
-      code: 'EXPLICIT_PRECEDENCE_CONFLICT',
-      taskIds: [by.A!, by.B!].sort(),
-      dependencyIds: [ab],
-      messageKey: 'scheduling.EXPLICIT_PRECEDENCE_CONFLICT',
-    },
     {
       code: 'UNKNOWN_INTERVAL',
       taskIds: [by.U!],

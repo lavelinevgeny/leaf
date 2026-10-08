@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
+import { ControlIcon } from './ControlIcon.js';
 import { indexToDate } from '../domain/calendar.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import {
@@ -24,6 +25,7 @@ export interface GanttProps {
   selectedId: string | null;
   disabled: boolean;
   onSelect: (task: Task) => void;
+  onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onPlan: (task: Task, kind: 'move' | 'resize', target: string) => void;
   draftId?: string | undefined;
 }
@@ -45,10 +47,19 @@ export function Gantt({
   disabled,
   onSelect,
   onPlan,
+  onPredecessors,
   draftId,
 }: GanttProps) {
   const view = windowFor(start, scale);
   const marker = useId().replaceAll(':', '');
+  const chainRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [hint, setHint] = useState('');
+  useEffect(() => {
+    if (!hint) return;
+    const timer = window.setTimeout(() => setHint(''), 2500);
+    return () => window.clearTimeout(timer);
+  }, [hint]);
+  const summaries = new Set(tree.tasks.map((task) => task.parentId));
   const gestureRef = useRef<Gesture | null>(null);
   const [preview, setPreview] = useState<Gesture | null>(null);
   const suppressClick = useRef(false);
@@ -162,6 +173,16 @@ export function Gantt({
           <path d="M0 0 L8 4 L0 8" fill="context-stroke" />
         </marker>
       </defs>
+      {hint && (
+        <text
+          x={8}
+          y={HEADER_HEIGHT - 8}
+          className="predecessor-hint"
+          role="status"
+        >
+          {hint}
+        </text>
+      )}
       {rows.map(({ task }, index) =>
         selectedId === task.id ? (
           <rect
@@ -307,6 +328,7 @@ export function Gantt({
         return (
           <g
             key={task.id}
+            className={selectedId === task.id ? 'selected' : undefined}
             data-gantt-row={task.id === draftTaskId ? undefined : task.id}
             data-gantt-draft={task.id === draftTaskId ? true : undefined}
           >
@@ -359,6 +381,17 @@ export function Gantt({
                   onSelect(task);
                 }}
                 onKeyDown={(event) => {
+                  if (event.altKey && event.key.toLowerCase() === 'l') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (disabled || task.id === draftTaskId) return;
+                    if (summaries.has(task.id)) setHint(strings.chooseLeaf);
+                    else {
+                      const trigger = chainRefs.current.get(task.id);
+                      if (trigger) onPredecessors?.(task, trigger);
+                    }
+                    return;
+                  }
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     if (task.id === draftTaskId)
@@ -455,6 +488,42 @@ export function Gantt({
                   )}
               </g>
             )}
+            {bar &&
+              onPredecessors &&
+              task.id !== draftTaskId &&
+              !summaries.has(task.id) && (
+                <foreignObject
+                  x={Math.min(view.width - 32, Math.max(0, cx2 + 4))}
+                  y={y + 5}
+                  width={30}
+                  height={30}
+                  className="gantt-predecessor-host"
+                >
+                  <button
+                    type="button"
+                    className="predecessor-action gantt-predecessor"
+                    ref={(node) => {
+                      if (node) chainRefs.current.set(task.id, node);
+                      else chainRefs.current.delete(task.id);
+                    }}
+                    aria-label={`${strings.afterFinish}: ${task.title}`}
+                    title={`${strings.afterFinish} · Alt+L`}
+                    disabled={disabled}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onPredecessors(task, event.currentTarget);
+                    }}
+                    onKeyDown={(event) => {
+                      if (['Enter', ' ', 'Escape'].includes(event.key))
+                        event.stopPropagation();
+                    }}
+                  >
+                    <ControlIcon name="chain" />
+                  </button>
+                </foreignObject>
+              )}
             {(task.id === draftTaskId ? [] : sourceMarkers(task, tree.schedule))
               .filter(
                 (source) =>

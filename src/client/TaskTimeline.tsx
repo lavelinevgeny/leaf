@@ -44,6 +44,7 @@ interface Props {
   onToggle: (id: string) => void;
   onSelect: (task: Task) => void;
   onAction: (action: TreeAction, task: Task) => void;
+  onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onPlan: (task: Task, kind: 'move' | 'resize', target: string) => void;
   disabled: boolean;
   show: boolean;
@@ -73,6 +74,7 @@ export function TaskTimeline({
   onSelect,
   onAction,
   onPlan,
+  onPredecessors,
   disabled,
   show,
   reveal,
@@ -204,6 +206,7 @@ export function TaskTimeline({
     ...(projection.active ? { matchIds: projection.matchIds } : {}),
     onSelect,
     onAction,
+    onPredecessors,
   };
   return (
     <div
@@ -367,6 +370,7 @@ export function TaskTimeline({
               disabled={disabled}
               onSelect={onSelect}
               onPlan={onPlan}
+              onPredecessors={onPredecessors}
               draftId={draft?.active ? draftTaskId : undefined}
             />
           </div>

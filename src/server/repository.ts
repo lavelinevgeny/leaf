@@ -27,6 +27,8 @@ import {
 } from '../domain/tree.js';
 
 import { calculateSchedule } from '../domain/scheduling.js';
+import { cascadeFs } from '../domain/fs-cascade.js';
+import type { OptionalInput } from '../domain/scheduling-types.js';
 import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import {
   emptyPlanning,
@@ -205,7 +207,106 @@ export class Repository {
       projectId,
       input,
       sessionId,
-      (snapshot, timestamp) => this.apply(snapshot, input.command, timestamp),
+      (snapshot, timestamp) => {
+        const before = structuredClone(snapshot);
+        try {
+          this.apply(snapshot, input.command, timestamp);
+          validateDependencies(snapshot.tasks, snapshot.dependencies);
+          if (
+            !['task.create', 'task.edit', 'dependency.create'].includes(
+              input.command.type,
+            )
+          )
+            return;
+          const previousTasks = new Map(
+            before.tasks.map((task) => [task.id, task]),
+          );
+          const changedSourceTaskIds = snapshot.tasks
+            .filter((task) => {
+              const old = previousTasks.get(task.id);
+              return (
+                old &&
+                (old.inputStart !== task.inputStart ||
+                  old.inputFinish !== task.inputFinish ||
+                  old.durationDays !== task.durationDays)
+              );
+            })
+            .map((task) => task.id);
+          const oldEdgeIds = new Set(
+            before.dependencies.map((edge) => edge.id),
+          );
+          const addedDependencyIds = snapshot.dependencies
+            .filter((edge) => !oldEdgeIds.has(edge.id))
+            .map((edge) => edge.id);
+          if (!changedSourceTaskIds.length && !addedDependencyIds.length)
+            return;
+          const toInput = (value: Snapshot): OptionalInput => ({
+            calendarType: value.project.calendarType,
+            unavailableTaskIds: value.legacyIntervalUnavailable,
+            tasks: value.tasks.map(
+              ({
+                id,
+                parentId,
+                status,
+                inputStart,
+                inputFinish,
+                durationDays,
+              }) => ({
+                id,
+                parentId,
+                status,
+                inputStart,
+                inputFinish,
+                durationDays,
+              }),
+            ),
+            dependencies: value.dependencies.map(
+              ({ id, predecessorId, successorId }) => ({
+                id,
+                predecessorId,
+                successorId,
+              }),
+            ),
+          });
+          const result = cascadeFs(toInput(before), toInput(snapshot), {
+            changedSourceTaskIds,
+            addedDependencyIds,
+            explicitlyEditedTaskId:
+              input.command.type === 'task.edit' &&
+              changedSourceTaskIds.includes(input.command.taskId)
+                ? input.command.taskId
+                : null,
+          });
+          const changedIds = new Set(result.changedTaskIds);
+          const finalSources = new Map(
+            result.tasks.map((task) => [task.id, task]),
+          );
+          for (const task of snapshot.tasks) {
+            if (!changedIds.has(task.id)) continue;
+            const source = finalSources.get(task.id)!;
+            task.inputStart = source.inputStart;
+            task.inputFinish = source.inputFinish;
+            task.durationDays = source.durationDays;
+            task.updatedAt = timestamp;
+          }
+        } catch (error) {
+          if (!(error instanceof DomainError)) throw error;
+          const titles = new Map(
+            [...before.tasks, ...snapshot.tasks].map((task) => [
+              task.id,
+              task.title,
+            ]),
+          );
+          throw new DomainError(
+            error.code,
+            error.message.replace(
+              /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+              (id) => titles.get(id) ?? id,
+            ),
+            error.statusCode,
+          );
+        }
+      },
       input.command.type === 'undo',
     );
   }
@@ -402,6 +503,7 @@ export class Repository {
     };
     switch (command.type) {
       case 'task.edit': {
+        const { predecessorIds, ...scalarChanges } = command.changes;
         const task = find(command.taskId);
         const patch: SourcePatch = {};
         if (command.changes.inputStart !== undefined)
@@ -428,12 +530,14 @@ export class Repository {
             ? status
             : undefined,
         );
-        Object.assign(task, result.task, command.changes, {
+        Object.assign(task, result.task, scalarChanges, {
           updatedAt: timestamp,
         });
         if (!result.unavailable)
           snapshot.legacyIntervalUnavailable =
             snapshot.legacyIntervalUnavailable.filter((id) => id !== task.id);
+        if (predecessorIds !== undefined)
+          this.replacePredecessors(snapshot, task.id, predecessorIds);
         break;
       }
       case 'project.schedule': {
@@ -517,6 +621,8 @@ export class Repository {
           item.sortOrder = index;
         });
         tasks.push(task);
+        if (command.predecessorIds !== undefined)
+          this.replacePredecessors(snapshot, task.id, command.predecessorIds);
         break;
       }
       case 'task.update': {
@@ -569,6 +675,41 @@ export class Repository {
           'INVALID_COMMAND',
           'Команда отмены требует транзакции.',
         );
+    }
+  }
+  private replacePredecessors(
+    snapshot: Snapshot,
+    successorId: string,
+    predecessorIds: readonly string[],
+  ): void {
+    if (new Set(predecessorIds).size !== predecessorIds.length)
+      throw new DomainError(
+        'DEPENDENCY_DUPLICATE',
+        'Предшественники не должны повторяться.',
+      );
+    const oldIncoming = new Map(
+      snapshot.dependencies
+        .filter((edge) => edge.successorId === successorId)
+        .map((edge) => [edge.predecessorId, edge]),
+    );
+    snapshot.dependencies = snapshot.dependencies.filter(
+      (edge) => edge.successorId !== successorId,
+    );
+    for (const predecessorId of predecessorIds) {
+      validateDependency(
+        snapshot.tasks,
+        snapshot.dependencies,
+        predecessorId,
+        successorId,
+      );
+      snapshot.dependencies.push(
+        oldIncoming.get(predecessorId) ?? {
+          id: randomUUID(),
+          projectId: snapshot.project.id,
+          predecessorId,
+          successorId,
+        },
+      );
     }
   }
 }

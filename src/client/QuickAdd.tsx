@@ -4,7 +4,11 @@ import {
   type Task,
   type SourceFields,
   type Project,
+  type ProjectTree,
 } from '../shared/contracts.js';
+import { PredecessorPicker } from './PredecessorPicker.js';
+import { ControlIcon } from './ControlIcon.js';
+import { canonicalPredecessorIds } from './predecessor-view.js';
 import { QuickSchedule } from './QuickSchedule.js';
 import { scheduleChip } from './quick-add-view.js';
 import { newTaskPlan } from './planning-view.js';
@@ -15,6 +19,10 @@ export interface AddContext {
   afterId?: string;
 }
 interface Props {
+  tree: ProjectTree;
+  predecessorIds: string[];
+  onPredecessors: (ids: string[]) => void;
+  acknowledgement?: number;
   tasks: Task[];
   context: AddContext;
   onContext: (context: AddContext) => void;
@@ -22,6 +30,7 @@ interface Props {
     title: string,
     context: AddContext,
     plan: SourceFields,
+    predecessorIds: string[],
   ) => Promise<boolean>;
   plan: SourceFields;
   onPlan: (plan: SourceFields) => void;
@@ -39,6 +48,10 @@ interface Props {
   onCancel?: () => void;
 }
 export function QuickAdd({
+  tree,
+  predecessorIds,
+  onPredecessors,
+  acknowledgement,
   tasks,
   context,
   onContext,
@@ -60,6 +73,8 @@ export function QuickAdd({
 }: Props) {
   const [editing, setEditing] = useState(false);
   const chip = useRef<HTMLButtonElement>(null);
+  const chain = useRef<HTMLButtonElement>(null);
+  const [predecessorsOpen, setPredecessorsOpen] = useState(false);
   function beginEditing() {
     setEditing(true);
     onEditing?.(true);
@@ -67,12 +82,14 @@ export function QuickAdd({
   function clear() {
     onTitle('');
     onPlan(newTaskPlan());
+    onPredecessors([]);
     rejectedPlan.current = null;
     setValid(true);
   }
   function cancel() {
     clear();
     setScheduleOpen(false);
+    setPredecessorsOpen(false);
     setEditing(false);
     onEditing?.(false);
     onCancel?.();
@@ -93,16 +110,25 @@ export function QuickAdd({
   const parent = tasks.find((task) => task.id === context.parentId);
   useEffect(() => {
     if (!restoreFocus || busy || blocked) return;
+    const active = document.activeElement;
     if (
-      document.activeElement === document.body ||
-      document.activeElement === input.current
+      active === document.body ||
+      active === input.current ||
+      (active && input.current?.form?.contains(active))
     )
       input.current?.focus();
     setRestoreFocus(false);
   }, [restoreFocus, busy, blocked]);
+  const previousAck = useRef(acknowledgement);
+  useEffect(() => {
+    if (acknowledgement === previousAck.current) return;
+    previousAck.current = acknowledgement;
+    setPredecessorsOpen(false);
+    setRestoreFocus(true);
+  }, [acknowledgement]);
   async function submit() {
     if (!title.trim() || busy || blocked || !canSubmit) return;
-    if (await onCreate(title, context, plan)) {
+    if (await onCreate(title, context, plan, predecessorIds)) {
       setRestoreFocus(true);
     }
   }
@@ -152,9 +178,18 @@ export function QuickAdd({
           onFocus={beginEditing}
           onChange={(event) => onTitle(event.target.value)}
           onKeyDown={(event) => {
+            if (event.altKey && event.key.toLowerCase() === 'l') {
+              event.preventDefault();
+              event.stopPropagation();
+              setPredecessorsOpen((open) => !open);
+              setScheduleOpen(false);
+              beginEditing();
+              return;
+            }
             if (event.altKey && event.key.toLowerCase() === 'd') {
               event.preventDefault();
               setScheduleOpen((open) => !open);
+              setPredecessorsOpen(false);
               beginEditing();
               return;
             }
@@ -196,6 +231,23 @@ export function QuickAdd({
           }}
         >
           <span aria-hidden="true">▦</span> {scheduleChip(plan, calendar)}
+        </button>
+        <button
+          ref={chain}
+          type="button"
+          className="predecessor-action"
+          aria-label={strings.newTaskPredecessors}
+          aria-expanded={predecessorsOpen}
+          title={`${strings.afterFinish} · Alt+L`}
+          disabled={busy || blocked}
+          onClick={() => {
+            setPredecessorsOpen((open) => !open);
+            setScheduleOpen(false);
+            beginEditing();
+          }}
+        >
+          <ControlIcon name="chain" />
+          {predecessorIds.length > 0 && <span>{predecessorIds.length}</span>}
         </button>
         <button
           aria-label={strings.addTask}
@@ -253,7 +305,8 @@ export function QuickAdd({
           {strings.parent}: {parent?.title ?? strings.root}
         </span>
         <span>{strings.quickHint}</span>
-        {(title ||
+        {(predecessorIds.length > 0 ||
+          title ||
           plan.inputStart !== null ||
           plan.inputFinish !== null ||
           plan.durationDays !== 1) && (
@@ -277,6 +330,24 @@ export function QuickAdd({
         <p className={inline ? 'sr-only' : 'field-hint'}>
           {strings.planInputError}
         </p>
+      )}
+      {predecessorsOpen && (
+        <PredecessorPicker
+          tree={tree}
+          successorId={null}
+          selectedIds={predecessorIds}
+          disabled={busy || blocked}
+          onAdd={(id) =>
+            onPredecessors(canonicalPredecessorIds([...predecessorIds, id]))
+          }
+          onRemove={(id) =>
+            onPredecessors(predecessorIds.filter((selected) => selected !== id))
+          }
+          onClose={() => {
+            setPredecessorsOpen(false);
+            chain.current?.focus();
+          }}
+        />
       )}
       {scheduleOpen && (
         <QuickSchedule

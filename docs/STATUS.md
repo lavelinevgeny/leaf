@@ -1,5 +1,37 @@
 # Статус разработки
 
+## Подготовка локального коммита C24 — 2026-10-08
+
+В коммит подготовлены 43 файла FS-зависимостей: клиент, чистый каскад, серверные команды, tests, спецификация, план и ADR 011. Несвязанная запись аудита публикации/Render сохранена в рабочем файле вне index. Код при подготовке не менялся.
+
+PASS повторно в корневом checkout: `verify` (typecheck, lint, 751/751 unit/integration tests, production build), `format:check`, `check:package`, `security:workspace`, полный `preflight` (52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata scans), staged whitespace check. E2E повторно не запускались; предыдущие 118/118 и ограничения приведены ниже. Следующий шаг — S4 доска/статусы/undo; push/deployment/publication не выполнялись.
+
+## FS-зависимости — финальное review и корневая интеграция, 2026-10-08
+
+Реализованы C24/D17: единый поиск «После окончания» при создании основной задачи и подзадачи, в Details, из строки списка и полосы Ганта. Связь независима от родства; сервер атомарно переносит зависимые исходные сроки, пересчитывает существующий CPM и критичность родителей. Одна команда и одна undo охватывают связь, каскад и расчёт. Пустые даты сохраняются; условные значения Ганта не используются как реальные сроки.
+
+Три независимых варианта и три независимых выбора завершены. Отдельно подготовленные [спецификация](superpowers/specs/2026-10-08-fs-dependencies-design.md) и [план](superpowers/plans/2026-10-08-fs-dependencies.md), каждая implementation task и весь feature diff прошли независимые review с исправлениями и scoped повторной проверкой. Итог: spec compliant, quality Approved, открытых замечаний нет. Реальные browser регрессии закрепили Enter после поиска, неперекрывающиеся кнопки, видимый keyboard selection, динамический размер picker и сохранение прежнего окна быстрых сроков.
+
+PASS в основном checkout: `verify` — typecheck, lint, 751/751 unit/integration tests в 42 файлах и production build; format:check, check:package, security:workspace; полный preflight — doctor, check:kit, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. На побайтово совпадающем feature-кандидате полный actual-server E2E прошёл 118/118 в 1440×900 и 1280×800, включая 32 новых FS проверки, без skips/retries. Повторять тот же browser набор после точного переноса не требовалось. Синтетические captures просмотрены вне checkout. Проверка полного feature range на whitespace прошла после удаления трёх пробелов в пустых строках плана.
+
+Изменения перенесены из изолированного worktree; исходная несвязанная запись STATUS сохранена дословно, индекс не менялся. Прежний отказ workspace guard на служебном linked-worktree `.git` pointer устранён применением обычного корневого gate, без изменения политики. Промежуточный таймаут остановки синтетического сервера не повторился в финальном полном E2E; timeout/retries не ослаблены. Текущих failed checks нет. Docker smoke, sandbox probe и remote CI не запускались; push/deployment/publication не выполнялись.
+
+Ограничения D17: leaf-only FS одного проекта, лаг 0, перенос в обе стороны только для tight-цепочки, зазор сначала поглощает задержку, сохранённого anchor нет. Done не переносится автоматически; необходимый поздний перенос через done и явный конфликт исходных сроков отклоняют всю команду. Следующая продуктовая работа — S4 доска/статусы/undo, затем S5 restore/import/export и S6 приёмка; первый релиз остаётся незавершённым.
+
+## FS-зависимости — Task 3, синтетическая приёмка и handoff, 2026-10-08
+
+Добавлена actual-server browser приёмка C24/D17: 16 сценариев в каждом из 1440×900 и 1280×800. Основной и дочерний QuickAdd сохраняют nullable даты, очищаемую длительность и выбранные FS одним command/revision; отдельные drafts и фокус сохраняются. Details принимает канонические weekday даты и clean baseline; список/условный Гант используют existing immediate edge commands без открытия панели или изменения условных source дат. Проверены hidden duplicate paths вне фильтров, nested Escape, dirty guards, empty/search/no-ack, 20 keyboard candidates и рост 12 chips у нижнего края. Настоящие source/done/cycle/calendar failures и stale 409 сохраняют draft/IDs и snapshot; потерянный после server apply ответ повторяется exact envelope одним outcome.
+
+Literal §6.1 проверяет смену критичной ветки P/Q, H и оба резерва, summary общего R, одну точную undo и restart с исходными nullable полями/edge IDs. Historical infeasible UI остаётся отдельным preexisting synthetic snapshot без скрытого repair; frozen/exact assertions прежнего explicit-cpm сохранены. В compact-workspace прежний conflict fixture подготовлен явно только в disposable БД; исходные diagnostic/geometry/undo assertions сохранены.
+
+Приёмка выявила и закрепила регрессиями три локальных UI-исправления: Enter выбирает первый найденный predecessor без внешнего submit, chain не перекрывается кнопкой подзадачи, успешный acknowledgement сохраняет прежнее открытое окно быстрых сроков и возвращает title focus. DECISIONS/SCHEDULING/UI/ACCEPTANCE/START_HERE и статус spec/ADR согласованы: C24 фиксирует только порученный объём, D17 — рабочий causal push/tight pull без anchors; C16 остаётся чистым анализом, каскад выполняется только записью перед ним. Схема, migrations, lockfile, security policy и три утверждённых PNG не изменялись.
+
+PASS: финальный `verify` — typecheck/lint, 751/751 unit/integration tests в 42 файлах, production build; format:check, check:package, check:kit, doctor; test:kit 52/52 с настоящим Gitleaks; staged/history guards и Gitleaks. Полный финальный E2E — 118/118 в двух viewport, включая 32/32 новых FS сценария и сохранённые historical/frozen controls, без skips/retries. Synthetic captures просмотрены вне checkout; traces/video/retry выключены.
+
+FAILED: linked-worktree workspace guard — PERSONAL_HOME_PATH в инфраструктурном `.git` pointer; политика/pointer не изменены. Ordinary workspace/preflight назначены финальному integrator gate в корневом checkout после независимого review. Один промежуточный browser teardown graceful-shutdown отказ не повторился в следующем полном прогоне; timeout/retries не увеличены. Не выполнялись Docker smoke, sandbox probe, remote CI, push/deployment/publication.
+
+Ограничения: leaf-only FS, лаг 0, strict nullable/done/direct-edit отказ и отсутствие сохранённого anchor — рабочий D17; missing dates не создаются из parent/today/display. Независимые Task 3/final reviews и корневой preflight впереди. Следующее продуктовое действие — S4 доска/статусы/undo, затем S5 restore/import/export и S6 приёмка; первый релиз не объявлен завершённым.
+
 ## Подготовка локального коммита C23 — 2026-10-08
 
 Подготовлены изменения шапки, переключателя и множественных фильтров C23, светлая обводка условных полос толщиной 0,75 px, соответствующие tests и документация. Предшествующая несвязанная запись аудита публикации/Render исключена из коммита и сохранена в рабочем файле. Application checks приведены в записях C23 и возврата оформления выше по истории этого журнала; код при подготовке не менялся.

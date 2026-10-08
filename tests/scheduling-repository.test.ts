@@ -415,11 +415,21 @@ it('rejects stale undo after another session and raw known FS remains checked', 
   db.prepare(
     "INSERT INTO task_schedule_provenance VALUES (?, 'legacy-interval-unavailable')",
   ).run(a.id);
-  tree = step(tree, {
-    type: 'dependency.create',
-    predecessorId: a.id,
-    successorId: b.id,
-  });
+  const beforeAdd = state();
+  expect(() =>
+    step(tree, {
+      type: 'dependency.create',
+      predecessorId: a.id,
+      successorId: b.id,
+    }),
+  ).toThrow(expect.objectContaining({ code: 'EXPLICIT_PRECEDENCE_CONFLICT' }));
+  expect(state()).toEqual(beforeAdd);
+  // Retain read-only historical diagnostics and stale undo coverage using an
+  // isolated synthetic edge, rather than creating a new live raw conflict.
+  db.prepare(
+    'INSERT INTO dependencies(id,projectId,predecessorId,successorId) VALUES (?,?,?,?)',
+  ).run(randomUUID(), tree.project.id, a.id, b.id);
+  tree = repository.getTree(tree.project.id, session);
   expect(
     tree.schedule.diagnostics.some(
       (d) => d.code === 'EXPLICIT_PRECEDENCE_CONFLICT',

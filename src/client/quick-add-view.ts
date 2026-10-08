@@ -4,6 +4,7 @@ import {
   type SourceFields,
   type Task,
 } from '../shared/contracts.js';
+import { canonicalPredecessorIds } from './predecessor-view.js';
 import type { AddContext } from './QuickAdd.js';
 import { treeRows, subtreeIds } from './tree-view.js';
 import { strings } from './strings.js';
@@ -133,4 +134,32 @@ export function fridayPlan(
     inputFinish: finish,
     durationDays: workingDaysInclusive(start, finish, calendar),
   };
+}
+
+export interface QuickDraft {
+  title: string;
+  plan: SourceFields;
+  predecessorIds: string[];
+  context: AddContext;
+}
+export function sameQuickDraft(left: QuickDraft, right: QuickDraft): boolean {
+  return (
+    left.title === right.title &&
+    left.context.parentId === right.context.parentId &&
+    left.context.afterId === right.context.afterId &&
+    left.plan.inputStart === right.plan.inputStart &&
+    left.plan.inputFinish === right.plan.inputFinish &&
+    left.plan.durationDays === right.plan.durationDays &&
+    canonicalPredecessorIds(left.predecessorIds).join('\0') ===
+      canonicalPredecessorIds(right.predecessorIds).join('\0')
+  );
+}
+export function hasQuickDraft(draft: QuickDraft): boolean {
+  return (
+    draft.title !== '' ||
+    draft.plan.inputStart !== null ||
+    draft.plan.inputFinish !== null ||
+    draft.plan.durationDays !== 1 ||
+    draft.predecessorIds.length > 0
+  );
 }

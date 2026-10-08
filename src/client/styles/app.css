@@ -790,3 +790,17 @@ h2 {
     max-width: 300px;
   }
 }
+
+.tree-predecessor {
+  opacity: 0;
+  flex: 0 0 auto;
+}
+.task-row:hover .tree-predecessor,
+.task-row:focus-within .tree-predecessor {
+  opacity: 1;
+}
+@media (hover: none) {
+  .tree-predecessor {
+    opacity: 1;
+  }
+}

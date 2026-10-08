@@ -457,3 +457,35 @@ it('discloses the project today on hover and focus and updates it across timezon
     vi.useRealTimers();
   }
 });
+
+it('uses sibling HTML chain controls for conditional leaves and Alt+L without starting move/resize or selection', async () => {
+  const tree = optionalTreeFixture(),
+    p = props(tree),
+    onPredecessors = vi.fn();
+  const view = render(<Gantt {...p} onPredecessors={onPredecessors} />);
+  const trigger = screen.getByRole('button', {
+      name: 'После окончания: Работа C',
+    }),
+    bar = screen.getByRole('button', { name: /Работа C, 2026/ });
+  expect(trigger).toBeInstanceOf(HTMLButtonElement);
+  expect(trigger.parentElement?.tagName).toBe('foreignObject');
+  expect(trigger.parentElement?.closest('[role="button"]')).toBeNull();
+  fireEvent.keyDown(bar, { key: 'l', altKey: true });
+  expect(onPredecessors).toHaveBeenCalledExactlyOnceWith(
+    tree.tasks[2],
+    trigger,
+  );
+  fireEvent.pointerDown(trigger, { button: 0, clientX: 100 });
+  fireEvent.pointerUp(trigger, { clientX: 140 });
+  await userEvent.click(trigger);
+  expect(p.onPlan).not.toHaveBeenCalled();
+  expect(p.onSelect).not.toHaveBeenCalled();
+  expect(onPredecessors).toHaveBeenCalledTimes(2);
+  trigger.focus();
+  expect(trigger).toHaveFocus();
+  expect(
+    screen.queryByRole('button', { name: 'После окончания: Этап P' }),
+  ).not.toBeInTheDocument();
+  view.rerender(<Gantt {...p} disabled onPredecessors={onPredecessors} />);
+  expect(trigger).toBeDisabled();
+});

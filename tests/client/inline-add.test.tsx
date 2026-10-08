@@ -216,3 +216,40 @@ it('keeps the inline editor, selection and selected tree row on actual pointer s
   expect(p.onPlan).not.toHaveBeenCalled();
   expect(p.onToggle).not.toHaveBeenCalled();
 });
+
+it('opens the leaf chain action with Alt+L without selection/move and keeps its actual trigger', async () => {
+  const tree = optionalTreeFixture(),
+    onPredecessors = vi.fn(),
+    onSelect = vi.fn(),
+    onAction = vi.fn();
+  render(
+    <TaskTree
+      tasks={tree.tasks}
+      collapsed={new Set()}
+      selectedId={null}
+      onToggle={vi.fn()}
+      onSelect={onSelect}
+      onAction={onAction}
+      onPredecessors={onPredecessors}
+    />,
+  );
+  const row = screen.getByRole('treeitem', { name: /^Работа C,/ }),
+    trigger = screen.getByRole('button', { name: 'После окончания: Работа C' });
+  expect(trigger).toBeInstanceOf(HTMLButtonElement);
+  fireEvent.keyDown(row, { key: 'l', altKey: true });
+  expect(onPredecessors).toHaveBeenLastCalledWith(tree.tasks[2], trigger);
+  await userEvent.click(trigger);
+  expect(onPredecessors).toHaveBeenCalledTimes(2);
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(onAction).not.toHaveBeenCalled();
+  expect(
+    screen.queryByRole('button', { name: 'После окончания: Этап P' }),
+  ).not.toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole('treeitem', { name: /^Этап P,/ }), {
+    key: 'l',
+    altKey: true,
+  });
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Выберите конечную работу',
+  );
+});

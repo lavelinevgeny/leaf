@@ -18,6 +18,9 @@ export const calendarDateSchema = z
     );
   }, 'Invalid calendar date');
 export const uuidSchema = z.uuid();
+const predecessorIdsSchema = z
+  .array(uuidSchema)
+  .refine((ids) => new Set(ids).size === ids.length, 'Duplicate predecessors');
 export const taskTitleSchema = z.string().trim().min(1).max(300);
 export const projectTitleSchema = z.string().trim().min(1).max(120);
 export const calendarTypeSchema = z.enum(['weekdays', 'all-days']);
@@ -56,6 +59,7 @@ export const optionalEditSchema = z.strictObject({
       inputStart: calendarDateSchema.nullable().optional(),
       inputFinish: calendarDateSchema.nullable().optional(),
       durationDays: z.number().int().min(1).max(1000000).nullable().optional(),
+      predecessorIds: predecessorIdsSchema.optional(),
     })
     .refine((value) => Object.keys(value).length > 0, 'Empty changes'),
 });
@@ -372,6 +376,7 @@ export const commandV2Schema = z.discriminatedUnion('type', [
     parentId: uuidSchema.nullable(),
     afterId: uuidSchema.optional(),
     preserveWork: z.boolean().optional(),
+    predecessorIds: predecessorIdsSchema.optional(),
   }),
   z.strictObject({
     type: z.literal('task.move'),

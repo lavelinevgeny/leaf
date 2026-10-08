@@ -6,6 +6,10 @@ import { PlanFields } from '../../src/client/PlanFields.js';
 import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { sourceOf } from '../../src/client/planning-view.js';
+import { TaskPanel } from '../../src/client/TaskPanel.js';
+import { optionalTreeFixture } from './fixtures.js';
+import type { Command, ProjectTree } from '../../src/shared/contracts.js';
+import { waitFor } from '@testing-library/react';
 import { task } from './fixtures.js';
 afterEach(cleanup);
 function Editor({
@@ -237,4 +241,157 @@ it('does not recommit a focused text buffer after an external discard', async ()
   await user.tab();
   expect(start).toHaveValue('09.10.2026');
   expect(onChange).not.toHaveBeenCalled();
+});
+
+function panelProps(
+  tree: ProjectTree,
+  onSave: (
+    changes: Extract<Command, { type: 'task.edit' }>['changes'],
+  ) => Promise<ProjectTree | null>,
+) {
+  return {
+    tree,
+    task: tree.tasks[1]!,
+    tasks: tree.tasks,
+    removed: false,
+    tab: 'details' as const,
+    onTab: vi.fn(),
+    onDependency: vi.fn(async () => true),
+    onNeighbor: vi.fn(),
+    onShow: vi.fn(),
+    backTask: null,
+    onBack: vi.fn(),
+    collapsed: new Set<string>(),
+    onToggle: vi.fn(),
+    onSelect: vi.fn(),
+    onAction: vi.fn(),
+    onMove: vi.fn(),
+    onSave,
+    onDirty: vi.fn(),
+    onClose: vi.fn(),
+    busy: false,
+    retry: false,
+    conflict: false,
+    locked: false,
+    feedback: null,
+  };
+}
+function fsPanelFixture() {
+  const tree = optionalTreeFixture();
+  tree.tasks = [
+    task(1, {
+      title: 'A',
+      inputStart: '2026-10-08',
+      inputFinish: '2026-10-09',
+    }),
+    task(2, {
+      title: 'B',
+      inputStart: '2026-10-08',
+      inputFinish: '2026-10-09',
+    }),
+  ];
+  tree.schedule = { ...tree.schedule, tasks: {}, summaries: {}, display: {} };
+  const ack: ProjectTree = {
+    ...tree,
+    project: { ...tree.project, revision: 1 },
+    tasks: [
+      tree.tasks[0]!,
+      {
+        ...tree.tasks[1]!,
+        inputStart: '2026-10-12',
+        inputFinish: '2026-10-13',
+      },
+    ],
+    dependencies: [
+      {
+        id: task(90).id,
+        projectId: tree.project.id,
+        predecessorId: tree.tasks[0]!.id,
+        successorId: tree.tasks[1]!.id,
+      },
+    ],
+  };
+  return { tree, ack };
+}
+async function choosePanelA(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'После окончания' }));
+  await user.type(screen.getByRole('searchbox'), 'A');
+  await user.keyboard('{ArrowDown}{Enter}{Escape}');
+}
+it('takes canonical Details source and relation baseline from a relation-only Save response', async () => {
+  const { tree, ack } = fsPanelFixture();
+  const onSave = vi.fn(async () => ack);
+  render(<TaskPanel {...panelProps(tree, onSave)} />);
+  const user = userEvent.setup();
+  await choosePanelA(user);
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  await screen.findByText('Сохранено');
+  expect(onSave).toHaveBeenCalledExactlyOnceWith({
+    predecessorIds: [tree.tasks[0]!.id],
+  });
+  expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
+  expect(screen.getByLabelText('Окончание')).toHaveValue('13.10.2026');
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+});
+it('keeps a newer full panel draft dirty after deferred Save and reconciles its baseline without claiming success', async () => {
+  const { tree, ack } = fsPanelFixture();
+  let resolve!: (value: ProjectTree) => void;
+  const onSave = vi.fn(
+    () =>
+      new Promise<ProjectTree>((done) => {
+        resolve = done;
+      }),
+  );
+  render(<TaskPanel {...panelProps(tree, onSave)} />);
+  const user = userEvent.setup();
+  await choosePanelA(user);
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
+  resolve(ack);
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
+  );
+  expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик');
+  expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
+  expect(screen.getByText('Есть несохранённые изменения')).toBeInTheDocument();
+  onSave.mockImplementationOnce(async () => ack);
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  expect(onSave).toHaveBeenLastCalledWith({
+    description: 'Новый черновик',
+    inputStart: '2026-10-08',
+    inputFinish: '2026-10-09',
+  });
+});
+it('handles global acknowledged replay without replacing newer edits, then explicit discard restores all canonical fields', async () => {
+  const { tree, ack } = fsPanelFixture();
+  const p = panelProps(
+    tree,
+    vi.fn(async () => null),
+  );
+  const view = render(<TaskPanel {...p} />);
+  const user = userEvent.setup();
+  await choosePanelA(user);
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
+  view.rerender(
+    <TaskPanel
+      {...p}
+      task={ack.tasks[1]!}
+      tree={ack}
+      tasks={ack.tasks}
+      saveAcknowledgement={ack}
+    />,
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик'),
+  );
+  expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Отбросить изменения' }));
+  expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
+  expect(screen.getByLabelText('Описание')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: 'После окончания' }));
+  expect(
+    screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+  ).toBeInTheDocument();
 });

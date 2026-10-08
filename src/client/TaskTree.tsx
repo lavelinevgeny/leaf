@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ControlIcon } from './ControlIcon.js';
 import { draftTaskId } from './quick-add-view.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { compactDateLabel, computedDateLabel } from './gantt-view.js';
@@ -14,6 +15,7 @@ interface Props {
   onToggle: (id: string) => void;
   onSelect: (task: Task) => void;
   onAction: (action: TreeAction, task: Task) => void;
+  onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   rootId?: string;
   label?: string;
   rows?: ReturnType<typeof treeRows>;
@@ -35,6 +37,7 @@ export function TaskTree({
   onToggle,
   onSelect,
   onAction,
+  onPredecessors,
   rootId,
   label = strings.tasks,
   rows: suppliedRows,
@@ -57,6 +60,13 @@ export function TaskTree({
   const navigableRows = rows.filter((row) => row.task.id !== draftTaskId);
   const [focusedId, setFocusedId] = useState<string | null>(selectedId);
   const refs = useRef(new Map<string, HTMLDivElement>());
+  const chainRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [hint, setHint] = useState('');
+  useEffect(() => {
+    if (!hint) return;
+    const timer = window.setTimeout(() => setHint(''), 2500);
+    return () => window.clearTimeout(timer);
+  }, [hint]);
   const focusId = rows.some((row) => row.task.id === focusedId)
     ? focusedId
     : navigableRows[0]?.task.id;
@@ -97,6 +107,11 @@ export function TaskTree({
           );
       }}
     >
+      {hint && (
+        <span className="predecessor-hint" role="status">
+          {hint}
+        </span>
+      )}
       {rows.map(({ task, depth, hasChildren }, index) => {
         if (task.id === draftTaskId)
           return (
@@ -154,6 +169,17 @@ export function TaskTree({
             onClick={() => onSelect(task)}
             onKeyDown={(event) => {
               if (event.target !== event.currentTarget) return;
+              if (event.altKey && event.key.toLowerCase() === 'l') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (disabled) return;
+                if (summaryIds.has(task.id)) setHint(strings.chooseLeaf);
+                else {
+                  const trigger = chainRefs.current.get(task.id);
+                  if (trigger) onPredecessors?.(task, trigger);
+                }
+                return;
+              }
               if (
                 event.altKey &&
                 ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
@@ -288,6 +314,32 @@ export function TaskTree({
             >
               {compactDateLabel(task, schedule) || strings.noDate}
             </span>
+            {onPredecessors && !summaryIds.has(task.id) && (
+              <button
+                type="button"
+                className="predecessor-action tree-predecessor"
+                data-quick-input={quickInputId}
+                ref={(node) => {
+                  if (node) chainRefs.current.set(task.id, node);
+                  else chainRefs.current.delete(task.id);
+                }}
+                aria-label={`${strings.afterFinish}: ${task.title}`}
+                title={`${strings.afterFinish} · Alt+L`}
+                disabled={disabled}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onPredecessors(task, event.currentTarget);
+                }}
+                onKeyDown={(event) => {
+                  if (['Enter', ' ', 'Escape'].includes(event.key))
+                    event.stopPropagation();
+                }}
+              >
+                <ControlIcon name="chain" />
+              </button>
+            )}
             <button
               type="button"
               className="add-child"

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 import {
   readTree,
@@ -67,6 +68,20 @@ async function seed(
     predecessorId: a,
     successorId: b,
   });
+  // C24 repairs a new live FS conflict. Keep this existing diagnostic/geometry
+  // scenario historical by preparing a conflict only in its synthetic DB.
+  const db = new Database(runtime.databasePath);
+  try {
+    db.prepare('UPDATE tasks SET inputStart=?, inputFinish=? WHERE id=?').run(
+      '2026-10-05',
+      '2026-10-06',
+      b,
+    );
+  } finally {
+    db.close();
+  }
+  tree = await readTree(page, runtime.origin, tree.project.id);
+  expect(tree.schedule.analysisStatus).toBe('infeasible');
   await page.goto(runtime.origin);
   await expect(
     page.getByRole('heading', { name: tree.project.title, exact: true }),

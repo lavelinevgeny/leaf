@@ -1,4 +1,16 @@
 export const strings = {
+  removedPredecessor: 'Задача удалена',
+  afterFinish: 'После окончания',
+  newTaskPredecessors: 'После окончания новой задачи',
+  closePredecessors: 'Закрыть выбор предшественников',
+  searchPredecessor: 'Поиск предшественника',
+  removePredecessor: 'Убрать предшественника',
+  noOtherLeaves: 'Нет других конечных работ',
+  noPredecessorResults: 'Ничего не найдено',
+  chooseLeaf: 'Выберите конечную работу',
+  incompletePredecessorHint:
+    'Связь сохранится; перенос использует только заданные даты',
+
   app: 'leaf',
   loading: 'Загрузка…',
   projects: 'Проекты',

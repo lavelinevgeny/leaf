@@ -371,7 +371,7 @@ test('deep update and presentation actions preserve authoritative analysis and k
     }),
   ).toBeFocused();
 });
-test('conditional unknown keeps partial copy then known FS conflict suppresses all critical styles', async ({
+test('conditional unknown keeps partial copy while predecessor delay cascades real dates', async ({
   page,
   runtime,
 }) => {
@@ -429,21 +429,29 @@ test('conditional unknown keeps partial copy then known FS conflict suppresses a
     changes: { inputFinish: '2026-10-10' },
   });
   expect(conflicted.project.revision).toBe(tree.project.revision + 1);
-  expect(conflicted.schedule.analysisStatus).toBe('infeasible');
-  if (conflicted.schedule.analysisStatus !== 'infeasible')
-    throw new Error('Expected infeasible');
+  expect(conflicted.schedule.analysisStatus).toBe('incomplete');
+  if (conflicted.schedule.analysisStatus !== 'incomplete')
+    throw new Error('Expected incomplete');
+  expect(
+    conflicted.tasks.find((task) => task.id === seeded.by.B),
+  ).toMatchObject({
+    inputStart: '2026-10-11',
+    inputFinish: '2026-10-11',
+    durationDays: null,
+  });
   expect(conflicted.schedule.diagnostics.map((d) => d.code)).toEqual([
-    'EXPLICIT_PRECEDENCE_CONFLICT',
     'UNKNOWN_INTERVAL',
   ]);
-  expect(conflicted.schedule.partialAnalysis).toBeNull();
+  expect(conflicted.schedule.partialAnalysis?.partialCriticalTaskIds).toEqual([
+    seeded.by.C!,
+  ]);
   expect(conflicted.schedule.criticalTaskIds).toEqual([]);
   expect(conflicted.schedule.criticalDependencyIds).toEqual([]);
   await page.reload();
   for (const name of ['A', 'B'])
     await expect(
       page.getByRole('treeitem', { name: new RegExp('^' + name + ',') }),
-    ).toHaveAttribute('aria-description', /Предшественник/);
+    ).not.toHaveAttribute('aria-description', /Предшественник/);
   await expect(page.getByRole('treeitem', { name: /^U,/ })).not.toHaveAttribute(
     'aria-description',
     /Предшественник/,
@@ -451,14 +459,13 @@ test('conditional unknown keeps partial copy then known FS conflict suppresses a
   await page.getByRole('treeitem', { name: /^A,/ }).press('Enter');
   await expect(
     page.getByText(/Предшественник заканчивается после явного начала/).first(),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByText(/Полная пара дат не задана/)).toHaveCount(0);
-  await expect(page.getByText(/Анализ датированной части/)).toHaveCount(0);
-  expect(
-    await page
-      .locator('.gantt-work.critical, .gantt-work.partial-critical')
-      .count(),
-  ).toBe(0);
+  await expect(
+    page.getByText(/Анализ датированной части/).first(),
+  ).toBeVisible();
+  expect(await page.locator('.gantt-work.critical').count()).toBe(0);
+  expect(await page.locator('.gantt-work.partial-critical').count()).toBe(1);
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).tasks.find(
       (t) => t.id === u,

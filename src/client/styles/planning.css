@@ -795,3 +795,130 @@
   border-color: #a64a50;
   color: #8b3038;
 }
+
+.predecessor-picker {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 12;
+  width: min(320px, 100%);
+  padding: 12px;
+  background: white;
+  border: 1px solid var(--leaf-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #142a161a;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  color: var(--leaf-text);
+}
+.predecessor-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.predecessor-heading button,
+.predecessor-chip button {
+  padding: 2px 6px;
+}
+.predecessor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block: 8px;
+}
+.predecessor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: #e9f3ed;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.predecessor-picker input {
+  width: 100%;
+}
+.predecessor-results {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 8px;
+}
+.predecessor-results button {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+}
+.predecessor-results button[aria-selected='true'] {
+  background: #e9f3ed;
+}
+.predecessor-results small {
+  color: #66756c;
+  font-size: 11px;
+}
+.predecessor-picker :focus-visible,
+.predecessor-action:focus-visible {
+  outline: 2px solid #337a55;
+  outline-offset: 2px;
+}
+.predecessor-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+}
+.immediate-predecessors .predecessor-picker {
+  z-index: 30;
+}
+.gantt-predecessor {
+  opacity: 0;
+  background: #fff;
+}
+[data-gantt-row].selected .gantt-predecessor,
+[data-gantt-row]:hover .gantt-predecessor,
+[data-gantt-row]:focus-within .gantt-predecessor {
+  opacity: 1;
+}
+@media (hover: none) {
+  .gantt-predecessor {
+    opacity: 1;
+  }
+}
+.task-tree {
+  position: relative;
+}
+.task-tree .predecessor-hint {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  right: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--leaf-border);
+  border-radius: 4px;
+  background: white;
+  font-size: 12px;
+}
+.tree-predecessor {
+  position: absolute;
+  right: 112px;
+}
+.task-panel .quick-line {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}
+.task-panel .quick-line input {
+  grid-column: 2 / 4;
+}
+.task-panel .quick-line .predecessor-action {
+  grid-column: 3;
+}
+.task-panel .quick-line .quick-submit {
+  grid-column: 2 / 4;
+}

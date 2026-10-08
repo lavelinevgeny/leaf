@@ -1,6 +1,9 @@
-type IconName = 'search' | 'filter' | 'chevron' | 'list' | 'gantt' | 'undo';
+type IconName =
+  'search' | 'filter' | 'chevron' | 'list' | 'gantt' | 'undo' | 'chain';
 
 const paths: Record<IconName, string> = {
+  chain:
+    'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2',
   search: 'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',
   filter: 'M3 4h18l-7 8v7l-4 2v-9L3 4Z',
   chevron: 'm6 9 6 6 6-6',

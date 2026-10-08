@@ -29,6 +29,16 @@
 - При incomplete общий CPM неизвестен: floats отсутствуют и global critical IDs пусты с пояснением. Датированная часть анализируется отдельными множествами по одному Hknown, только в полностью известных слабосвязных компонентах. Infeasible имеет приоритет и не выдаёт normal/partial critical results. Display/summary не являются CPM input.
 - C17 однократно материализует доступные абсолютные legacy Auto/done intervals в source pair с exact private archive; done использует completed pair. Без исторической опоры даты не придумываются. Preview/digest acknowledgement перед existing legacy upgrade, temporal replay/undo и M01–M10 заданы [ADR 007](adr/007-legacy-scheduling-migration.md). Actual production operation требует отдельного поручения.
 
+## FS-каскад команд — C24 / рабочий D17, 2026-10-08
+
+[Спецификация C24](superpowers/specs/2026-10-08-fs-dependencies-design.md) и [ADR 011](adr/011-fs-command-cascade.md) расширяют запись перед существующим чистым анализом C16. Create/edit принимают command-only `predecessorIds`; create сохраняет задачу и входящие рёбра атомарно, edit заменяет входящие endpoints при наличии поля, `[]` удаляет их. DTO/SQL задачи не получают это поле; existing dependency.create/delete используют тот же validator.
+
+Причинный каскад активируется добавленным ребром или изменённой достоверной finish-границей source работы; fan-in использует максимум, diamond обрабатывается один раз. Неизменный max, поглощённая промежутком задержка и неизменный finish останавливают ветвь. Поздний bound переносит известный start при необходимости; ранний pull требует прежней tight-границы, неизменных endpoints и достоверных old/new finishes всех predecessors. Полная pair сохраняет рабочую длину и точную nullable duration; start-only меняет только начало. Finish-only/duration-only/null dates, conditional display, parent group и today не выводят отсутствующие даты. Отдельных anchors и режимов нет; удаление связи не меняет сроки.
+
+Прямой конфликт source edit, необходимый push done, cycle/invalid endpoints, overflow и непереносимый затронутый invalid/unavailable source дают полный rollback. Unavailable marker не снимается каскадом. GET, analysis, title/status-only, undo, cached exact retry и frozen replay не чинят historical conflicts. C16 по-прежнему диагностирует infeasible synthetic/historical snapshots; старое разрешение сохранить конфликт как infeasible не действует для нового прямого FS-конфликта активной команды C24.
+
+Одна транзакция включает patch, cascade, summary/CPM, revision, outcome и undo. Parent criticality использует общий проектный CPM без отдельного vertex: §6.1 задаёт переключение P/Q и literal floats. Undo возвращает точные nullable source поля и IDs одним действием; exact retry возвращает сохранённый outcome без повторного переноса.
+
 ## Прежний контракт S2–S3
 
 Это предлагаемая формализация обсуждённых требований. Она обязательна для согласованной реализации в рамках defaults D04–D12; не утверждать, что каждый математический нюанс отдельно согласован владельцем. Изменения семантики оформлять ADR и тестами.
@@ -112,7 +122,7 @@ projectFloat[t] = LS[t] - ES[t]
 
 Пример: A длится 2 дня; B фиксирована [5,6), ждёт A; C независима, [0,10). У A `projectFloat=7`, у B `projectFloat=4`, у C 0. Но A может задержаться лишь на 3 дня, прежде чем нарушит фиксацию B: `constraintFloat=3`. Это не одна и та же цифра.
 
-При невыполнимых ограничениях вернуть diagnostics и proposal preview, но не показывать нормальный критический путь для всего проекта. Сохранение пользовательского противоречивого ограничения допустимо с явным статусом infeasible; прежний валидный расчёт не выдавать за новый. Вся операция атомарна.
+При невыполнимых ограничениях вернуть diagnostics и proposal preview, но не показывать нормальный критический путь для всего проекта. В историческом S2–S3 сохранение пользовательского противоречивого ограничения было допустимо с явным статусом infeasible; активные команды C24 проверяются по правилам выше; прежний валидный расчёт не выдавать за новый. Вся операция атомарна.
 
 Для `done` сохранить плановый интервал; автосдвиг завершённой работы запрещён и обрабатывается как ограничение. Отметка done не уменьшает длительность до нуля. Нет переноса от «сегодня», actual start/finish и remaining duration в V1. Возврат из done восстанавливает прежний режим после явного действия.
 

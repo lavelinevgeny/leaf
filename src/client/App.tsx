@@ -25,7 +25,15 @@ import { ControlIcon } from './ControlIcon.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
 import { workingDaysInclusive } from '../domain/calendar.js';
 import { gesturePatch, newTaskPlan } from './planning-view.js';
-import { draftTask, parentPlan } from './quick-add-view.js';
+import {
+  draftTask,
+  parentPlan,
+  sameQuickDraft,
+  hasQuickDraft,
+  type QuickDraft,
+} from './quick-add-view.js';
+import { PredecessorPicker } from './PredecessorPicker.js';
+import { incomingPredecessorIds } from './predecessor-view.js';
 import './styles/app.css';
 import './styles/planning.css';
 
@@ -36,13 +44,11 @@ type Mutation =
       envelope: CommandEnvelope;
       knownIds: string[];
       quickKey?: string;
+      sentQuickDraft?: QuickDraft;
+      panelTaskId?: string;
+      immediateTaskId?: string;
     }
   | { kind: 'rename'; projectId: string; envelope: RenameProject };
-interface QuickDraft {
-  title: string;
-  plan: SourceFields;
-  context: AddContext;
-}
 interface PanelVisit {
   taskId: string;
   tab: PanelTab;
@@ -80,6 +86,20 @@ export function App() {
   const [quickDrafts, setQuickDrafts] = useState<Record<string, QuickDraft>>(
     {},
   );
+  const [quickAcknowledgements, setQuickAcknowledgements] = useState<
+    Record<string, number>
+  >({});
+  const [panelAcknowledgement, setPanelAcknowledgement] =
+    useState<ProjectTree | null>(null);
+  const [immediateHost, setImmediateHost] = useState<{
+    taskId: string;
+    projectId: string;
+    trigger: HTMLElement;
+  } | null>(null);
+  const immediateHostRef = useRef(immediateHost);
+  immediateHostRef.current = immediateHost;
+  const [restoreImmediate, setRestoreImmediate] =
+    useState<typeof immediateHost>(null);
   const [quickEditing, setQuickEditing] = useState(false);
   const quickOrigin = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,13 +130,7 @@ export function App() {
   const context = (tree && quickDrafts[tree.project.id]?.context) || {
     parentId: null,
   };
-  const hasQuickDrafts = Object.values(quickDrafts).some(
-    (draft) =>
-      draft.title !== '' ||
-      draft.plan.inputStart !== null ||
-      draft.plan.inputFinish !== null ||
-      draft.plan.durationDays !== 1,
-  );
+  const hasQuickDrafts = Object.values(quickDrafts).some(hasQuickDraft);
   const uncertain = !!pending && !!error?.uncertain;
   const panelRetry =
     uncertain &&
@@ -137,6 +151,7 @@ export function App() {
       [projectId]: update(
         previous[projectId] ?? {
           title: '',
+          predecessorIds: [],
           context: { parentId: null },
           plan: newTaskPlan(),
         },
@@ -181,6 +196,7 @@ export function App() {
         ...previous,
         [next.project.id]: {
           title: saved?.title ?? '',
+          predecessorIds: saved?.predecessorIds ?? [],
           plan: saved?.plan ?? newTaskPlan(),
           context: {
             parentId,
@@ -206,7 +222,8 @@ export function App() {
       if (current) return current;
       if (
         dirtyRef.current ||
-        quickDrafts[`${next.project.id}/${previous.id}`]?.title
+        (quickDrafts[`${next.project.id}/${previous.id}`] &&
+          hasQuickDraft(quickDrafts[`${next.project.id}/${previous.id}`]!))
       )
         return previous;
       requestAnimationFrame(() =>
@@ -233,6 +250,7 @@ export function App() {
   }
   async function loadProject(id: string, preserveDraft = false) {
     setDurationChoice(null);
+    if (!preserveDraft) setImmediateHost(null);
     const sequence = ++loadSequence.current;
     currentProject.current = id;
     setLoading(true);
@@ -342,8 +360,8 @@ export function App() {
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
   });
-  async function execute(job: Mutation): Promise<boolean> {
-    if (lock.current) return false;
+  async function execute(job: Mutation): Promise<ProjectTree | null> {
+    if (lock.current) return null;
     lock.current = true;
     setBusy(true);
     setError(null);
@@ -355,7 +373,19 @@ export function App() {
         job.kind === 'command'
           ? await api.command(job.projectId, job.envelope)
           : await api.rename(job.projectId, job.envelope);
-      apply(next);
+      if (!apply(next))
+        throw new ApiError('STALE_SNAPSHOT', strings.staleSnapshot);
+      if (job.kind === 'command' && job.panelTaskId)
+        setPanelAcknowledgement(next);
+      if (
+        job.kind === 'command' &&
+        job.immediateTaskId &&
+        immediateHostRef.current?.taskId === job.immediateTaskId &&
+        immediateHostRef.current.projectId === job.projectId
+      ) {
+        setRestoreImmediate(immediateHostRef.current);
+        setImmediateHost(null);
+      }
       if (
         job.kind === 'command' &&
         job.envelope.command.type === 'task.create'
@@ -367,15 +397,22 @@ export function App() {
             task.title === added.title.trim() &&
             task.parentId === added.parentId,
         );
-        updateQuick(job.quickKey ?? job.projectId, (draft) => ({
-          title: draft.title.trim() === added.title.trim() ? '' : draft.title,
-          plan:
-            draft.title.trim() === added.title.trim()
-              ? newTaskPlan()
-              : draft.plan,
-          context: created
-            ? { parentId: created.parentId, afterId: created.id }
-            : draft.context,
+        const key = job.quickKey ?? job.projectId;
+        updateQuick(key, (draft) => {
+          if (!job.sentQuickDraft || !sameQuickDraft(draft, job.sentQuickDraft))
+            return draft;
+          return {
+            title: '',
+            plan: newTaskPlan(),
+            predecessorIds: [],
+            context: created
+              ? { parentId: created.parentId, afterId: created.id }
+              : draft.context,
+          };
+        });
+        setQuickAcknowledgements((previous) => ({
+          ...previous,
+          [key]: (previous[key] ?? 0) + 1,
         }));
         if (added.parentId)
           setCollapsed((previous) => {
@@ -386,7 +423,7 @@ export function App() {
       }
       pendingRef.current = null;
       setPending(null);
-      return true;
+      return next;
     } catch (failure) {
       const failed = asError(failure);
       setError(failed);
@@ -395,20 +432,28 @@ export function App() {
         pendingRef.current = null;
         setPending(null);
       }
-      return false;
+      return null;
     } finally {
       lock.current = false;
       setBusy(false);
     }
   }
-  async function command(value: Command, quickKey?: string) {
-    if (conflict || loading || lock.current || !treeRef.current) return false;
+  async function commandTree(
+    value: Command,
+    options: {
+      quickKey?: string;
+      sentQuickDraft?: QuickDraft;
+      panelTaskId?: string;
+      immediateTaskId?: string;
+    } = {},
+  ) {
+    if (conflict || loading || lock.current || !treeRef.current) return null;
     if (pendingRef.current) return execute(pendingRef.current);
     return execute({
       kind: 'command',
       projectId: treeRef.current.project.id,
       knownIds: treeRef.current.tasks.map((task) => task.id),
-      ...(quickKey ? { quickKey } : {}),
+      ...options,
       envelope: {
         contractVersion: 2,
         expectedRevision: treeRef.current.project.revision,
@@ -416,6 +461,74 @@ export function App() {
         command: value,
       },
     });
+  }
+  async function command(value: Command) {
+    return !!(await commandTree(value));
+  }
+  function openPredecessors(task: Task, trigger: HTMLElement) {
+    if (
+      !canNavigate() ||
+      !treeRef.current ||
+      task.projectId !== treeRef.current.project.id
+    )
+      return;
+    if (treeRef.current.tasks.some((child) => child.parentId === task.id)) {
+      setNotice(strings.chooseLeaf);
+      return;
+    }
+    setImmediateHost({ taskId: task.id, projectId: task.projectId, trigger });
+  }
+  function closePredecessors() {
+    setRestoreImmediate(immediateHostRef.current);
+    setImmediateHost(null);
+  }
+  useEffect(() => {
+    if (!restoreImmediate || busy || loading || pending) return;
+    if (
+      restoreImmediate.trigger.isConnected &&
+      !restoreImmediate.trigger.matches(':disabled') &&
+      !restoreImmediate.trigger.closest('[hidden]')
+    )
+      restoreImmediate.trigger.focus();
+    else {
+      const inputId =
+        restoreImmediate.trigger.dataset.quickInput ?? 'quick-task';
+      const scope =
+        inputId === 'quick-subtask'
+          ? document.getElementById('panel-subtasks')
+          : document;
+      if (!scope || !focusTaskRow(restoreImmediate.taskId, scope))
+        (
+          document.getElementById(inputId) ??
+          document.getElementById('quick-task')
+        )?.focus();
+    }
+    setRestoreImmediate(null);
+  }, [restoreImmediate, busy, loading, pending]);
+  function immediateRelation(id: string, remove: boolean) {
+    const host = immediateHostRef.current,
+      current = treeRef.current;
+    if (
+      !host ||
+      !current ||
+      host.projectId !== current.project.id ||
+      !canNavigate()
+    )
+      return;
+    const edge = current.dependencies.find(
+      (edge) => edge.predecessorId === id && edge.successorId === host.taskId,
+    );
+    if (remove && !edge) return;
+    void commandTree(
+      remove
+        ? { type: 'dependency.delete', dependencyId: edge!.id }
+        : {
+            type: 'dependency.create',
+            predecessorId: id,
+            successorId: host.taskId,
+          },
+      { immediateTaskId: host.taskId },
+    );
   }
   function preserveWork(parentId: string | null) {
     const current = treeRef.current;
@@ -433,21 +546,31 @@ export function App() {
     title: string,
     addContext: AddContext,
     plan: SourceFields,
+    predecessorIds: string[],
     quickKey?: string,
   ) {
     if (!canNavigate()) return false;
     const preserved = preserveWork(addContext.parentId);
     if (preserved === null) return false;
-    return command(
+    return !!(await commandTree(
       {
         type: 'task.create',
+        predecessorIds: [...predecessorIds],
         ...plan,
         title,
         ...addContext,
         ...(preserved ? { preserveWork: true } : {}),
       },
-      quickKey,
-    );
+      {
+        quickKey: quickKey ?? treeRef.current!.project.id,
+        sentQuickDraft: {
+          title,
+          context: { ...addContext },
+          plan: { ...plan },
+          predecessorIds: [...predecessorIds],
+        },
+      },
+    ));
   }
   function selectTask(task: Task) {
     if (!canNavigate()) return;
@@ -785,7 +908,12 @@ export function App() {
                   Object.fromEntries(
                     Object.entries(previous).map(([id, draft]) => [
                       id,
-                      { ...draft, title: '', plan: newTaskPlan() },
+                      {
+                        ...draft,
+                        title: '',
+                        plan: newTaskPlan(),
+                        predecessorIds: [],
+                      },
                     ]),
                   ),
                 );
@@ -810,7 +938,7 @@ export function App() {
               {strings.reload}
             </button>
           )}
-          {uncertain && !panelRetry && (
+          {uncertain && (
             <button
               type="button"
               disabled={busy}
@@ -1042,6 +1170,19 @@ export function App() {
                     !!quickDrafts[tree.project.id]?.plan.inputFinish,
                   input: (
                     <QuickAdd
+                      tree={tree}
+                      predecessorIds={
+                        quickDrafts[tree.project.id]?.predecessorIds ?? []
+                      }
+                      onPredecessors={(predecessorIds) =>
+                        updateQuick(tree.project.id, (draft) => ({
+                          ...draft,
+                          predecessorIds,
+                        }))
+                      }
+                      acknowledgement={
+                        quickAcknowledgements[tree.project.id] ?? 0
+                      }
                       key={tree.project.id}
                       inline
                       onEditing={setQuickEditing}
@@ -1095,6 +1236,7 @@ export function App() {
                   dirty ||
                   projectDirty
                 }
+                onPredecessors={openPredecessors}
                 onPlan={(task, kind, target) =>
                   void planTask(task, kind, target)
                 }
@@ -1109,6 +1251,22 @@ export function App() {
           )}
         </div>
       </main>
+      {immediateHost && tree && immediateHost.projectId === tree.project.id && (
+        <div className="immediate-predecessors">
+          <PredecessorPicker
+            tree={tree}
+            successorId={immediateHost.taskId}
+            selectedIds={incomingPredecessorIds(tree, immediateHost.taskId)}
+            disabled={
+              busy || loading || !!pending || conflict || dirty || projectDirty
+            }
+            {...(error ? { error: error.message } : {})}
+            onAdd={(id) => immediateRelation(id, false)}
+            onRemove={(id) => immediateRelation(id, true)}
+            onClose={closePredecessors}
+          />
+        </div>
+      )}
       {durationChoice && (
         <div
           role="dialog"
@@ -1139,7 +1297,10 @@ export function App() {
           tree={tree}
           tab={panelTab}
           onTab={setPanelTab}
-          onDependency={command}
+          onDependency={(value) =>
+            canNavigate() ? command(value) : Promise.resolve(false)
+          }
+          onPredecessors={openPredecessors}
           onNeighbor={selectNeighbor}
           onShow={showOnGantt}
           backTask={backTask}
@@ -1161,8 +1322,12 @@ export function App() {
           onSelect={selectSubtask}
           onAction={subtaskAction}
           onMove={(task, parentId) => void moveTask(task, parentId)}
+          saveAcknowledgement={panelAcknowledgement}
           onSave={(changes) =>
-            command({ type: 'task.edit', taskId: selectedTask.id, changes })
+            commandTree(
+              { type: 'task.edit', taskId: selectedTask.id, changes },
+              { panelTaskId: selectedTask.id },
+            )
           }
           onDirty={setPanelDirty}
           onClose={closePanel}
@@ -1173,6 +1338,16 @@ export function App() {
           feedback={projectControlsOpen ? null : errorView}
           subtaskInput={
             <QuickAdd
+              tree={tree}
+              predecessorIds={subtaskDraft?.predecessorIds ?? []}
+              onPredecessors={(predecessorIds) =>
+                updateQuick(subtaskKey, (draft) => ({
+                  ...draft,
+                  context: subtaskContext,
+                  predecessorIds,
+                }))
+              }
+              acknowledgement={quickAcknowledgements[subtaskKey] ?? 0}
               key={subtaskKey}
               calendar={tree.project.calendarType}
               timezone={tree.project.timezone}
@@ -1200,8 +1375,8 @@ export function App() {
                   context: subtaskContext,
                 }))
               }
-              onCreate={(title, context, plan) =>
-                createTask(title, context, plan, subtaskKey)
+              onCreate={(title, context, plan, predecessorIds) =>
+                createTask(title, context, plan, predecessorIds, subtaskKey)
               }
               busy={busy || loading}
               blocked={

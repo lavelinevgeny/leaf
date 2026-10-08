@@ -5,6 +5,12 @@ import {
   type SourceFields,
   type ProjectTree,
 } from '../shared/contracts.js';
+import { PredecessorPicker } from './PredecessorPicker.js';
+import { ControlIcon } from './ControlIcon.js';
+import {
+  incomingPredecessorIds,
+  canonicalPredecessorIds,
+} from './predecessor-view.js';
 import { PlanFields } from './PlanFields.js';
 import { sourceOf } from './planning-view.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
@@ -38,9 +44,11 @@ interface Props {
   onSelect: (task: Task) => void;
   onAction: (action: TreeAction, task: Task) => void;
   onMove: (task: Task, parentId: string | null) => void;
+  onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onSave: (
-    changes: Partial<Draft> & import('../shared/contracts.js').SourcePatch,
-  ) => Promise<boolean>;
+    changes: Extract<Command, { type: 'task.edit' }>['changes'],
+  ) => Promise<ProjectTree | null>;
+  saveAcknowledgement?: ProjectTree | null;
   onDirty: (dirty: boolean) => void;
   onClose: () => void;
   busy: boolean;
@@ -67,7 +75,9 @@ export function TaskPanel({
   onSelect,
   onAction,
   onMove,
+  onPredecessors,
   onSave,
+  saveAcknowledgement,
   onDirty,
   onClose,
   busy,
@@ -84,6 +94,49 @@ export function TaskPanel({
     sourceOf(task),
   );
   const [saved, setSaved] = useState(false);
+  const [incoming, setIncoming] = useState(() =>
+    incomingPredecessorIds(tree, task.id),
+  );
+  const [baselineIncoming, setBaselineIncoming] = useState(() =>
+    incomingPredecessorIds(tree, task.id),
+  );
+  const [predecessorsOpen, setPredecessorsOpen] = useState(false);
+  const predecessorTrigger = useRef<HTMLButtonElement>(null);
+  const currentDraft = useRef({ details: draft, plan, incoming });
+  currentDraft.current = { details: draft, plan, incoming };
+  const acknowledgedRevision = useRef(tree.project.revision);
+  const submitted = useRef<typeof currentDraft.current | null>(null);
+  const draftKey = (value: typeof currentDraft.current) =>
+    JSON.stringify({
+      details: value.details,
+      plan: value.plan,
+      incoming: canonicalPredecessorIds(value.incoming),
+    });
+  function reconcile(ack: ProjectTree) {
+    const sent = submitted.current;
+    const canonical = ack.tasks.find((item) => item.id === task.id);
+    if (!sent || !canonical || ack.project.id !== task.projectId) return;
+    submitted.current = null;
+    acknowledgedRevision.current = ack.project.revision;
+    const details = draftOf(canonical),
+      source = sourceOf(canonical),
+      ids = incomingPredecessorIds(ack, task.id);
+    setBaseline(details);
+    setBaselinePlan(source);
+    setBaselineIncoming(ids);
+    if (draftKey(currentDraft.current) === draftKey(sent)) {
+      setDraft(details);
+      setPlan(source);
+      setIncoming(ids);
+      setSaved(true);
+      onDirty(false);
+    } else {
+      setSaved(false);
+    }
+  }
+  useEffect(() => {
+    if (saveAcknowledgement) reconcile(saveAcknowledgement);
+  }, [saveAcknowledgement]);
   const [planValid, setPlanValid] = useState(true);
   const [moveParent, setMoveParent] = useState(task.parentId ?? '');
   const previousParent = useRef(task.parentId);
@@ -101,7 +154,13 @@ export function TaskPanel({
     return tasks.some((child) => child.parentId === task.id);
   }
   const planDirty = JSON.stringify(plan) !== JSON.stringify(baselinePlan);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || planDirty;
+  const incomingDirty =
+    canonicalPredecessorIds(incoming).join('\0') !==
+    canonicalPredecessorIds(baselineIncoming).join('\0');
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(baseline) ||
+    planDirty ||
+    incomingDirty;
   const summary = tasks.some((child) => child.parentId === task.id);
   const excluded = removed ? new Set<string>() : subtreeIds(tasks, task.id);
   useEffect(() => {
@@ -121,14 +180,21 @@ export function TaskPanel({
   }, [dirty, onDirty]);
   // Server reloads may update the tree, but never replace a dirty panel draft.
   useEffect(() => {
-    if (!dirty && !busy) {
+    if (
+      !dirty &&
+      !busy &&
+      tree.project.revision >= acknowledgedRevision.current
+    ) {
       const fresh = draftOf(task);
       setDraft(fresh);
       setBaseline(fresh);
       setPlan(sourceOf(task));
       setBaselinePlan(sourceOf(task));
+      const ids = incomingPredecessorIds(tree, task.id);
+      setIncoming(ids);
+      setBaselineIncoming(ids);
     }
-  }, [task, dirty, busy]);
+  }, [task, tree, dirty, busy]);
   function update<K extends keyof Draft>(field: K, value: Draft[K]) {
     setDraft((previous) => ({ ...previous, [field]: value }));
     setSaved(false);
@@ -139,8 +205,7 @@ export function TaskPanel({
     const fields = { ...draft, title: draft.title.trim() };
     if (!summary && planDirty && !sourceFieldsSchema.safeParse(plan).success)
       return;
-    const changes: Partial<Draft> &
-      import('../shared/contracts.js').SourcePatch = {};
+    const changes: Extract<Command, { type: 'task.edit' }>['changes'] = {};
     for (const key of ['title', 'description', 'status'] as const)
       if (fields[key] !== baseline[key])
         Object.assign(changes, { [key]: fields[key] });
@@ -148,13 +213,13 @@ export function TaskPanel({
       for (const key of ['inputStart', 'inputFinish', 'durationDays'] as const)
         if (plan[key] !== baselinePlan[key] || (canAdopt && !dirty))
           Object.assign(changes, { [key]: plan[key] });
-    if (await onSave(changes)) {
-      setDraft(fields);
-      setBaseline(fields);
-      setBaselinePlan(plan);
-      setSaved(true);
-      onDirty(false);
-    }
+    if (!summary && incomingDirty)
+      changes.predecessorIds = canonicalPredecessorIds(incoming);
+    // An exact replay retains this original submitted draft, including post-send changes.
+    if (!retry || !submitted.current)
+      submitted.current = structuredClone(currentDraft.current);
+    const ack = await onSave(changes);
+    if (ack) reconcile(ack);
   }
   return (
     <aside
@@ -279,6 +344,54 @@ export function TaskPanel({
                     setSaved(false);
                   }}
                 />
+                {summary ? (
+                  <p className="field-hint">{strings.chooseLeaf}</p>
+                ) : (
+                  <div className="panel-predecessors">
+                    <button
+                      ref={predecessorTrigger}
+                      type="button"
+                      aria-label={strings.afterFinish}
+                      aria-expanded={predecessorsOpen}
+                      disabled={removed || conflict}
+                      onClick={() => setPredecessorsOpen((open) => !open)}
+                    >
+                      <ControlIcon name="chain" /> {strings.afterFinish}
+                    </button>
+                    <div className="predecessor-chips">
+                      {canonicalPredecessorIds(incoming).map((id) => (
+                        <span className="predecessor-chip" key={id}>
+                          {tree.tasks.find((task) => task.id === id)?.title ??
+                            strings.removedPredecessor}
+                        </span>
+                      ))}
+                    </div>
+                    {predecessorsOpen && (
+                      <PredecessorPicker
+                        tree={tree}
+                        successorId={task.id}
+                        selectedIds={incoming}
+                        disabled={busy || locked || removed || conflict}
+                        onAdd={(id) => {
+                          setIncoming(
+                            canonicalPredecessorIds([...incoming, id]),
+                          );
+                          setSaved(false);
+                        }}
+                        onRemove={(id) => {
+                          setIncoming(
+                            incoming.filter((selected) => selected !== id),
+                          );
+                          setSaved(false);
+                        }}
+                        onClose={() => {
+                          setPredecessorsOpen(false);
+                          predecessorTrigger.current?.focus();
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
                 <ScheduleStatus tree={tree} task={task} />
                 <label>
                   {strings.description}
@@ -337,6 +450,10 @@ export function TaskPanel({
                     setBaseline(fresh);
                     setPlan(sourceOf(task));
                     setBaselinePlan(sourceOf(task));
+                    const ids = incomingPredecessorIds(tree, task.id);
+                    setIncoming(ids);
+                    setBaselineIncoming(ids);
+                    submitted.current = null;
                     setSaved(false);
                     onDirty(false);
                   }}
@@ -364,6 +481,7 @@ export function TaskPanel({
                 onToggle={onToggle}
                 onSelect={onSelect}
                 onAction={onAction}
+                onPredecessors={onPredecessors}
                 label={strings.subtasks}
                 schedule={tree.schedule}
                 quickInputId="quick-subtask"

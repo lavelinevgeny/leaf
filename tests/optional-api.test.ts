@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { buildApp, type LeafApp } from '../src/server/app.js';
+import { commandV2Schema, taskV2Schema } from '../src/shared/contracts.js';
 import {
   rawSyntheticCountsAndRevision,
   validLegacyBodyForRoute,
@@ -15,6 +16,35 @@ let dir: string;
 let projectId: string;
 let cookie: string;
 const origin = 'http://127.0.0.1:3000';
+it('accepts command-only relations, rejecting duplicate IDs and DTO leakage', () => {
+  const a = '22222222-2222-4222-8222-222222222222';
+  const b = '22222222-2222-4222-8222-222222222223';
+  expect(
+    commandV2Schema.safeParse({
+      type: 'task.create',
+      title: 'B',
+      parentId: null,
+      predecessorIds: [a],
+    }).success,
+  ).toBe(true);
+  expect(
+    commandV2Schema.safeParse({
+      type: 'task.edit',
+      taskId: b,
+      changes: { predecessorIds: [] },
+    }).success,
+  ).toBe(true);
+  for (const changes of [
+    { predecessorIds: [a, a] },
+    { predecessorIds: ['invalid'] },
+    {},
+  ])
+    expect(
+      commandV2Schema.safeParse({ type: 'task.edit', taskId: b, changes })
+        .success,
+    ).toBe(false);
+  expect(taskV2Schema.shape).not.toHaveProperty('predecessorIds');
+});
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'leaf-optional-api-'));
   app = await buildApp({
@@ -87,6 +117,104 @@ it('creates explicit source atomically, retries exactly and undoes once', async 
   });
   expect(undone.statusCode).toBe(200);
   expect(undone.json().tasks).toEqual([]);
+});
+
+it('HTTP command-only create and replacement return canonical sources; errors show safe titles and roll back', async () => {
+  let revision = 0;
+  const send = async (command: unknown) => {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/commands`,
+      headers: { origin, cookie, 'x-leaf-contract-version': '2' },
+      payload: {
+        contractVersion: 2,
+        expectedRevision: revision,
+        operationId: randomUUID(),
+        command,
+      },
+    });
+    if (response.statusCode === 200)
+      revision = response.json().project.revision;
+    return response;
+  };
+  await send({
+    type: 'project.schedule',
+    changes: { calendarType: 'all-days' },
+  });
+  const aResponse = await send({
+    type: 'task.create',
+    title: 'Synthetic predecessor',
+    parentId: null,
+    inputStart: '2026-10-05',
+    inputFinish: '2026-10-07',
+  });
+  const a = aResponse.json().tasks[0].id;
+  const before = rawSyntheticCountsAndRevision(db, projectId);
+  const created = await send({
+    type: 'task.create',
+    title: 'Synthetic successor',
+    parentId: null,
+    inputStart: '2026-10-07',
+    inputFinish: '2026-10-08',
+    predecessorIds: [a],
+  });
+  expect(created.statusCode).toBe(200);
+  const b = created
+    .json()
+    .tasks.find(
+      (task: { title: string }) => task.title === 'Synthetic successor',
+    );
+  expect(b).toMatchObject({
+    inputStart: '2026-10-08',
+    inputFinish: '2026-10-09',
+    durationDays: null,
+  });
+  expect(b).not.toHaveProperty('predecessorIds');
+  expect(created.json().dependencies).toHaveLength(1);
+  const after = rawSyntheticCountsAndRevision(db, projectId);
+  expect(after.revision).toBe(before.revision + 1);
+  expect(after.counts).toEqual(
+    before.counts.map(
+      (count, index) => count + ([1, 2, 3, 4].includes(index) ? 1 : 0),
+    ),
+  );
+  const removed = await send({
+    type: 'task.edit',
+    taskId: b.id,
+    changes: { predecessorIds: [] },
+  });
+  expect(removed.statusCode).toBe(200);
+  expect(removed.json().dependencies).toEqual([]);
+  const replaced = await send({
+    type: 'task.edit',
+    taskId: b.id,
+    changes: { predecessorIds: [a] },
+  });
+  expect(replaced.statusCode).toBe(200);
+  expect(replaced.json().dependencies).toHaveLength(1);
+  const stable = rawSyntheticCountsAndRevision(db, projectId);
+  const duplicate = await send({
+    type: 'task.edit',
+    taskId: b.id,
+    changes: { predecessorIds: [a, a] },
+  });
+  expect(duplicate.statusCode).toBe(400);
+  expect(rawSyntheticCountsAndRevision(db, projectId)).toEqual(stable);
+  const conflict = await send({
+    type: 'task.edit',
+    taskId: b.id,
+    changes: { inputStart: '2026-10-07', inputFinish: '2026-10-08' },
+  });
+  expect(conflict.statusCode).toBe(400);
+  expect(conflict.json()).toMatchObject({
+    code: 'EXPLICIT_PRECEDENCE_CONFLICT',
+    message: expect.stringContaining(
+      'Synthetic predecessor → Synthetic successor',
+    ),
+  });
+  expect(conflict.json().message).not.toContain(a);
+  expect(conflict.json().message).not.toContain(b.id);
+  expect(rawSyntheticCountsAndRevision(db, projectId)).toEqual(stable);
 });
 
 it.each([

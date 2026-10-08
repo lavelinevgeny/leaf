@@ -19,7 +19,7 @@ const test = base.extend<{
     }
   },
 });
-test('optional source, linked input, API mismatch rollback, FS conflict, undo and restart', async ({
+test('optional source, linked input, API mismatch rollback, FS cascade, undo and restart', async ({
   page,
   runtime,
 }, info) => {
@@ -101,12 +101,18 @@ test('optional source, linked input, API mismatch rollback, FS conflict, undo an
     predecessorId: a,
     successorId: c,
   });
-  expect(tree.schedule.feasibility).toBe('infeasible');
+  expect(tree.schedule.analysisStatus).toBe('ready');
+  expect(tree.tasks.find((task) => task.id === c)).toMatchObject({
+    inputStart: '2026-10-07',
+    inputFinish: '2026-10-08',
+    durationDays: null,
+  });
+  expect(tree.schedule.criticalTaskIds).toEqual([a, c].sort());
   await page.reload();
   for (const id of [a, c])
     await expect(
       page.locator(`[role="treeitem"][data-task-id="${id}"]`),
-    ).toHaveAttribute(
+    ).not.toHaveAttribute(
       'aria-description',
       /Предшественник заканчивается после явного начала/,
     );
@@ -119,11 +125,17 @@ test('optional source, linked input, API mismatch rollback, FS conflict, undo an
     }),
   ).toHaveCount(0);
   await page.getByRole('treeitem', { name: /Работа C,/ }).click();
+  await expect(page.getByLabel('Начало', { exact: true })).toHaveValue(
+    '07.10.2026',
+  );
+  await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue(
+    '08.10.2026',
+  );
   await expect(
     panel.getByText('Предшественник заканчивается после явного начала.', {
       exact: true,
     }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
   await expect(
     page.locator('[data-dependency-edge="' + tree.dependencies[0]!.id + '"]'),
