@@ -187,3 +187,94 @@ test('project rename preserves dirty Escape and returns focus after save and cle
     await runtime.close();
   }
 });
+test('long project title keeps the first task within the compact header limit', async ({
+  page,
+}) => {
+  const runtime = await syntheticRuntime();
+  try {
+    let tree = await seedOptionalRuntime(page, runtime);
+    for (let index = 0; index < 12; index++)
+      tree = await send(page, runtime.origin, tree, {
+        type: 'task.create',
+        title: `Дополнительная работа ${index + 1}`,
+        parentId: null,
+      });
+    const title =
+      'Демонстрационный проект с длинным названием для проверки компактной шапки рабочего пространства'.slice(
+        0,
+        90,
+      );
+    expect(title).toHaveLength(90);
+    const renamed = await page.request.patch(
+      `${runtime.origin}/api/projects/${tree.project.id}`,
+      {
+        headers: { Origin: runtime.origin, 'X-Leaf-Contract-Version': '2' },
+        data: {
+          contractVersion: 2,
+          expectedRevision: tree.project.revision,
+          operationId: crypto.randomUUID(),
+          title,
+        },
+      },
+    );
+    expect(renamed.status()).toBe(200);
+    await page.goto(runtime.origin);
+    const heading = page.getByRole('heading', { name: title, exact: true });
+    await expect(heading).toBeVisible();
+    const first = await page.getByRole('treeitem').first().boundingBox();
+    expect(first).not.toBeNull();
+    expect(first!.y).toBeLessThanOrEqual(230);
+    const rows = await page.getByRole('treeitem').evaluateAll(
+      (elements) =>
+        elements.filter((element) => {
+          const box = element.getBoundingClientRect();
+          return (
+            box.top >= 0 &&
+            box.bottom <=
+              Math.min(
+                window.innerHeight,
+                element.closest('.plan-scroll')!.getBoundingClientRect().bottom,
+              )
+          );
+        }).length,
+    );
+    expect(rows).toBeGreaterThanOrEqual(10);
+    const overflow = await page
+      .locator('.workspace')
+      .evaluate((element) => element.scrollWidth > element.clientWidth);
+    expect(overflow).toBe(false);
+    for (const control of [
+      page.getByRole('button', { name: 'Действия проекта' }),
+      page.getByRole('searchbox', { name: 'Поиск задач' }),
+      page.getByRole('combobox', { name: 'Фильтр по статусу' }),
+    ]) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x + box!.width).toBeLessThanOrEqual(
+        page.viewportSize()!.width,
+      );
+    }
+    console.log(
+      `CW01 ${page.viewportSize()!.width}x${page.viewportSize()!.height}: first row y=${first!.y}, fully visible rows=${rows}, overflow=${overflow}`,
+    );
+    await page.getByRole('treeitem').first().click();
+    await expect(
+      page.getByRole('complementary', { name: 'Задача', exact: true }),
+    ).toBeVisible();
+    const panelFirst = await page.getByRole('treeitem').first().boundingBox();
+    expect(panelFirst!.y).toBeLessThanOrEqual(230);
+    await expect(heading).toBeVisible();
+    const actions = page.getByRole('button', { name: 'Действия проекта' });
+    await actions.click();
+    await expect(
+      page.getByRole('button', { name: 'Настройки проекта', exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(actions).toBeFocused();
+    await expect(
+      page.getByRole('complementary', { name: 'Задача', exact: true }),
+    ).toBeVisible();
+  } finally {
+    await runtime.close();
+  }
+});

@@ -581,19 +581,39 @@ h2 {
 }
 .project-title-line {
   min-width: 0;
-  flex: 1 1 180px;
+  flex: 1 1 120px;
 }
 .project-title-line h1 {
   min-width: 0;
+  flex: 1;
   font-size: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .workspace-header {
-  padding-top: 12px;
+  padding-top: 6px;
 }
 .view-label {
-  padding-block: 8px 6px;
+  padding-block: 4px;
   font-size: 13px;
 }
 .tree-toolbar {
   padding-bottom: 8px;
+}
+
+.workspace-content {
+  padding-top: 8px;
+}
+
+.task-filters label {
+  margin-bottom: 0;
+}
+.workspace-content.planning-workspace .tree-toolbar {
+  padding-block: 4px;
+}
+
+.task-filters label input,
+.task-filters label select {
+  margin-top: 0;
 }

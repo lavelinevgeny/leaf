@@ -36,6 +36,11 @@ export function ProjectControls(props: Props) {
   const opener = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const visibilityCallback = useRef(onVisibility);
+  useEffect(() => {
+    visibilityCallback.current = onVisibility;
+  }, [onVisibility]);
+  useEffect(() => () => visibilityCallback.current(false), []);
   const unsaved =
     action === 'settings' ? dirty : rename !== null && rename !== project.title;
   const close = () => {
@@ -95,6 +100,7 @@ export function ProjectControls(props: Props) {
             ];
             if (event.key === 'Escape') {
               event.preventDefault();
+              event.stopPropagation();
               setMenu(false);
               opener.current?.focus();
             }

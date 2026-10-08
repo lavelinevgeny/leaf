@@ -7,9 +7,16 @@ HTMLDialogElement.prototype.showModal = function () {
 HTMLDialogElement.prototype.close = function () {
   this.removeAttribute('open');
 };
-import { cleanup, render, screen, within } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { ProjectControls } from '../../src/client/ProjectControls.js';
 import { App } from '../../src/client/App.js';
 import { project, task, emptySchedule } from './fixtures.js';
 const other = {
@@ -164,6 +171,14 @@ it('keeps uncertain draft and makes the existing retry available inside the moda
   );
   expect(writes).toHaveLength(2);
   expect(writes[1]![1].body).toBe(writes[0]![1].body);
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Закрыть' })).toBeEnabled(),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Сохранить настройки проекта' }),
+    ).toBeDisabled(),
+  );
   screen.getByRole('button', { name: 'Закрыть' }).focus();
   await userEvent.keyboard('{Escape}');
   expect(screen.queryByRole('dialog')).toBeNull();
@@ -231,4 +246,59 @@ it('preserves failed settings and allows explicit discard after a definite rejec
   screen.getByRole('button', { name: 'Закрыть' }).focus();
   await userEvent.keyboard('{Escape}');
   expect(screen.queryByRole('dialog')).toBeNull();
+});
+it('shows recovery feedback after a failed switch unmounts clean settings', async () => {
+  await openSettings();
+  fetchMock.mockImplementationOnce(() =>
+    Promise.reject(new TypeError('synthetic offline')),
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: /Другой демо-проект/ }),
+  );
+  expect(await screen.findByText(/Нет связи с сервером/)).toBeVisible();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fetchMock.mockImplementationOnce(() =>
+    Promise.resolve(new Response(JSON.stringify({ ...tree, project: other }))),
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+  await screen.findByRole('heading', { name: other.title });
+  expect(screen.queryByText(/Нет связи с сервером/)).toBeNull();
+});
+
+it('clears visibility only on unmount and uses the latest callback after rerender', async () => {
+  const firstVisibility = vi.fn();
+  const nextVisibility = vi.fn();
+  const props = {
+    project,
+    disabled: false,
+    dirty: false,
+    onSave: vi.fn(async () => true),
+    onDirty: vi.fn(),
+    rename: null,
+    onRenameChange: vi.fn(),
+    onRename: vi.fn(),
+    onOpen: () => true,
+    onVisibility: firstVisibility,
+    feedback: null,
+  };
+  const view = render(<ProjectControls {...props} />);
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Действия проекта' }),
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Настройки проекта' }),
+  );
+  firstVisibility.mockClear();
+  view.rerender(
+    <ProjectControls
+      {...props}
+      onVisibility={nextVisibility}
+      feedback={<p>Сообщение проекта</p>}
+    />,
+  );
+  expect(firstVisibility).not.toHaveBeenCalled();
+  expect(nextVisibility.mock.calls).toEqual([[true]]);
+  expect(screen.getByRole('dialog')).toBeVisible();
+  view.unmount();
+  expect(nextVisibility.mock.calls).toEqual([[true], [false]]);
 });
