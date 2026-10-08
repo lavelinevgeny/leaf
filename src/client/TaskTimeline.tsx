@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { treeRows } from './tree-view.js';
 import { TaskTree, type TreeAction } from './TaskTree.js';
@@ -12,6 +18,11 @@ import {
   type Scale,
 } from './gantt-view.js';
 import { scaleLabels, strings } from './strings.js';
+import {
+  emptyTaskFilter,
+  filterTasks,
+  type TaskFilter,
+} from './task-filter.js';
 export type GanttReveal = { taskId: string; sequence: number };
 interface Props {
   tree: ProjectTree;
@@ -24,6 +35,7 @@ interface Props {
   disabled: boolean;
   show: boolean;
   reveal: GanttReveal | null;
+  filter?: TaskFilter;
 }
 function timelineDate(task: Task, tree: ProjectTree) {
   return (
@@ -42,8 +54,35 @@ export function TaskTimeline({
   disabled,
   show,
   reveal,
+  filter = emptyTaskFilter,
 }: Props) {
-  const rows = treeRows(tree.tasks, collapsed);
+  const projection = useMemo(
+    () => filterTasks(tree.tasks, filter),
+    [tree.tasks, filter],
+  );
+  const filterKey = JSON.stringify(filter);
+  const [filteredCollapse, setFilteredCollapse] = useState({
+    key: filterKey,
+    ids: new Set<string>(),
+  });
+  useEffect(() => {
+    setFilteredCollapse({ key: filterKey, ids: new Set<string>() });
+  }, [filterKey]);
+  const filteredIds =
+    filteredCollapse.key === filterKey
+      ? filteredCollapse.ids
+      : new Set<string>();
+  const effectiveCollapsed = projection.active ? filteredIds : collapsed;
+  const rows = treeRows(projection.tasks, effectiveCollapsed);
+  function toggle(id: string) {
+    if (!projection.active) return onToggle(id);
+    setFilteredCollapse(() => {
+      const ids = new Set(filteredIds);
+      if (ids.has(id)) ids.delete(id);
+      else ids.add(id);
+      return { key: filterKey, ids };
+    });
+  }
   const focusedTask = tree.tasks.find((task) => task.id === selectedId);
   const today = todayInZone(tree.project.timezone);
   const [scale, setScale] = useState<Scale>('days');
@@ -87,22 +126,35 @@ export function TaskTimeline({
     rows,
     schedule: tree.schedule,
     selectedId,
-    collapsed,
-    onToggle,
+    collapsed: effectiveCollapsed,
+    onToggle: toggle,
+    ...(projection.active ? { matchIds: projection.matchIds } : {}),
     onSelect,
     onAction,
   };
+  const results = projection.active && (
+    <p role="status" className="filter-results">
+      {strings.taskMatchCount} {projection.matchIds.size}
+      {tree.tasks.length > 0 && projection.matchIds.size === 0 && (
+        <span className="no-task-matches">{strings.noTaskMatches}</span>
+      )}
+    </p>
+  );
   if (!show)
     return (
-      <div className="plan-scroll" ref={vertical}>
-        <TaskTree {...treeProps} />
-      </div>
+      <>
+        {results}
+        <div className="plan-scroll" ref={vertical}>
+          <TaskTree {...treeProps} />
+        </div>
+      </>
     );
   return (
     <div
       className="task-timeline"
       style={{ '--tree-width': `${width}px` } as CSSProperties}
     >
+      {results}
       <div className="gantt-toolbar">
         <label>
           {strings.scale}

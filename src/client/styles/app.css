@@ -169,6 +169,41 @@ h2 {
   padding: 20px 28px 0;
   border-bottom: 1px solid var(--leaf-border);
 }
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.task-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.task-search input {
+  width: 220px;
+  max-width: 100%;
+}
+.filter-results {
+  margin: 8px 12px;
+  color: var(--leaf-text-muted);
+  font-size: 12px;
+}
+.no-task-matches {
+  display: block;
+  margin-top: 8px;
+}
+.filter-context-label {
+  color: var(--leaf-text-muted);
+  font-size: 10px;
+}
+@media (min-width: 1001px) {
+  .workspace-header.panel-visible {
+    padding-inline-end: 408px;
+  }
+}
 .project-title-line {
   display: flex;
   align-items: center;
@@ -360,6 +395,17 @@ h2 {
   padding: 24px 20px;
   overflow: auto;
   flex: 1;
+}
+.task-panel .quick-add {
+  margin: 18px 0;
+}
+.task-panel .quick-line {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+}
+.task-panel .quick-line button {
+  grid-column: 2;
+  justify-self: start;
 }
 .date-fields {
   display: grid;

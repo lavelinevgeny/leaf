@@ -16,9 +16,11 @@ interface Props {
   label?: string;
   rows?: ReturnType<typeof treeRows>;
   schedule?: ProjectTree['schedule'];
+  matchIds?: ReadonlySet<string>;
+  quickInputId?: string;
 }
-export function focusTaskRow(id: string) {
-  const row = document.querySelector<HTMLElement>(`[data-task-id="${id}"]`);
+export function focusTaskRow(id: string, scope: ParentNode = document) {
+  const row = scope.querySelector<HTMLElement>(`[data-task-id="${id}"]`);
   row?.focus();
   return !!row;
 }
@@ -33,7 +35,10 @@ export function TaskTree({
   label = strings.tasks,
   rows: suppliedRows,
   schedule,
+  matchIds,
+  quickInputId = 'quick-task',
 }: Props) {
+  const summaryIds = new Set(tasks.map((task) => task.parentId));
   const global = new Set(
     schedule?.analysisStatus === 'ready' ? schedule.criticalTaskIds : [],
   );
@@ -48,18 +53,20 @@ export function TaskTree({
     ? focusedId
     : rows[0]?.task.id;
   const previousFocus = useRef<string | null>(null);
+  const ownsFocus = useRef(false);
   useEffect(() => {
     // Restore a nearby row when the focused branch is removed by a command.
     if (
+      ownsFocus.current &&
       previousFocus.current &&
       !rows.some((row) => row.task.id === previousFocus.current) &&
       document.activeElement === document.body
     ) {
       if (focusId) refs.current.get(focusId)?.focus();
-      else document.getElementById('quick-task')?.focus();
+      else document.getElementById(quickInputId)?.focus();
     }
     previousFocus.current = focusedId;
-  }, [tasks, focusedId, focusId, rows]);
+  }, [tasks, focusedId, focusId, rows, quickInputId]);
   function focus(id: string | undefined) {
     if (id) {
       setFocusedId(id);
@@ -67,8 +74,22 @@ export function TaskTree({
     }
   }
   return (
-    <div role="tree" aria-label={label} className="task-tree">
+    <div
+      role="tree"
+      aria-label={label}
+      className="task-tree"
+      onFocus={() => {
+        ownsFocus.current = true;
+      }}
+      onBlur={(event) => {
+        if (event.relatedTarget)
+          ownsFocus.current = event.currentTarget.contains(
+            event.relatedTarget as Node,
+          );
+      }}
+    >
       {rows.map(({ task, depth, hasChildren }, index) => {
+        const contextOnly = matchIds !== undefined && !matchIds.has(task.id);
         const containsCritical =
           schedule?.analysisStatus === 'ready' &&
           schedule.summaries[task.id]?.containsCritical === true;
@@ -93,11 +114,12 @@ export function TaskTree({
             role="treeitem"
             aria-label={`${task.title}, ${statusLabels[task.status]}${computedDateLabel(task, schedule) ? `, ${computedDateLabel(task, schedule)}` : ''}`}
             aria-level={depth + 1}
+            aria-description={contextOnly ? strings.parentContext : undefined}
             aria-expanded={hasChildren ? !collapsed.has(task.id) : undefined}
             aria-selected={selectedId === task.id}
             tabIndex={focusId === task.id ? 0 : -1}
             data-task-id={task.id}
-            className={`task-row${selectedId === task.id ? ' selected' : ''}${hasChildren ? ' summary' : ''}`}
+            className={`task-row${selectedId === task.id ? ' selected' : ''}${summaryIds.has(task.id) ? ' summary' : ''}`}
             style={{ paddingInlineStart: `${16 + depth * 22}px` }}
             onFocus={() => setFocusedId(task.id)}
             onClick={() => onSelect(task)}
@@ -186,6 +208,14 @@ export function TaskTree({
             <span className="task-title" title={task.title}>
               {task.title}
             </span>
+            {contextOnly && (
+              <span
+                className="filter-context-label"
+                title={strings.parentContext}
+              >
+                {strings.context}
+              </span>
+            )}
             {indicator && (
               <span
                 className={

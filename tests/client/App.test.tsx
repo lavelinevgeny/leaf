@@ -172,6 +172,240 @@ async function open() {
 }
 
 describe('client HTTP interactions', () => {
+  it('adds nested work inside the subtasks tab without retargeting the main quick draft', async () => {
+    tree.tasks = [task(1, 'Этап'), task(2, 'Ребёнок', id(1))];
+    await open();
+    const user = userEvent.setup();
+    const mainInput = screen.getByLabelText('Новая задача');
+    await user.type(mainInput, 'Главный черновик');
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    const input = panel.getByLabelText('Новая задача');
+    await user.type(input, 'Новая работа');
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(panel.getByText('Родитель: Этап')).toBeInTheDocument();
+    await user.keyboard('{Tab}');
+    expect(panel.getByText('Родитель: Ребёнок')).toBeInTheDocument();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(input).toHaveValue(''));
+    expect(input).toHaveFocus();
+    expect(mainInput).toHaveValue('Главный черновик');
+    expect(commands[0]?.command).toEqual({
+      type: 'task.create',
+      title: 'Новая работа',
+      parentId: id(2),
+    });
+    expect(
+      panel.getByRole('treeitem', { name: /^Новая работа,/ }),
+    ).toHaveAttribute('aria-level', '2');
+    expect(panel.getByRole('tab', { name: 'Подзадачи' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('returns through nested panels to the originating subtask row and keeps its quick draft', async () => {
+    tree.tasks = [
+      task(1, 'Этап'),
+      task(2, 'Ребёнок', id(1)),
+      task(3, 'Внук', id(2)),
+    ];
+    await open();
+    const user = userEvent.setup();
+    const mainTree = within(screen.getByRole('tree', { name: 'Задачи' }));
+    await user.click(mainTree.getByRole('button', { name: 'Свернуть Этап' }));
+    await user.click(mainTree.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    let panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    await user.type(panel.getByLabelText('Новая задача'), 'Черновик этапа');
+    await user.click(panel.getByRole('treeitem', { name: /^Ребёнок,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    await user.click(panel.getByRole('treeitem', { name: /^Внук,/ }));
+    await user.click(screen.getByRole('button', { name: 'Назад: Ребёнок' }));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('tree', { name: 'Подзадачи' })
+          .querySelector('[data-task-id="' + id(3) + '"]'),
+      ).toHaveFocus(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Назад: Этап' }));
+    panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    await waitFor(() =>
+      expect(panel.getByRole('treeitem', { name: /^Ребёнок,/ })).toHaveFocus(),
+    );
+    expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик этапа');
+    await user.keyboard('{Escape}');
+    expect(mainTree.getByRole('treeitem', { name: /^Этап,/ })).toHaveFocus();
+    expect(
+      mainTree.queryByRole('treeitem', { name: /^Ребёнок,/ }),
+    ).not.toBeInTheDocument();
+    expect(commands).toHaveLength(0);
+  });
+
+  it('keeps a subtask create draft through a lost response and clears only that draft after exact retry', async () => {
+    tree.tasks = [task(1, 'Этап')];
+    await open();
+    const user = userEvent.setup();
+    const mainInput = screen.getByLabelText('Новая задача');
+    await user.type(mainInput, 'Главный черновик');
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    expect(panel.getByText('Подзадач пока нет.')).toBeInTheDocument();
+    fetchMock.mockImplementationOnce(() =>
+      Promise.reject(new TypeError('synthetic offline')),
+    );
+    await user.type(panel.getByLabelText('Новая задача'), 'Ребёнок{Enter}');
+    await panel.findByText(/Нет связи с сервером/);
+    expect(panel.getByLabelText('Новая задача')).toHaveValue('Ребёнок');
+    expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    const firstBody = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith('/commands'))
+      .at(-1)?.[1]?.body;
+    await user.click(panel.getByRole('button', { name: 'Повторить' }));
+    await panel.findByRole('treeitem', { name: /^Ребёнок,/ });
+    expect(
+      fetchMock.mock.calls
+        .filter(([url]) => String(url).endsWith('/commands'))
+        .at(-1)?.[1]?.body,
+    ).toBe(firstBody);
+    expect(panel.getByLabelText('Новая задача')).toHaveValue('');
+    expect(mainInput).toHaveValue('Главный черновик');
+    expect(commands).toHaveLength(1);
+  });
+
+  it('restores focus to the subtask input after deleting its last row', async () => {
+    tree.tasks = [task(1, 'Этап'), task(2, 'Ребёнок', id(1))];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    panel.getByRole('treeitem', { name: /^Ребёнок,/ }).focus();
+    await user.keyboard('{Delete}');
+    await panel.findByText('Подзадач пока нет.');
+    await waitFor(() =>
+      expect(panel.getByLabelText('Новая задача')).toHaveFocus(),
+    );
+    expect(commands[0]?.command).toEqual({
+      type: 'task.delete',
+      taskId: id(2),
+    });
+  });
+
+  it('uses the scoped quick input for subtask Insert and keeps both drafts through tab changes', async () => {
+    tree.tasks = [task(1, 'Этап'), task(2, 'Ребёнок', id(1))];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    await user.type(panel.getByLabelText('Новая задача'), 'Черновик ветки');
+    panel.getByRole('treeitem', { name: /^Ребёнок,/ }).focus();
+    await user.keyboard('{Shift>}{Insert}{/Shift}');
+    expect(panel.getByLabelText('Новая задача')).toHaveFocus();
+    expect(panel.getByText('Родитель: Ребёнок')).toBeInTheDocument();
+    await user.click(panel.getByRole('tab', { name: 'Детали' }));
+    await user.type(panel.getByLabelText('Описание'), 'Черновик деталей');
+    await user.click(panel.getByRole('tab', { name: 'Подзадачи' }));
+    expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик ветки');
+    expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    await user.click(panel.getByRole('treeitem', { name: /^Ребёнок,/ }));
+    expect(panel.getByRole('heading', { name: 'Этап' })).toBeInTheDocument();
+    await user.click(panel.getByRole('tab', { name: 'Детали' }));
+    expect(panel.getByLabelText('Описание')).toHaveValue('Черновик деталей');
+    expect(commands).toHaveLength(0);
+  });
+
+  it('does not take focus from search when a pending subtask create succeeds', async () => {
+    tree.tasks = [task(1, 'Этап')];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    let resolve!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((done) => {
+          resolve = done;
+        }),
+    );
+    await user.type(panel.getByLabelText('Новая задача'), 'Ребёнок{Enter}');
+    expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
+    await user.click(search);
+    resolve(
+      new Response(
+        JSON.stringify({
+          ...tree,
+          project: { ...project, revision: 1 },
+          tasks: [...tree.tasks, task(2, 'Ребёнок', id(1))],
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(panel.getByLabelText('Новая задача')).toHaveValue(''),
+    );
+    expect(search).toHaveFocus();
+  });
+
+  it('returns to scoped input when a visited child has moved outside the parent subtree', async () => {
+    tree.tasks = [task(1, 'Этап'), task(2, 'Ребёнок', id(1))];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(
+      within(screen.getByRole('tree', { name: 'Подзадачи' })).getByRole(
+        'treeitem',
+        { name: /^Ребёнок,/ },
+      ),
+    );
+    await user.selectOptions(screen.getByLabelText('Новый родитель'), '');
+    tree = {
+      ...tree,
+      project: { ...project, revision: 1 },
+      tasks: [task(1, 'Этап'), task(2, 'Ребёнок')],
+    };
+    fetchMock.mockImplementationOnce(() => json(tree));
+    await user.click(screen.getByRole('button', { name: 'Перенести' }));
+    await user.click(screen.getByRole('button', { name: 'Назад: Этап' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    await panel.findByText('Подзадач пока нет.');
+    await waitFor(() =>
+      expect(panel.getByLabelText('Новая задача')).toHaveFocus(),
+    );
+  });
+
+  it('keeps a quick-only draft visible when conflict reload removes its selected parent', async () => {
+    tree.tasks = [task(1, 'Этап')];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
+    fetchMock.mockImplementationOnce(() =>
+      json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
+    );
+    await user.type(
+      panel.getByLabelText('Новая задача'),
+      'Черновик ветки{Enter}',
+    );
+    tree = { ...tree, tasks: [], project: { ...project, revision: 1 } };
+    await user.click(
+      panel.getByRole('button', { name: 'Загрузить актуальный проект' }),
+    );
+    await panel.findByText(/Выбранная задача удалена/);
+    expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик ветки');
+    expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    expect(panel.queryByRole('tree')).not.toBeInTheDocument();
+    expect(commands).toHaveLength(0);
+  });
+
   it('preserves a combined plan draft and retries the exact envelope after a lost save response', async () => {
     tree = { ...tree, tasks: [task(1, 'Работа A')] };
     await open();
@@ -833,7 +1067,9 @@ describe('client HTTP interactions', () => {
     childRow.focus();
     await user.keyboard('{Insert}');
     await user.type(
-      screen.getByLabelText('Новая задача'),
+      within(
+        screen.getByRole('complementary', { name: 'Задача' }),
+      ).getByLabelText('Новая задача'),
       'Сосед ребёнка{Enter}',
     );
     await waitFor(() => expect(commands).toHaveLength(1));

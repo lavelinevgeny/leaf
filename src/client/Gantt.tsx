@@ -79,7 +79,7 @@ export function Gantt({
   useEffect(() => {
     gestureRef.current = null;
     setPreview(null);
-  }, [tree.project.revision, disabled, start, scale]);
+  }, [tree.project.revision, disabled, start, scale, rows]);
   function editable(task: Task) {
     return (
       !disabled &&

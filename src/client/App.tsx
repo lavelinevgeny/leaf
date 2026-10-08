@@ -14,11 +14,13 @@ import { ProjectSidebar } from './ProjectSidebar.js';
 import { QuickAdd, type AddContext } from './QuickAdd.js';
 import { TaskPanel, type PanelTab } from './TaskPanel.js';
 import { focusTaskRow, type TreeAction } from './TaskTree.js';
-import { orderedChildren } from './tree-view.js';
+import { orderedChildren, subtreeIds } from './tree-view.js';
 import { strings } from './strings.js';
 import { ProjectPlan } from './ProjectPlan.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
+import { TaskFilters } from './TaskFilters.js';
+import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
 import { workingDaysInclusive } from '../domain/calendar.js';
 import { gesturePatch } from './planning-view.js';
 import './styles/app.css';
@@ -30,11 +32,17 @@ type Mutation =
       projectId: string;
       envelope: CommandEnvelope;
       knownIds: string[];
+      quickKey?: string;
     }
   | { kind: 'rename'; projectId: string; envelope: RenameProject };
 interface QuickDraft {
   title: string;
   context: AddContext;
+}
+interface PanelVisit {
+  taskId: string;
+  tab: PanelTab;
+  focusId?: string;
 }
 function asError(error: unknown) {
   return error instanceof ApiError
@@ -61,8 +69,10 @@ export function App() {
   } | null>(null);
   const [selected, setSelected] = useState<Task | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>('details');
-  const [panelHistory, setPanelHistory] = useState<string[]>([]);
+  const [panelHistory, setPanelHistory] = useState<PanelVisit[]>([]);
+  const panelOrigin = useRef<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>(emptyTaskFilter);
   const [quickDrafts, setQuickDrafts] = useState<Record<string, QuickDraft>>(
     {},
   );
@@ -178,7 +188,11 @@ export function App() {
       if (!previous) return null;
       const current = next.tasks.find((task) => task.id === previous.id);
       if (current) return current;
-      if (dirtyRef.current) return previous;
+      if (
+        dirtyRef.current ||
+        quickDrafts[`${next.project.id}/${previous.id}`]?.title
+      )
+        return previous;
       requestAnimationFrame(() =>
         document.getElementById('quick-task')?.focus(),
       );
@@ -217,6 +231,7 @@ export function App() {
       setTree(null);
       treeRef.current = null;
       setCollapsed(new Set());
+      setTaskFilter(emptyTaskFilter);
       setRename(null);
     }
     try {
@@ -334,7 +349,7 @@ export function App() {
             task.title === added.title.trim() &&
             task.parentId === added.parentId,
         );
-        updateQuick(job.projectId, (draft) => ({
+        updateQuick(job.quickKey ?? job.projectId, (draft) => ({
           title: draft.title.trim() === added.title.trim() ? '' : draft.title,
           context: created
             ? { parentId: created.parentId, afterId: created.id }
@@ -364,13 +379,14 @@ export function App() {
       setBusy(false);
     }
   }
-  async function command(value: Command) {
+  async function command(value: Command, quickKey?: string) {
     if (conflict || loading || lock.current || !treeRef.current) return false;
     if (pendingRef.current) return execute(pendingRef.current);
     return execute({
       kind: 'command',
       projectId: treeRef.current.project.id,
       knownIds: treeRef.current.tasks.map((task) => task.id),
+      ...(quickKey ? { quickKey } : {}),
       envelope: {
         contractVersion: 2,
         expectedRevision: treeRef.current.project.revision,
@@ -391,22 +407,30 @@ export function App() {
       return window.confirm(strings.preserveConfirm) ? true : null;
     return false;
   }
-  async function createTask(title: string, addContext: AddContext) {
+  async function createTask(
+    title: string,
+    addContext: AddContext,
+    quickKey?: string,
+  ) {
     if (!canNavigate()) return false;
     const preserved = preserveWork(addContext.parentId);
     if (preserved === null) return false;
-    return command({
-      type: 'task.create',
-      title,
-      ...addContext,
-      ...(preserved ? { preserveWork: true } : {}),
-    });
+    return command(
+      {
+        type: 'task.create',
+        title,
+        ...addContext,
+        ...(preserved ? { preserveWork: true } : {}),
+      },
+      quickKey,
+    );
   }
   function selectTask(task: Task) {
     if (!canNavigate()) return;
     setSelected(task);
     setPanelTab('details');
     setPanelHistory([]);
+    panelOrigin.current = task.id;
     setContext({ parentId: task.parentId, afterId: task.id });
   }
   function closePanel() {
@@ -414,17 +438,41 @@ export function App() {
     const id = selected?.id;
     setSelected(null);
     setPanelHistory([]);
-    if (!id || !focusTaskRow(id))
+    const mainTree = document.querySelector(
+      `[role="tree"][aria-label="${strings.tasks}"]`,
+    );
+    if (
+      !mainTree ||
+      !(
+        (id && focusTaskRow(id, mainTree)) ||
+        (panelOrigin.current && focusTaskRow(panelOrigin.current, mainTree))
+      )
+    )
       document.getElementById('quick-task')?.focus();
+  }
+  function selectSubtask(task: Task) {
+    if (!canNavigate()) return;
+    if (selected)
+      setPanelHistory((previous) => [
+        ...previous,
+        { taskId: selected.id, tab: panelTab, focusId: task.id },
+      ]);
+    setSelected(task);
+    setPanelTab('details');
   }
   function selectNeighbor(task: Task) {
     if (!canNavigate()) return;
-    if (selected) setPanelHistory((previous) => [...previous, selected.id]);
+    if (selected)
+      setPanelHistory((previous) => [
+        ...previous,
+        { taskId: selected.id, tab: panelTab },
+      ]);
     setSelected(task);
     setPanelTab('dependencies');
   }
   function showOnGantt(task: Task) {
     if (!canNavigate() || !treeRef.current) return;
+    setTaskFilter(emptyTaskFilter);
     const byId = new Map(treeRef.current.tasks.map((item) => [item.id, item]));
     setCollapsed((previous) => {
       const next = new Set(previous);
@@ -455,6 +503,7 @@ export function App() {
     position?: number,
   ) {
     if (!canNavigate()) return;
+    const originTree = document.activeElement?.closest('[role="tree"]');
     const preserved =
       task.parentId === parentId ? false : preserveWork(parentId);
     if (preserved === null) return;
@@ -477,7 +526,14 @@ export function App() {
           next.delete(parentId);
           return next;
         });
-      requestAnimationFrame(() => focusTaskRow(task.id));
+      requestAnimationFrame(() => {
+        if (
+          !originTree ||
+          !originTree.isConnected ||
+          !focusTaskRow(task.id, originTree)
+        )
+          focusTaskRow(task.id);
+      });
     }
   }
   function action(value: TreeAction, task: Task) {
@@ -810,8 +866,49 @@ export function App() {
   const selectedTask = selected
     ? (tree?.tasks.find((task) => task.id === selected.id) ?? selected)
     : null;
+  const backVisit = panelHistory.at(-1);
   const backTask =
-    tree?.tasks.find((task) => task.id === panelHistory.at(-1)) ?? null;
+    tree?.tasks.find((task) => task.id === backVisit?.taskId) ?? null;
+  const subtaskKey =
+    tree && selectedTask ? `${tree.project.id}/${selectedTask.id}` : '';
+  const subtaskDraft = quickDrafts[subtaskKey];
+  const subtaskIds =
+    tree &&
+    selectedTask &&
+    tree.tasks.some((task) => task.id === selectedTask.id)
+      ? subtreeIds(tree.tasks, selectedTask.id)
+      : new Set<string>();
+  const subtaskParent = subtaskDraft?.context.parentId;
+  const subtaskContext: AddContext = {
+    parentId:
+      subtaskParent && subtaskIds.has(subtaskParent)
+        ? subtaskParent
+        : (selectedTask?.id ?? null),
+  };
+  const subtaskAfter = tree?.tasks.find(
+    (task) => task.id === subtaskDraft?.context.afterId,
+  );
+  if (subtaskAfter && subtaskAfter.parentId === subtaskContext.parentId)
+    subtaskContext.afterId = subtaskAfter.id;
+  function subtaskAction(value: TreeAction, task: Task) {
+    const parentId = value === 'child' ? task.id : task.parentId;
+    if (
+      panelTab === 'subtasks' &&
+      (value === 'child' || value === 'sibling') &&
+      parentId &&
+      subtaskIds.has(parentId)
+    ) {
+      if (!canNavigate()) return;
+      updateQuick(subtaskKey, (draft) => ({
+        ...draft,
+        context: {
+          parentId,
+          ...(value === 'sibling' ? { afterId: task.id } : {}),
+        },
+      }));
+      document.getElementById('quick-subtask')?.focus();
+    } else action(value, task);
+  }
   return (
     <div className="app-shell">
       <ProjectSidebar
@@ -825,21 +922,32 @@ export function App() {
         busy={busy || !!pending || conflict || loading || createUncertain}
       />
       <main className="workspace">
-        <header className="workspace-header">
-          <div className="project-title-line">
-            <h1>{tree?.project.title ?? strings.app}</h1>
+        <header
+          className={`workspace-header${selectedTask ? ' panel-visible' : ''}`}
+        >
+          <div className="workspace-heading">
+            <div className="project-title-line">
+              <h1>{tree?.project.title ?? strings.app}</h1>
+              {tree && (
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-label={strings.renameProject}
+                  disabled={busy || !!pending || conflict}
+                  onClick={() => {
+                    if (canNavigate()) setRename(tree.project.title);
+                  }}
+                >
+                  ✎
+                </button>
+              )}
+            </div>
             {tree && (
-              <button
-                type="button"
-                className="quiet"
-                aria-label={strings.renameProject}
-                disabled={busy || !!pending || conflict}
-                onClick={() => {
-                  if (canNavigate()) setRename(tree.project.title);
-                }}
-              >
-                ✎
-              </button>
+              <TaskFilters
+                filter={taskFilter}
+                onChange={setTaskFilter}
+                disabled={loading}
+              />
             )}
           </div>
           <span className="view-label">{strings.tasks}</span>
@@ -941,6 +1049,7 @@ export function App() {
                 }
                 selectedId={selected?.id ?? null}
                 collapsed={collapsed}
+                filter={taskFilter}
                 onToggle={toggle}
                 onSelect={selectTask}
                 onAction={action}
@@ -996,15 +1105,22 @@ export function App() {
           onShow={showOnGantt}
           backTask={backTask}
           onBack={() => {
-            if (backTask && canNavigate()) {
+            if (backTask && backVisit && canNavigate()) {
               setSelected(backTask);
+              setPanelTab(backVisit.tab);
               setPanelHistory((previous) => previous.slice(0, -1));
+              if (backVisit.focusId)
+                requestAnimationFrame(() => {
+                  const subtree = document.getElementById('panel-subtasks');
+                  if (!subtree || !focusTaskRow(backVisit.focusId!, subtree))
+                    document.getElementById('quick-subtask')?.focus();
+                });
             }
           }}
           collapsed={collapsed}
           onToggle={toggle}
-          onSelect={selectTask}
-          onAction={action}
+          onSelect={selectSubtask}
+          onAction={subtaskAction}
           onMove={(task, parentId) => void moveTask(task, parentId)}
           onSave={(changes) =>
             command({ type: 'task.edit', taskId: selectedTask.id, changes })
@@ -1016,6 +1132,35 @@ export function App() {
           conflict={conflict}
           locked={!!pending || loading || projectDirty}
           feedback={errorView}
+          subtaskInput={
+            <QuickAdd
+              tasks={tree.tasks}
+              rootId={selectedTask.id}
+              inputId="quick-subtask"
+              context={subtaskContext}
+              onContext={(context) =>
+                updateQuick(subtaskKey, (draft) => ({ ...draft, context }))
+              }
+              title={subtaskDraft?.title ?? ''}
+              onTitle={(title) =>
+                updateQuick(subtaskKey, () => ({
+                  title,
+                  context: subtaskContext,
+                }))
+              }
+              onCreate={(title, context) =>
+                createTask(title, context, subtaskKey)
+              }
+              busy={busy || loading}
+              blocked={
+                !!pending ||
+                conflict ||
+                dirty ||
+                projectDirty ||
+                !subtaskIds.size
+              }
+            />
+          }
         />
       )}
     </div>

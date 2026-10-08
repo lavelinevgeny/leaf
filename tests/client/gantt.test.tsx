@@ -25,6 +25,30 @@ function props(tree: ProjectTree) {
     onPlan: vi.fn(),
   };
 }
+it('cancels a pending pointer gesture when filtering changes the shared rows', () => {
+  const tree = optionalTreeFixture();
+  const p = props(tree);
+  const view = render(<Gantt {...p} />);
+  const work = screen.getByRole('button', { name: /Работа A, 2026/ });
+  Object.defineProperty(work, 'setPointerCapture', { value: vi.fn() });
+  function pointer(type: string, clientX: number) {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
+    Object.defineProperty(event, 'pointerId', { value: 7 });
+    fireEvent(work, event);
+  }
+  pointer('pointerdown', 100);
+  pointer('pointermove', 190);
+  pointer('pointerup', 190);
+  expect(p.onPlan).toHaveBeenCalledOnce();
+  p.onPlan.mockClear();
+  pointer('pointerdown', 100);
+  pointer('pointermove', 190);
+  view.rerender(
+    <Gantt {...p} rows={treeRows(tree.tasks.slice(0, 2), new Set())} />,
+  );
+  pointer('pointerup', 190);
+  expect(p.onPlan).not.toHaveBeenCalled();
+});
 it('renders a conditional bar without promoting it to task dates or accepting a gesture', () => {
   const tree = optionalTreeFixture();
   const p = {

@@ -48,6 +48,7 @@ interface Props {
   conflict: boolean;
   locked: boolean;
   feedback: ReactNode;
+  subtaskInput?: ReactNode;
 }
 export function TaskPanel({
   task,
@@ -74,6 +75,7 @@ export function TaskPanel({
   conflict,
   locked,
   feedback,
+  subtaskInput,
 }: Props) {
   const [draft, setDraft] = useState<Draft>(() => draftOf(task));
   const [baseline, setBaseline] = useState<Draft>(() => draftOf(task));
@@ -345,7 +347,10 @@ export function TaskPanel({
             id="panel-subtasks"
             aria-labelledby="tab-subtasks"
           >
-            {tasks.some((child) => child.parentId === task.id) ? (
+            {!summary && !removed && (
+              <p className="empty-state">{strings.emptySubtasks}</p>
+            )}
+            {!removed && (
               <TaskTree
                 tasks={tasks}
                 rootId={task.id}
@@ -356,10 +361,10 @@ export function TaskPanel({
                 onAction={onAction}
                 label={strings.subtasks}
                 schedule={tree.schedule}
+                quickInputId="quick-subtask"
               />
-            ) : (
-              <p className="empty-state">{strings.emptySubtasks}</p>
             )}
+            {subtaskInput}
           </div>
         ) : (
           <div
