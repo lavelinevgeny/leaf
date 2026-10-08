@@ -21,6 +21,7 @@ interface Props {
   disabled: boolean;
   onChange: (source: SourceFields) => void;
   onValidityChange?: (valid: boolean) => void;
+  compact?: boolean;
 }
 export function PlanFields({
   task,
@@ -32,6 +33,7 @@ export function PlanFields({
   disabled,
   onChange,
   onValidityChange,
+  compact = false,
 }: Props) {
   const today = useProjectToday(timezone ?? 'UTC');
   const hintId = useId();
@@ -130,7 +132,9 @@ export function PlanFields({
               }
               invalid={activeError?.field === field}
               highlighted={flash.includes(field)}
-              {...(field === 'inputStart' && timezone ? { today } : {})}
+              {...(field === 'inputStart' && timezone && !compact
+                ? { today }
+                : {})}
               onChange={(value) => change(field, value)}
               onCommit={(value) => commit(field, value)}
             />
@@ -174,7 +178,9 @@ export function PlanFields({
                 }
               }}
             />
-            <span aria-hidden="true">{units}</span>
+            <span aria-hidden="true">
+              {compact ? (calendar === 'weekdays' ? 'р.д.' : 'дн.') : units}
+            </span>
           </span>
         </label>
         <p className="field-hint" id={hintId}>

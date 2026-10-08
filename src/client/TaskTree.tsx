@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { draftTaskId } from './quick-add-view.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { compactDateLabel, computedDateLabel } from './gantt-view.js';
 import { treeRows } from './tree-view.js';
@@ -19,6 +20,8 @@ interface Props {
   schedule?: ProjectTree['schedule'];
   matchIds?: ReadonlySet<string>;
   quickInputId?: string;
+  draftInput?: ReactNode;
+  disabled?: boolean;
 }
 export function focusTaskRow(id: string, scope: ParentNode = document) {
   const row = scope.querySelector<HTMLElement>(`[data-task-id="${id}"]`);
@@ -38,6 +41,8 @@ export function TaskTree({
   schedule,
   matchIds,
   quickInputId = 'quick-task',
+  draftInput,
+  disabled = false,
 }: Props) {
   const summaryIds = new Set(tasks.map((task) => task.parentId));
   const global = new Set(
@@ -49,14 +54,16 @@ export function TaskTree({
   const partialSummaries = new Set(partial?.partialCriticalSummaryIds ?? []);
   const errors = actionableDiagnostics(schedule?.diagnostics ?? []);
   const rows = suppliedRows ?? treeRows(tasks, collapsed, rootId);
+  const navigableRows = rows.filter((row) => row.task.id !== draftTaskId);
   const [focusedId, setFocusedId] = useState<string | null>(selectedId);
   const refs = useRef(new Map<string, HTMLDivElement>());
   const focusId = rows.some((row) => row.task.id === focusedId)
     ? focusedId
-    : rows[0]?.task.id;
+    : navigableRows[0]?.task.id;
   const previousFocus = useRef<string | null>(null);
   const ownsFocus = useRef(false);
   useEffect(() => {
+    if (disabled) return;
     // Restore a nearby row when the focused branch is removed by a command.
     if (
       ownsFocus.current &&
@@ -68,7 +75,7 @@ export function TaskTree({
       else document.getElementById(quickInputId)?.focus();
     }
     previousFocus.current = focusedId;
-  }, [tasks, focusedId, focusId, rows, quickInputId]);
+  }, [tasks, focusedId, focusId, rows, quickInputId, disabled]);
   function focus(id: string | undefined) {
     if (id) {
       setFocusedId(id);
@@ -91,6 +98,16 @@ export function TaskTree({
       }}
     >
       {rows.map(({ task, depth, hasChildren }, index) => {
+        if (task.id === draftTaskId)
+          return (
+            <div
+              key={task.id}
+              className="quick-draft-row"
+              style={{ paddingInlineStart: `${Math.min(depth, 5) * 12}px` }}
+            >
+              {draftInput}
+            </div>
+          );
         const taskErrors = errors.filter((item) =>
           item.taskIds.includes(task.id),
         );
@@ -159,24 +176,37 @@ export function TaskTree({
               }
               if (event.key === 'ArrowDown') {
                 event.preventDefault();
-                focus(rows[index + 1]?.task.id);
+                focus(
+                  rows
+                    .slice(index + 1)
+                    .find((row) => row.task.id !== draftTaskId)?.task.id,
+                );
               }
               if (event.key === 'ArrowUp') {
                 event.preventDefault();
-                focus(rows[index - 1]?.task.id);
+                focus(
+                  rows
+                    .slice(0, index)
+                    .findLast((row) => row.task.id !== draftTaskId)?.task.id,
+                );
               }
               if (event.key === 'Home') {
                 event.preventDefault();
-                focus(rows[0]?.task.id);
+                focus(navigableRows[0]?.task.id);
               }
               if (event.key === 'End') {
                 event.preventDefault();
-                focus(rows.at(-1)?.task.id);
+                focus(navigableRows.at(-1)?.task.id);
               }
               if (event.key === 'ArrowRight') {
                 event.preventDefault();
                 if (hasChildren && collapsed.has(task.id)) onToggle(task.id);
-                else if (hasChildren) focus(rows[index + 1]?.task.id);
+                else if (hasChildren)
+                  focus(
+                    rows
+                      .slice(index + 1)
+                      .find((row) => row.task.id !== draftTaskId)?.task.id,
+                  );
               }
               if (event.key === 'ArrowLeft') {
                 event.preventDefault();
@@ -185,7 +215,8 @@ export function TaskTree({
               }
               if (event.key === 'Enter') {
                 event.preventDefault();
-                onSelect(task);
+                if (event.shiftKey) onAction('child', task);
+                else onSelect(task);
               }
               if (event.key === 'Insert') {
                 event.preventDefault();
@@ -257,6 +288,19 @@ export function TaskTree({
             >
               {compactDateLabel(task, schedule) || strings.noDate}
             </span>
+            <button
+              type="button"
+              className="add-child"
+              disabled={disabled}
+              aria-label={`${strings.addChild}: ${task.title}`}
+              title={`${strings.addChild} · Shift+Enter`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAction('child', task);
+              }}
+            >
+              {strings.addChildShort}
+            </button>
           </div>
         );
       })}

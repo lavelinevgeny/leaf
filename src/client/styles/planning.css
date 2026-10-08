@@ -449,7 +449,12 @@
   }
 }
 .gantt-work.conditional {
-  opacity: 0.42;
+  opacity: 0.8;
+  stroke-dasharray: 4 3;
+  stroke: #5d836a;
+  stroke-width: 1.5;
+  fill: #dbe8df;
+  cursor: pointer;
 }
 .duration-choice {
   position: fixed;
@@ -574,4 +579,170 @@
   margin-top: 4px;
   padding: 2px 6px;
   font-size: 12px;
+}
+
+.task-row {
+  position: relative;
+}
+.add-child {
+  display: none;
+  position: absolute;
+  right: 8px;
+  padding: 3px 7px;
+  font-size: 11px;
+  background: white;
+}
+.task-row:hover .add-child,
+.task-row:focus-within .add-child {
+  display: block;
+}
+.quick-draft-row {
+  height: 38px;
+  border-bottom: 1px solid var(--leaf-border);
+  background: #f0f7f2;
+}
+.planning-workspace .inline-quick-add {
+  margin: 0;
+  padding: 3px 6px;
+  height: 38px;
+}
+.inline-quick-add .quick-line {
+  gap: 5px;
+  height: 32px;
+}
+.inline-quick-add .quick-line input {
+  min-width: 65px;
+  flex: 1;
+  width: 0;
+  padding: 5px 7px;
+  height: 30px;
+}
+.inline-quick-add .quick-line button {
+  padding: 4px 7px;
+  height: 30px;
+}
+.inline-quick-add .quick-submit {
+  background: var(--leaf-accent);
+  color: white;
+}
+.inline-quick-add .quick-line .quick-submit,
+.inline-quick-add .quick-line .quick-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
+  padding: 0;
+  line-height: 1;
+}
+.inline-quick-add .quick-line > .draft-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  border: 1px dashed transparent;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+}
+.inline-quick-add:focus-within .draft-dot {
+  border-color: var(--leaf-accent);
+}
+.schedule-chip {
+  color: #3b6548;
+  background: #e8f1eb;
+  font-size: 11px;
+}
+.quick-schedule {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 30;
+  padding: 18px;
+  border: 1px solid var(--leaf-border);
+  border-radius: 14px;
+  background: white;
+  color: var(--leaf-text);
+  box-shadow: 0 12px 36px #18332230;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+.quick-schedule-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.quick-schedule-heading strong {
+  font-size: 18px;
+}
+.quick-schedule kbd {
+  border: 1px solid var(--leaf-border);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: #59675f;
+}
+.quick-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.quick-presets button {
+  padding: 6px 9px;
+}
+.quick-schedule .plan-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.quick-schedule .date-fields {
+  display: contents;
+}
+.quick-schedule .calendar-field:first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+.quick-schedule .duration-field {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.quick-schedule .calendar-field:nth-child(2) {
+  grid-column: 3;
+  grid-row: 1;
+}
+.quick-schedule .calendar-input input {
+  min-width: 0;
+  font-size: 13px;
+  padding: 6px;
+}
+.quick-schedule .calendar-picker {
+  width: 20px;
+}
+.quick-schedule .duration-input input {
+  min-width: 0;
+}
+.quick-schedule .field-hint,
+.quick-schedule .field-error {
+  grid-column: 1 / -1;
+}
+.quick-schedule-actions {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--leaf-border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.quick-schedule-actions button:last-child {
+  background: var(--leaf-accent);
+  color: white;
+}
+.schedule-chip.invalid {
+  border-color: #a64a50;
+  color: #8b3038;
 }

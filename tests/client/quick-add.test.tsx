@@ -4,14 +4,24 @@ import { useState } from 'react';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
-import { QuickAdd } from '../../src/client/QuickAdd.js';
+import { QuickAdd, type AddContext } from '../../src/client/QuickAdd.js';
 import type { SourceFields } from '../../src/shared/contracts.js';
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
-function Editor({ create = vi.fn(async () => true) }) {
+function Editor({
+  create = vi.fn(async () => true),
+  parentPlan = null,
+}: {
+  create?: (
+    title: string,
+    context: AddContext,
+    plan: SourceFields,
+  ) => Promise<boolean>;
+  parentPlan?: SourceFields | null;
+}) {
   const [title, setTitle] = useState('');
   const [plan, setPlan] = useState<SourceFields>({
     inputStart: null,
@@ -32,6 +42,7 @@ function Editor({ create = vi.fn(async () => true) }) {
       onPlan={setPlan}
       calendar="weekdays"
       timezone="Europe/Moscow"
+      parentPlan={parentPlan}
     />
   );
 }
@@ -57,6 +68,50 @@ it('creates with one day and empty dates; clearing duration submits null', async
     'Работа',
     { parentId: null },
     { inputStart: null, inputFinish: null, durationDays: null },
+  );
+});
+it('Alt+D opens keyboard-accessible presets; invalid Today stays blocked across reopening and a valid parent preset recovers', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-10T09:00:00Z'));
+  const create = vi.fn(async () => true);
+  render(
+    <Editor
+      create={create}
+      parentPlan={{
+        inputStart: '2026-10-08',
+        inputFinish: '2026-10-09',
+        durationDays: 2,
+      }}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText('Новая задача'), 'Черновик');
+  await user.keyboard('{Alt>}d{/Alt}');
+  expect(screen.getByLabelText('Начало')).toHaveFocus();
+  await user.tab();
+  expect(screen.getByLabelText('Календарь: Начало')).toHaveFocus();
+  await user.click(screen.getByRole('button', { name: 'Сегодня: Начало' }));
+  expect(screen.getByRole('alert')).toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: 'Добавить задачу' }),
+  ).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: 'Сроки новой задачи' }));
+  await user.click(screen.getByRole('button', { name: 'Сроки новой задачи' }));
+  expect(
+    screen.getByRole('button', { name: 'Добавить задачу' }),
+  ).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: /^Как у родителя/ }));
+  expect(screen.getByRole('button', { name: 'Добавить задачу' })).toBeEnabled();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Готово' }));
+  expect(
+    screen.getByRole('button', { name: 'Сроки новой задачи' }),
+  ).toHaveFocus();
+  await user.click(screen.getByRole('button', { name: 'Добавить задачу' }));
+  expect(create).toHaveBeenLastCalledWith(
+    'Черновик',
+    { parentId: null },
+    { inputStart: '2026-10-08', inputFinish: '2026-10-09', durationDays: 2 },
   );
 });
 it('Today uses project timezone and linked fields locally; failed create keeps the draft', async () => {

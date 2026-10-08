@@ -263,13 +263,16 @@ describe('client HTTP interactions', () => {
       inputStart: null,
       inputFinish: null,
     });
+    await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(panel.getByLabelText('Длительность, рабочих дней')).toHaveValue(1);
     await user.keyboard('{Escape}');
+    await user.click(panel.getByRole('button', { name: 'Закрыть панель' }));
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue(5);
     await user.click(
-      main.getByRole('button', { name: 'Очистить быстрый ввод' }),
+      main.getByRole('button', { name: 'Отменить ввод задачи' }),
     );
+    await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue(1);
   });
 
@@ -285,7 +288,7 @@ describe('client HTTP interactions', () => {
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
     await user.click(
-      screen.getByRole('button', { name: 'Очистить быстрый ввод' }),
+      screen.getByRole('button', { name: 'Отменить ввод задачи' }),
     );
     const clean = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(clean);

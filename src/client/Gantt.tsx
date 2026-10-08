@@ -14,6 +14,7 @@ import {
 } from './gantt-view.js';
 import { treeRows } from './tree-view.js';
 import { strings } from './strings.js';
+import { draftTaskId, draftInterval } from './quick-add-view.js';
 export interface GanttProps {
   tree: ProjectTree;
   rows: ReturnType<typeof treeRows>;
@@ -24,6 +25,7 @@ export interface GanttProps {
   disabled: boolean;
   onSelect: (task: Task) => void;
   onPlan: (task: Task, kind: 'move' | 'resize', target: string) => void;
+  draftId?: string | undefined;
 }
 interface Gesture {
   task: Task;
@@ -43,6 +45,7 @@ export function Gantt({
   disabled,
   onSelect,
   onPlan,
+  draftId,
 }: GanttProps) {
   const view = windowFor(start, scale);
   const marker = useId().replaceAll(':', '');
@@ -263,10 +266,15 @@ export function Gantt({
         );
       })}
       {rows.map(({ task }, index) => {
-        const interval = ganttInterval(task, tree.schedule, {
-          today,
-          calendar: tree.project.calendarType,
-        });
+        const interval =
+          task.id === draftTaskId
+            ? draftId
+              ? draftInterval(tree, task, today)
+              : null
+            : ganttInterval(task, tree.schedule, {
+                today,
+                calendar: tree.project.calendarType,
+              });
         const containsCritical =
           schedule.analysisStatus === 'ready' &&
           schedule.summaries[task.id]?.containsCritical === true;
@@ -297,7 +305,11 @@ export function Gantt({
         const cx1 = cap(x1),
           cx2 = cap(Math.max(x1 + 3, x2));
         return (
-          <g key={task.id} data-gantt-row={task.id}>
+          <g
+            key={task.id}
+            data-gantt-row={task.id === draftTaskId ? undefined : task.id}
+            data-gantt-draft={task.id === draftTaskId ? true : undefined}
+          >
             <rect
               x={0}
               y={y}
@@ -314,9 +326,18 @@ export function Gantt({
             />
             {bar && (
               <g
-                role="button"
-                tabIndex={0}
-                aria-label={`${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? `, ${strings.conditionalPlacement}` : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${criticalLabel ? `, ${criticalLabel}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`}
+                role={task.id === draftTaskId ? 'img' : 'button'}
+                tabIndex={task.id === draftTaskId ? undefined : 0}
+                aria-label={
+                  task.id === draftTaskId
+                    ? strings.draftSchedulePreview
+                    : `${task.title}, ${interval.start} – ${interval.finish}${interval.kind === 'conditional' ? `, ${strings.conditionalPlacement}` : ''}${interval.clipped ? ', Отображение ограничено предельной датой' : ''}${criticalLabel ? `, ${criticalLabel}` : ''}, ${editable(task) ? strings.moveBar : strings.openTask}`
+                }
+                aria-description={
+                  task.id === draftTaskId
+                    ? `${task.title}: ${interval.start} – ${interval.finish}. ${strings.notSaved}.`
+                    : undefined
+                }
                 aria-disabled={disabled}
                 className={`gantt-work ${interval.kind}${critical.has(task.id) ? ' critical' : ''}${partialCritical ? ' partial-critical' : ''}${containsCritical ? ' contains-critical' : ''}${task.status === 'done' ? ' completed' : ''}`}
                 onPointerDown={(event) => begin(event, task, 'move')}
@@ -327,6 +348,10 @@ export function Gantt({
                   setPreview(null);
                 }}
                 onClick={() => {
+                  if (task.id === draftTaskId) {
+                    document.getElementById('quick-task')?.focus();
+                    return;
+                  }
                   if (suppressClick.current) {
                     suppressClick.current = false;
                     return;
@@ -336,7 +361,9 @@ export function Gantt({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    onSelect(task);
+                    if (task.id === draftTaskId)
+                      document.getElementById('quick-task')?.focus();
+                    else onSelect(task);
                   }
                   if (
                     ['ArrowLeft', 'ArrowRight'].includes(event.key) &&
@@ -428,7 +455,7 @@ export function Gantt({
                   )}
               </g>
             )}
-            {sourceMarkers(task, tree.schedule)
+            {(task.id === draftTaskId ? [] : sourceMarkers(task, tree.schedule))
               .filter(
                 (source) =>
                   dateX(source.date, start, view.dayWidth) >= 0 &&

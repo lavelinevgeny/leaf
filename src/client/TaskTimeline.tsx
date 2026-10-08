@@ -9,12 +9,20 @@ import {
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { treeRows } from './tree-view.js';
 import { TaskTree, type TreeAction } from './TaskTree.js';
+import type { AddContext } from './QuickAdd.js';
+import {
+  draftTaskId,
+  draftInterval,
+  insertDraftRow,
+} from './quick-add-view.js';
 import { Gantt } from './Gantt.js';
 import {
   computedDateLabel,
   ganttInterval,
   sourceMarkers,
   shiftDate,
+  dateX,
+  windowFor,
   type Scale,
 } from './gantt-view.js';
 import { scaleLabels, strings } from './strings.js';
@@ -38,6 +46,12 @@ interface Props {
   reveal: GanttReveal | null;
   filter?: TaskFilter;
   viewControl?: ReactNode;
+  draft?: {
+    task: Task;
+    context: AddContext;
+    input: ReactNode;
+    active: boolean;
+  };
 }
 function timelineDate(task: Task, tree: ProjectTree, today: string) {
   return (
@@ -59,6 +73,7 @@ export function TaskTimeline({
   show,
   reveal,
   viewControl,
+  draft,
   filter = emptyTaskFilter,
 }: Props) {
   const projection = useMemo(
@@ -78,7 +93,18 @@ export function TaskTimeline({
       ? filteredCollapse.ids
       : new Set<string>();
   const effectiveCollapsed = projection.active ? filteredIds : collapsed;
-  const rows = treeRows(projection.tasks, effectiveCollapsed);
+  const draftCollapsed = new Set(effectiveCollapsed);
+  if (draft?.active) {
+    let parent = draft.context.parentId;
+    while (parent) {
+      draftCollapsed.delete(parent);
+      parent = tree.tasks.find((task) => task.id === parent)?.parentId ?? null;
+    }
+  }
+  const visibleRows = treeRows(projection.tasks, draftCollapsed);
+  const rows = draft
+    ? insertDraftRow(visibleRows, draft.task, draft.context)
+    : visibleRows;
   function toggle(id: string) {
     if (!projection.active) return onToggle(id);
     setFilteredCollapse(() => {
@@ -104,6 +130,28 @@ export function TaskTimeline({
   const horizontal = useRef<HTMLDivElement>(null);
   const vertical = useRef<HTMLDivElement>(null);
   const resize = useRef<{ x: number; width: number } | null>(null);
+  const draftDate = draft?.active
+    ? draftInterval(tree, draft.task, today)?.start
+    : undefined;
+  useEffect(() => {
+    if (!draftDate || !show) return;
+    const viewport = horizontal.current;
+    const x = dateX(draftDate, start, windowFor(start, scale).dayWidth);
+    const left = viewport?.scrollLeft ?? 0;
+    const visibleWidth = viewport?.clientWidth || width;
+    if (x < left || x >= left + visibleWidth) {
+      setStart(shiftDate(draftDate, -3));
+      if (viewport) viewport.scrollLeft = 0;
+    }
+  }, [draftDate, show]);
+  useEffect(() => {
+    if (!draft?.active) return;
+    requestAnimationFrame(() => {
+      vertical.current
+        ?.querySelector('.quick-draft-row')
+        ?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }, [draft?.active, draft?.context.parentId, draft?.context.afterId]);
   useEffect(() => {
     if (!reveal) return;
     const task = tree.tasks.find((item) => item.id === reveal.taskId);
@@ -131,7 +179,9 @@ export function TaskTimeline({
     rows,
     schedule: tree.schedule,
     selectedId,
-    collapsed: effectiveCollapsed,
+    collapsed: draftCollapsed,
+    disabled,
+    ...(draft ? { draftInput: draft.input } : {}),
     onToggle: toggle,
     ...(projection.active ? { matchIds: projection.matchIds } : {}),
     onSelect,
@@ -272,6 +322,7 @@ export function TaskTimeline({
                 disabled={disabled}
                 onSelect={onSelect}
                 onPlan={onPlan}
+                draftId={draft?.active ? draftTaskId : undefined}
               />
             </div>
           </div>

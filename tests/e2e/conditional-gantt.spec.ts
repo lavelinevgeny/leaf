@@ -205,6 +205,7 @@ test('creation defaults and explicit Today persist atomically through lost respo
       inputFinish: '2026-10-09',
       durationDays: 1,
     });
+    await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
     await expect(quick.getByLabel('Начало', { exact: true })).toHaveValue('');
     await page
       .getByRole('button', { name: 'Отменить последнее изменение' })

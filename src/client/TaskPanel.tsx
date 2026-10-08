@@ -367,6 +367,7 @@ export function TaskPanel({
                 label={strings.subtasks}
                 schedule={tree.schedule}
                 quickInputId="quick-subtask"
+                disabled={busy || locked || conflict || removed || dirty}
               />
             )}
             {subtaskInput}

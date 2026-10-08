@@ -5,7 +5,8 @@ import {
   type SourceFields,
   type Project,
 } from '../shared/contracts.js';
-import { PlanFields } from './PlanFields.js';
+import { QuickSchedule } from './QuickSchedule.js';
+import { scheduleChip } from './quick-add-view.js';
 import { newTaskPlan } from './planning-view.js';
 import { orderedChildren } from './tree-view.js';
 import { strings } from './strings.js';
@@ -32,6 +33,10 @@ interface Props {
   onTitle: (title: string) => void;
   inputId?: string;
   rootId?: string;
+  parentPlan?: SourceFields | null;
+  inline?: boolean;
+  onEditing?: (editing: boolean) => void;
+  onCancel?: () => void;
 }
 export function QuickAdd({
   tasks,
@@ -48,8 +53,30 @@ export function QuickAdd({
   onTitle,
   inputId = 'quick-task',
   rootId,
+  parentPlan = null,
+  inline = false,
+  onEditing,
+  onCancel,
 }: Props) {
   const [editing, setEditing] = useState(false);
+  const chip = useRef<HTMLButtonElement>(null);
+  function beginEditing() {
+    setEditing(true);
+    onEditing?.(true);
+  }
+  function clear() {
+    onTitle('');
+    onPlan(newTaskPlan());
+    rejectedPlan.current = null;
+    setValid(true);
+  }
+  function cancel() {
+    clear();
+    setScheduleOpen(false);
+    setEditing(false);
+    onEditing?.(false);
+    onCancel?.();
+  }
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [valid, setValid] = useState(true);
   const rejectedPlan = useRef<string | null>(null);
@@ -81,29 +108,49 @@ export function QuickAdd({
   }
   return (
     <form
-      className="quick-add"
+      className={`quick-add${inline ? ' inline-quick-add' : ''}`}
+      onBlur={(event) => {
+        if (
+          event.relatedTarget &&
+          !event.currentTarget.contains(event.relatedTarget as Node)
+        )
+          onEditing?.(false);
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
     >
       <div className="quick-line">
-        <span aria-hidden="true">＋</span>
+        <span className="draft-dot" aria-hidden="true">
+          ＋
+        </span>
         <input
           id={inputId}
           ref={input}
           aria-label={strings.newTask}
+          aria-description={`${strings.parent}: ${parent?.title ?? strings.root}. ${strings.quickHint}`}
           placeholder={strings.newTask}
           value={title}
           maxLength={300}
           disabled={busy || blocked}
-          onFocus={() => setEditing(true)}
+          onFocus={beginEditing}
           onChange={(event) => onTitle(event.target.value)}
           onKeyDown={(event) => {
+            if (event.altKey && event.key.toLowerCase() === 'd') {
+              event.preventDefault();
+              setScheduleOpen((open) => !open);
+              beginEditing();
+              return;
+            }
             if (event.key === 'Escape') {
               event.preventDefault();
               event.stopPropagation();
-              setEditing(false);
+              if (inline) cancel();
+              else {
+                setEditing(false);
+                onEditing?.(false);
+              }
               return;
             }
             if (event.key !== 'Tab' || !editing) return;
@@ -119,61 +166,90 @@ export function QuickAdd({
           }}
         />
         <button
+          ref={chip}
+          type="button"
+          className={`schedule-chip${!valid ? ' invalid' : ''}`}
+          aria-label={strings.newTaskSchedule}
+          aria-description={scheduleChip(plan, calendar)}
+          aria-expanded={scheduleOpen}
+          aria-controls={scheduleId}
+          disabled={busy || blocked}
+          title={`${scheduleChip(plan, calendar)} · Alt+D`}
+          onClick={() => {
+            setScheduleOpen((open) => !open);
+            beginEditing();
+          }}
+        >
+          <span aria-hidden="true">▦</span> {scheduleChip(plan, calendar)}
+        </button>
+        <button
+          aria-label={strings.addTask}
+          title={strings.addTask}
+          className="quick-submit"
           type="submit"
           disabled={busy || blocked || !title.trim() || !canSubmit}
         >
-          {strings.addTask}
+          {inline ? '✓' : strings.addTask}
         </button>
+        {inline && (
+          <button
+            type="button"
+            className="quick-cancel"
+            aria-label={strings.cancelTaskInput}
+            title={strings.cancelTaskInput}
+            disabled={busy || blocked}
+            onClick={cancel}
+          >
+            ×
+          </button>
+        )}
       </div>
-      <div className="quick-meta">
+      <div className={inline ? 'quick-meta sr-only' : 'quick-meta'}>
         <span>
           {strings.parent}: {parent?.title ?? strings.root}
         </span>
         <span>{strings.quickHint}</span>
-        <button
-          type="button"
-          aria-expanded={scheduleOpen}
-          aria-controls={scheduleId}
-          disabled={busy || blocked}
-          onClick={() => setScheduleOpen((open) => !open)}
-        >
-          {strings.newTaskSchedule}
-        </button>
         {(title ||
           plan.inputStart !== null ||
           plan.inputFinish !== null ||
           plan.durationDays !== 1) && (
           <>
             <span role="status">{strings.quickDirty}</span>
-            <button
-              type="button"
-              disabled={busy || blocked}
-              onClick={() => {
-                onTitle('');
-                onPlan(newTaskPlan());
-                rejectedPlan.current = null;
-                setValid(true);
-              }}
-            >
-              {strings.clearQuick}
-            </button>
+            {!inline && (
+              <button
+                type="button"
+                disabled={busy || blocked}
+                onClick={() => {
+                  clear();
+                }}
+              >
+                {strings.clearQuick}
+              </button>
+            )}
           </>
         )}
       </div>
-      {!valid && <p className="field-hint">{strings.planInputError}</p>}
+      {!valid && (
+        <p className={inline ? 'sr-only' : 'field-hint'}>
+          {strings.planInputError}
+        </p>
+      )}
       {scheduleOpen && (
-        <div id={scheduleId} className="quick-plan">
-          <PlanFields
-            task={{ status: 'todo' }}
-            plan={plan}
-            calendar={calendar}
-            timezone={timezone}
-            summary={false}
-            disabled={busy || blocked}
-            onChange={onPlan}
-            onValidityChange={validityChanged}
-          />
-        </div>
+        <QuickSchedule
+          id={scheduleId}
+          plan={plan}
+          parentPlan={parentPlan}
+          calendar={calendar}
+          timezone={timezone}
+          disabled={busy || blocked}
+          anchor={chip.current}
+          onChange={onPlan}
+          onValidityChange={validityChanged}
+          onClose={() => {
+            setScheduleOpen(false);
+            chip.current?.focus();
+          }}
+        />
       )}
     </form>
   );

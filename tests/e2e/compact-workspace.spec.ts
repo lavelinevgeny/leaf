@@ -90,7 +90,8 @@ async function open(page: Page, action = 'Настройки проекта') {
     name: 'Отменить последнее изменение',
     exact: true,
   });
-  await expect(undo).toHaveText(/↶\s*Отменить/);
+  await expect(undo).toHaveText('↶');
+  await expect(undo).toHaveAttribute('title', 'Отменить последнее изменение');
   await expect(page.getByText('Задачи', { exact: true })).toHaveCount(1);
   await opener.focus();
   await page.keyboard.press('Enter');

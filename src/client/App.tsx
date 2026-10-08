@@ -23,6 +23,7 @@ import { TaskFilters } from './TaskFilters.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
 import { workingDaysInclusive } from '../domain/calendar.js';
 import { gesturePatch, newTaskPlan } from './planning-view.js';
+import { draftTask, parentPlan } from './quick-add-view.js';
 import './styles/app.css';
 import './styles/planning.css';
 
@@ -77,6 +78,8 @@ export function App() {
   const [quickDrafts, setQuickDrafts] = useState<Record<string, QuickDraft>>(
     {},
   );
+  const [quickEditing, setQuickEditing] = useState(false);
+  const quickOrigin = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -234,6 +237,8 @@ export function App() {
     setError(null);
     setNotice('');
     if (!preserveDraft) {
+      setQuickEditing(false);
+      quickOrigin.current = null;
       setSelected(null);
       setPanelHistory([]);
       setPanelTab('details');
@@ -556,6 +561,15 @@ export function App() {
   function action(value: TreeAction, task: Task) {
     if (!canNavigate()) return;
     if (value === 'sibling' || value === 'child') {
+      quickOrigin.current = task.id;
+      setQuickEditing(true);
+      setTaskFilter(emptyTaskFilter);
+      if (value === 'child')
+        setCollapsed((previous) => {
+          const next = new Set(previous);
+          next.delete(task.id);
+          return next;
+        });
       setContext(
         value === 'child'
           ? { parentId: task.id }
@@ -981,7 +995,7 @@ export function App() {
                   title={strings.undo}
                   onClick={() => void undo()}
                 >
-                  <span aria-hidden="true">↶</span> {strings.undoShort}
+                  <span aria-hidden="true">↶</span>
                 </button>
                 <TaskFilters
                   filter={taskFilter}
@@ -1009,6 +1023,58 @@ export function App() {
               <TaskTimeline
                 key={`timeline-${tree.project.id}`}
                 tree={tree}
+                draft={{
+                  task: draftTask(
+                    tree,
+                    context,
+                    quickDrafts[tree.project.id]?.title ?? '',
+                    quickDrafts[tree.project.id]?.plan ?? newTaskPlan(),
+                  ),
+                  context,
+                  active:
+                    quickEditing ||
+                    !!quickDrafts[tree.project.id]?.title ||
+                    !!quickDrafts[tree.project.id]?.plan.inputStart ||
+                    !!quickDrafts[tree.project.id]?.plan.inputFinish,
+                  input: (
+                    <QuickAdd
+                      key={tree.project.id}
+                      inline
+                      onEditing={setQuickEditing}
+                      onCancel={() => {
+                        setQuickEditing(false);
+                        setContext({ parentId: null });
+                        requestAnimationFrame(() => {
+                          if (quickOrigin.current)
+                            focusTaskRow(quickOrigin.current);
+                        });
+                      }}
+                      parentPlan={parentPlan(tree, context.parentId)}
+                      calendar={tree.project.calendarType}
+                      timezone={tree.project.timezone}
+                      plan={quickDrafts[tree.project.id]?.plan ?? newTaskPlan()}
+                      onPlan={(plan) =>
+                        updateQuick(tree.project.id, (draft) => ({
+                          ...draft,
+                          plan,
+                        }))
+                      }
+                      tasks={tree.tasks}
+                      context={context}
+                      onContext={setContext}
+                      onCreate={createTask}
+                      busy={busy || loading}
+                      blocked={!!pending || conflict || dirty || projectDirty}
+                      title={quickDrafts[tree.project.id]?.title ?? ''}
+                      onTitle={(title) =>
+                        updateQuick(tree.project.id, (draft) => ({
+                          ...draft,
+                          title,
+                        }))
+                      }
+                    />
+                  ),
+                }}
                 show={showGantt}
                 viewControl={
                   <label className="gantt-toggle">
@@ -1038,25 +1104,6 @@ export function App() {
                 onToggle={toggle}
                 onSelect={selectTask}
                 onAction={action}
-              />
-              <QuickAdd
-                key={tree.project.id}
-                calendar={tree.project.calendarType}
-                timezone={tree.project.timezone}
-                plan={quickDrafts[tree.project.id]?.plan ?? newTaskPlan()}
-                onPlan={(plan) =>
-                  updateQuick(tree.project.id, (draft) => ({ ...draft, plan }))
-                }
-                tasks={tree.tasks}
-                context={context}
-                onContext={setContext}
-                onCreate={createTask}
-                busy={busy || loading}
-                blocked={!!pending || conflict || dirty || projectDirty}
-                title={quickDrafts[tree.project.id]?.title ?? ''}
-                onTitle={(title) =>
-                  updateQuick(tree.project.id, (draft) => ({ ...draft, title }))
-                }
               />
             </>
           )}
@@ -1138,6 +1185,7 @@ export function App() {
                 }))
               }
               tasks={tree.tasks}
+              parentPlan={parentPlan(tree, subtaskContext.parentId)}
               rootId={selectedTask.id}
               inputId="quick-subtask"
               context={subtaskContext}
