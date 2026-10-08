@@ -408,6 +408,7 @@ test('conditional unknown keeps partial copy then known FS conflict suppresses a
     clipped: false,
   });
   await page.reload();
+  await page.getByRole('treeitem', { name: /^C,/ }).press('Enter');
   await expect(
     page
       .getByText(
@@ -415,6 +416,7 @@ test('conditional unknown keeps partial copy then known FS conflict suppresses a
       )
       .first(),
   ).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(
     page.getByRole('button', {
       name: /U.*Условное размещение; полный интервал не задан/,
@@ -438,12 +440,19 @@ test('conditional unknown keeps partial copy then known FS conflict suppresses a
   expect(conflicted.schedule.criticalTaskIds).toEqual([]);
   expect(conflicted.schedule.criticalDependencyIds).toEqual([]);
   await page.reload();
+  for (const name of ['A', 'B'])
+    await expect(
+      page.getByRole('treeitem', { name: new RegExp('^' + name + ',') }),
+    ).toHaveAttribute('aria-description', /Предшественник/);
+  await expect(page.getByRole('treeitem', { name: /^U,/ })).not.toHaveAttribute(
+    'aria-description',
+    /Предшественник/,
+  );
+  await page.getByRole('treeitem', { name: /^A,/ }).press('Enter');
   await expect(
     page.getByText(/Предшественник заканчивается после явного начала/).first(),
   ).toBeVisible();
-  await expect(
-    page.getByText(/Полная пара дат не задана/).first(),
-  ).toBeVisible();
+  await expect(page.getByText(/Полная пара дат не задана/)).toHaveCount(0);
   await expect(page.getByText(/Анализ датированной части/)).toHaveCount(0);
   expect(
     await page
@@ -596,12 +605,14 @@ test('F03 tight and non-tight edges distinguish global and partial criticality a
     constraintFloat: null,
   });
   await page.reload();
+  await page.getByRole('treeitem', { name: /^B,/ }).press('Enter');
   await expect(
     page.getByText(
       'Анализ датированной части; полный критический путь неизвестен',
       { exact: true },
     ),
   ).toBeVisible();
+  await page.keyboard.press('Escape');
   for (const id of [ab, bc])
     await expect(page.locator('[data-gantt-edge="' + id + '"]')).toHaveClass(
       /(^| )partial-critical( |$)/,
