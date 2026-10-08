@@ -200,24 +200,40 @@ export function ProjectControls(props: Props) {
                   onChange={(event) => onRenameChange(event.target.value)}
                 />
               </label>
-              <button disabled={disabled || !rename?.trim()}>
-                {strings.renameProject}
-              </button>
               {unsaved && (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onRenameChange(project.title)}
-                >
-                  {strings.discard}
-                </button>
+                <div className="project-dialog-draft">
+                  <p role="status">{strings.unsaved}</p>
+                  <button
+                    type="button"
+                    className="quiet"
+                    disabled={disabled}
+                    onClick={() => onRenameChange(project.title)}
+                  >
+                    {strings.discard}
+                  </button>
+                </div>
               )}
+              <div className="project-dialog-actions">
+                <button
+                  className="primary"
+                  disabled={disabled || !rename?.trim()}
+                >
+                  {strings.renameProject}
+                </button>
+                <button type="button" disabled={disabled} onClick={close}>
+                  {strings.closeProjectDialog}
+                </button>
+              </div>
             </form>
           )}
-          {unsaved && <p role="status">{strings.unsaved}</p>}
-          <button type="button" disabled={disabled} onClick={close}>
-            {strings.closeProjectDialog}
-          </button>
+          {action === 'settings' && (
+            <>
+              {unsaved && <p role="status">{strings.unsaved}</p>}
+              <button type="button" disabled={disabled} onClick={close}>
+                {strings.closeProjectDialog}
+              </button>
+            </>
+          )}
         </dialog>
       )}
     </div>
