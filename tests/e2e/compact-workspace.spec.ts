@@ -80,8 +80,23 @@ async function open(page: Page, action = 'Настройки проекта') {
   });
   await opener.focus();
   await page.keyboard.press('Enter');
-  await page.getByRole('button', { name: action, exact: true }).click();
-  return page.getByRole('dialog', { name: action, exact: true });
+  const settings = page.getByRole('button', {
+    name: 'Настройки проекта',
+    exact: true,
+  });
+  await expect(settings).toBeFocused();
+  if (action === 'Переименовать проект') await page.keyboard.press('ArrowDown');
+  await expect(
+    page.getByRole('button', { name: action, exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press(action === 'Настройки проекта' ? 'Enter' : 'Space');
+  const dialog = page.getByRole('dialog', { name: action, exact: true });
+  await expect(
+    action === 'Настройки проекта'
+      ? dialog.getByLabel('Календарь', { exact: true })
+      : dialog.getByLabel('Название проекта', { exact: true }),
+  ).toBeFocused();
+  return dialog;
 }
 function reply(page: Page) {
   return page.waitForResponse(
@@ -192,9 +207,32 @@ test('compact geometry, local diagnostics and view actions preserve the authorit
   await page
     .getByRole('button', { name: 'Свернуть Этап P', exact: true })
     .click();
-  expect(await page.locator('[data-gantt-row]').count()).toBe(
-    await rows.count(),
+  const collapsedIds = await rows.evaluateAll((ns) =>
+    ns.map((n) => n.getAttribute('data-task-id')),
   );
+  expect(collapsedIds.length).toBeGreaterThan(0);
+  const descendants = tree.tasks.filter(
+    (task) =>
+      task.parentId ===
+      tree.tasks.find((parent) => parent.title === 'Этап P')!.id,
+  );
+  expect(descendants.length).toBeGreaterThan(0);
+  for (const task of descendants) {
+    expect(collapsedIds).not.toContain(task.id);
+    await expect(page.locator(`[data-gantt-row="${task.id}"]`)).toHaveCount(0);
+  }
+  expect(
+    await page
+      .locator('[data-gantt-row]')
+      .evaluateAll((ns) => ns.map((n) => n.getAttribute('data-gantt-row'))),
+  ).toEqual(collapsedIds);
+  for (let i = 0; i < collapsedIds.length; i++) {
+    const row = (await rows.nth(i).boundingBox())!;
+    const gantt = (await page
+      .locator(`[data-gantt-row="${collapsedIds[i]}"]`)
+      .boundingBox())!;
+    expect(Math.abs(row.y - gantt.y)).toBeLessThanOrEqual(2);
+  }
   await search.fill('No synthetic match');
   await expect(
     page.getByText('Ничего не найдено. Измените поиск или статус.'),
@@ -263,6 +301,8 @@ test('settings drafts survive discard, uncertain response, exact retry and real 
   await expect(timezone).toHaveValue('Asia/Tokyo');
   const committed = await readTree(page, runtime.origin, tree.project.id);
   expect(committed.project.revision).toBe(tree.project.revision + 1);
+  expect(committed.project.calendarType).toBe('all-days');
+  expect(committed.project.timezone).toBe('Asia/Tokyo');
   const retried = reply(page);
   await dialog.getByRole('button', { name: 'Повторить', exact: true }).click();
   const response = await retried;
@@ -295,6 +335,7 @@ test('settings drafts survive discard, uncertain response, exact retry and real 
   const latest = await readTree(page, runtime.origin, tree.project.id);
   expect(latest.project.revision).toBe(external.project.revision + 1);
   expect(latest.project.timezone).toBe('Europe/London');
+  expect(latest.project.calendarType).toBe('all-days');
   expect(latest.tasks).toEqual(external.tasks);
   await page.keyboard.press('Escape');
   const rename = await open(page, 'Переименовать проект');
@@ -321,6 +362,8 @@ test('settings drafts survive discard, uncertain response, exact retry and real 
   expect((await undone).status()).toBe(200);
   const restored = await readTree(page, runtime.origin, tree.project.id);
   expect(restored.project.title).toBe(latest.project.title);
+  expect(restored.project.calendarType).toBe('all-days');
+  expect(restored.project.timezone).toBe('Europe/London');
   expect(restored.tasks).toEqual(latest.tasks);
   expect(restored.schedule).toEqual(latest.schedule);
   expect(writes).toEqual(['POST', 'POST', 'POST', 'POST', 'PATCH', 'POST']);
