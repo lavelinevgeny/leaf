@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>leaf — прототип иерархической доски</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; color: var(--leaf-text); background: var(--leaf-bg); font: 14px var(--leaf-font); }
+      .shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; }
+      aside { padding: 30px 18px; background: var(--leaf-sidebar); border-right: 1px solid var(--leaf-border); }
+      .brand { font-size: 25px; font-weight: 700; color: #217946; margin-bottom: 42px; }
+      .sidebar-label { color: #59675f; padding: 0 12px; }
+      .project { margin-top: 14px; padding: 13px 12px; border-radius: 8px; background: var(--leaf-accent-soft); font-weight: 600; }
+      main { min-width: 0; }
+      header { padding: 26px 32px 0; border-bottom: 1px solid var(--leaf-border); }
+      .heading { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+      h1 { margin: 0; font-size: 23px; }
+      .badge { padding: 6px 10px; border-radius: 6px; background: #f6f2e7; color: #68521d; font-size: 12px; }
+      .tabs { margin-top: 24px; padding-bottom: 13px; color: #217946; font-weight: 600; }
+      .tabs span { border-bottom: 2px solid var(--leaf-accent); padding-bottom: 13px; }
+      .content { padding: 22px 32px 40px; }
+      .toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+      .toolbar p { margin: 0; max-width: 680px; line-height: 1.6; color: #59675f; }
+      .controls { display: flex; gap: 8px; }
+      button { font: inherit; padding: 8px 12px; border: 1px solid #d4dfd8; border-radius: 6px; background: white; color: var(--leaf-text); cursor: pointer; }
+      button:hover { background: var(--leaf-surface-muted); }
+      button:focus-visible, summary:focus-visible { outline: 2px solid var(--leaf-focus); outline-offset: 3px; }
+      .board { min-width: 640px; }
+      .board-scroll { overflow-x: auto; }
+      .columns, .lane { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+      .columns { padding: 0 12px 14px; }
+      .column { display: flex; align-items: center; gap: 10px; }
+      h2 { margin: 0; font-size: 14px; font-weight: 600; }
+      .count { color: #59675f; font-size: 12px; font-weight: 400; }
+      .dot { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #93a199; border-radius: 50%; flex: 0 0 13px; }
+      .dot.doing { border-color: #2876c4; background: #2876c4; box-shadow: inset 0 0 0 3px white; }
+      .dot.done { background: #23814b; border-color: #23814b; }
+      details { margin: 10px 0; border: 1px solid var(--leaf-border); border-radius: 8px; overflow: hidden; }
+      summary { padding: 12px 14px; background: #f4f8f5; cursor: pointer; font-weight: 600; }
+      summary .count { margin-left: 10px; }
+      .group-content { padding: 12px; }
+      .nested { border-left: 2px solid #d4e7db; padding-left: 14px; margin-top: 12px; }
+      .nested summary { background: #f9fbfa; }
+      .path { margin: 0 0 6px; font-size: 11px; color: #59675f; }
+      .lane > div { min-width: 0; padding: 8px; background: var(--leaf-surface-muted); border-radius: 6px; }
+      article { background: white; padding: 12px; border: 1px solid #dce5df; border-radius: 7px; margin-bottom: 8px; }
+      article:last-child { margin-bottom: 0; }
+      .card-title { display: flex; align-items: flex-start; gap: 9px; line-height: 1.5; }
+      .card-title .dot { margin-top: 4px; }
+      .card-date { margin: 8px 0 0 22px; font-size: 12px; color: #59675f; }
+      .empty { display: block; padding: 12px 0; text-align: center; color: #748178; }
+      .root-label { font-size: 13px; color: #59675f; margin: 24px 0 10px; }
+      .note { margin-top: 22px; color: #59675f; font-size: 12px; line-height: 1.6; }
+      @media (max-width: 900px) { .shell { grid-template-columns: 150px minmax(0, 1fr); } header, .content { padding-left: 20px; padding-right: 20px; } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside aria-label="Проекты">
+        <div class="brand">♧ leaf</div>
+        <div class="sidebar-label">Проекты</div>
+        <div class="project">Демо-проект</div>
+      </aside>
+      <main>
+        <header>
+          <div class="heading">
+            <h1>Демо-проект</h1>
+            <span class="badge">Прототип · синтетические данные</span>
+          </div>
+          <div class="tabs"><span>Доска</span></div>
+        </header>
+        <div class="content">
+          <div class="toolbar">
+            <p>Группы сохраняют вложенность и проходят через все колонки. Конечная работа появляется один раз — в своём статусе.</p>
+            <div class="controls">
+              <button id="collapse" type="button">Свернуть группы</button>
+              <button id="expand" type="button">Раскрыть группы</button>
+            </div>
+          </div>
+          <div class="board-scroll"><div class="board" id="board" aria-label="Иерархическая доска"></div></div>
+          <p class="note">Компоновка предложена для проверки. Здесь можно раскрывать группы; изменение статуса и сохранение появятся после утверждения. У родителей нет дублирующих карточек.</p>
+        </div>
+      </main>
+    </div>
+    <script>
+      // Synthetic visual proposal only. No server, storage or network access.
+      const labels = { todo: 'К выполнению', doing: 'В работе', done: 'Готово' };
+      const tasks = [
+        { id: 'preparation', parentId: null, title: 'Подготовка' },
+        { id: 'research', parentId: 'preparation', title: 'Исследование' },
+        { id: 'variants', parentId: 'research', title: 'Сравнение вариантов' },
+        { id: 'a', parentId: 'research', title: 'Собрать исходные данные', status: 'done', date: '5–6 окт.' },
+        { id: 'b', parentId: 'research', title: 'Проверить ограничения', status: 'doing', date: '7–9 окт.' },
+        { id: 'c', parentId: 'variants', title: 'Сравнить вариант A', status: 'done' },
+        { id: 'd', parentId: 'variants', title: 'Сравнить вариант B', status: 'doing' },
+        { id: 'e', parentId: 'variants', title: 'Выбрать решение', status: 'todo' },
+        { id: 'f', parentId: 'preparation', title: 'Согласовать план', status: 'todo' },
+        { id: 'implementation', parentId: null, title: 'Реализация' },
+        { id: 'first-stage', parentId: 'implementation', title: 'Первый этап' },
+        { id: 'g', parentId: 'first-stage', title: 'Подготовить материалы', status: 'done' },
+        { id: 'h', parentId: 'first-stage', title: 'Выполнить работу A', status: 'doing', date: '8–12 окт.' },
+        { id: 'i', parentId: 'first-stage', title: 'Проверить результат', status: 'todo' },
+        { id: 'j', parentId: 'implementation', title: 'Подготовить следующий этап', status: 'todo' },
+        { id: 'k', parentId: null, title: 'Записать итоги проекта', status: 'todo' },
+      ];
+      const children = (id) => tasks.filter((task) => task.parentId === id);
+      const element = (tag, className, text) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text) node.textContent = text;
+        return node;
+      };
+      const board = document.getElementById('board');
+      const columns = element('div', 'columns');
+      for (const [status, label] of Object.entries(labels)) {
+        const column = element('div', 'column');
+        const dot = element('span', `dot ${status}`);
+        dot.setAttribute('aria-hidden', 'true');
+        column.append(dot, element('h2', '', label), element('span', 'count', String(tasks.filter((task) => task.status === status).length)));
+        columns.append(column);
+      }
+      board.append(columns);
+      function lane(leaves, path) {
+        const grid = element('div', 'lane');
+        for (const [status, label] of Object.entries(labels)) {
+          const cell = element('div');
+          cell.setAttribute('role', 'group');
+          cell.setAttribute('aria-label', `${path}: ${label}`);
+          const matching = leaves.filter((task) => task.status === status);
+          for (const task of matching) {
+            const card = element('article');
+            const title = element('div', 'card-title');
+            const dot = element('span', `dot ${status}`);
+            dot.setAttribute('aria-hidden', 'true');
+            title.append(dot, element('span', '', task.title));
+            card.append(title, element('p', 'card-date', task.date ?? 'Без дат'));
+            cell.append(card);
+          }
+          if (!matching.length) {
+            const empty = element('span', 'empty', '—');
+            empty.setAttribute('aria-label', 'Нет задач');
+            cell.append(empty);
+          }
+          grid.append(cell);
+        }
+        return grid;
+      }
+      function group(task, parentPath) {
+        const path = [...parentPath, task.title];
+        const node = element('details');
+        node.open = true;
+        const summary = element('summary', '', task.title);
+        const content = element('div', 'group-content');
+        const direct = children(task.id);
+        const leaves = direct.filter((child) => child.status);
+        summary.append(element('span', 'count', `${direct.length} непосредственно внутри`));
+        node.append(summary);
+        if (parentPath.length) content.append(element('p', 'path', path.join(' / ')));
+        if (leaves.length) content.append(lane(leaves, path.join(' / ')));
+        const groups = direct.filter((child) => !child.status);
+        if (groups.length) {
+          const nested = element('div', 'nested');
+          for (const child of groups) nested.append(group(child, path));
+          content.append(nested);
+        }
+        node.append(content);
+        return node;
+      }
+      for (const task of children(null).filter((task) => !task.status)) board.append(group(task, []));
+      board.append(element('p', 'root-label', 'Задачи верхнего уровня'), lane(children(null).filter((task) => task.status), 'Корень проекта'));
+      for (const [id, open] of [['collapse', false], ['expand', true]]) {
+        document.getElementById(id).addEventListener('click', () => {
+          for (const node of board.querySelectorAll('details')) node.open = open;
+        });
+      }
+    </script>
+  </body>
+</html>
