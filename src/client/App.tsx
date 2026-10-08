@@ -24,7 +24,12 @@ import { TaskFilters } from './TaskFilters.js';
 import { ControlIcon } from './ControlIcon.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
 import { workingDaysInclusive } from '../domain/calendar.js';
-import { gesturePatch, newTaskPlan } from './planning-view.js';
+import {
+  gesturePatch,
+  newTaskPlan,
+  validateStartResize,
+  type PlanGestureKind,
+} from './planning-view.js';
 import {
   draftTask,
   parentPlan,
@@ -109,6 +114,11 @@ export function App() {
   const [notice, setNotice] = useState('');
   const [dirty, setDirty] = useState(false);
   const [projectDirty, setProjectDirty] = useState(false);
+  const restoreStartHandle = useRef<{
+    taskId: string;
+    projectId: string;
+    revealed?: boolean;
+  } | null>(null);
   const [showGantt, setShowGantt] = useState(true);
   const [ganttReveal, setGanttReveal] = useState<GanttReveal | null>(null);
   const projectDirtyRef = useRef(false);
@@ -117,6 +127,60 @@ export function App() {
     setProjectDirty(value);
   }, []);
   const [pending, setPending] = useState<Mutation | null>(null);
+  function cancelStartFocus() {
+    restoreStartHandle.current = null;
+    setGanttReveal((previous) => (previous?.focusStart ? null : previous));
+  }
+  function ownsStartFocus(target: Element | null, taskId: string) {
+    // Busy removes the handle and implicitly focuses body. Recovery controls
+    // belong to this command; any other focused control takes ownership away.
+    return (
+      target === document.body ||
+      target?.getAttribute('data-gantt-resize-start') === taskId ||
+      !!target?.closest('[data-gantt-start-recovery]')
+    );
+  }
+  function restoreVisibleStart(taskId: string) {
+    const restore = restoreStartHandle.current;
+    if (
+      !restore ||
+      restore.taskId !== taskId ||
+      !showGantt ||
+      busy ||
+      pending ||
+      loading ||
+      conflict ||
+      tree?.project.id !== restore.projectId
+    )
+      return;
+    if (!ownsStartFocus(document.activeElement, taskId)) {
+      cancelStartFocus();
+      return;
+    }
+    const handle = document.querySelector<SVGElement>(
+      `[data-gantt-resize-start="${taskId}"]`,
+    );
+    if (!handle) return;
+    handle.focus();
+    restoreStartHandle.current = null;
+  }
+  useEffect(() => {
+    const restore = restoreStartHandle.current;
+    if (!restore || busy || pending || loading || conflict) return;
+    if (!showGantt || tree?.project.id !== restore.projectId) {
+      cancelStartFocus();
+      return;
+    }
+    restoreVisibleStart(restore.taskId);
+    if (restoreStartHandle.current && !restore.revealed) {
+      restore.revealed = true;
+      setGanttReveal((previous) => ({
+        taskId: restore.taskId,
+        sequence: (previous?.sequence ?? 0) + 1,
+        focusStart: true,
+      }));
+    }
+  }, [busy, pending, loading, conflict, tree, showGantt]);
   const [projectControlsOpen, setProjectControlsOpen] = useState(false);
   const [rename, setRename] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -249,6 +313,7 @@ export function App() {
     return true;
   }
   async function loadProject(id: string, preserveDraft = false) {
+    if (restoreStartHandle.current?.projectId !== id) cancelStartFocus();
     setDurationChoice(null);
     if (!preserveDraft) setImmediateHost(null);
     const sequence = ++loadSequence.current;
@@ -619,6 +684,7 @@ export function App() {
   }
   function showOnGantt(task: Task) {
     if (!canNavigate() || !treeRef.current) return;
+    cancelStartFocus();
     setTaskFilter(emptyTaskFilter);
     const byId = new Map(treeRef.current.tasks.map((item) => [item.id, item]));
     setCollapsed((previous) => {
@@ -750,14 +816,47 @@ export function App() {
         }
       });
   }
-  async function planTask(task: Task, kind: 'move' | 'resize', target: string) {
+  async function planTask(task: Task, kind: PlanGestureKind, target: string) {
     if (!canNavigate() || !treeRef.current) return;
     try {
+      const currentTask = treeRef.current.tasks.find(
+        (candidate) => candidate.id === task.id,
+      );
+      if (
+        !currentTask ||
+        currentTask !== task ||
+        treeRef.current.tasks.some(
+          (candidate) => candidate.parentId === task.id,
+        )
+      )
+        return;
       if (
         treeRef.current.schedule.summaries[task.id] ||
         !treeRef.current.schedule.tasks[task.id]?.startDate
       )
         return;
+      if (kind === 'resize-start') {
+        validateStartResize(
+          currentTask,
+          treeRef.current.project.calendarType,
+          target,
+        );
+        if (currentTask.inputStart === target) return;
+        if (
+          document.activeElement?.getAttribute('data-gantt-resize-start') ===
+          currentTask.id
+        )
+          restoreStartHandle.current = {
+            taskId: currentTask.id,
+            projectId: treeRef.current.project.id,
+          };
+        await command({
+          type: 'task.resizeStart',
+          taskId: currentTask.id,
+          inputStart: target,
+        });
+        return;
+      }
       const intent = gesturePatch(
         task,
         treeRef.current.project.calendarType,
@@ -933,6 +1032,7 @@ export function App() {
             <button
               type="button"
               disabled={busy || loading}
+              data-gantt-start-recovery
               onClick={() => void loadProject(tree.project.id, true)}
             >
               {strings.reload}
@@ -942,6 +1042,7 @@ export function App() {
             <button
               type="button"
               disabled={busy}
+              data-gantt-start-recovery
               onClick={() => {
                 if (pendingRef.current)
                   void execute(pendingRef.current).then((success) => {
@@ -1071,7 +1172,18 @@ export function App() {
     } else action(value, task);
   }
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      onFocusCapture={(event) => {
+        const restore = restoreStartHandle.current;
+        if (
+          restore &&
+          event.target instanceof Element &&
+          !ownsStartFocus(event.target, restore.taskId)
+        )
+          cancelStartFocus();
+      }}
+    >
       <ProjectSidebar
         projects={projects}
         selectedId={tree?.project.id ?? null}
@@ -1131,7 +1243,10 @@ export function App() {
                   key={tree.project.id}
                   filter={taskFilter}
                   tasks={tree.tasks}
-                  onChange={setTaskFilter}
+                  onChange={(filter) => {
+                    cancelStartFocus();
+                    setTaskFilter(filter);
+                  }}
                   disabled={loading}
                 />
               </div>
@@ -1224,10 +1339,15 @@ export function App() {
                 viewControl={
                   <TaskViewControl
                     showGantt={showGantt}
-                    onChange={setShowGantt}
+                    onChange={(show) => {
+                      cancelStartFocus();
+                      setShowGantt(show);
+                    }}
                   />
                 }
                 reveal={ganttReveal}
+                onViewChange={cancelStartFocus}
+                onStartHandleVisible={restoreVisibleStart}
                 disabled={
                   busy ||
                   loading ||

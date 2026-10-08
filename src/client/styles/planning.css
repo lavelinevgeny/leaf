@@ -249,6 +249,9 @@
   stroke: none;
   cursor: ew-resize;
 }
+.gantt-resize-start {
+  fill: transparent;
+}
 .gantt-note {
   stroke: #7894ae;
   stroke-width: 3;

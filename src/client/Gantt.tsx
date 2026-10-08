@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -7,6 +8,8 @@ import {
   type PointerEvent,
 } from 'react';
 import { ControlIcon } from './ControlIcon.js';
+import { realInterval } from '../domain/planning.js';
+import { validateStartResize, type PlanGestureKind } from './planning-view.js';
 import { indexToDate } from '../domain/calendar.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import {
@@ -34,17 +37,18 @@ export interface GanttProps {
   disabled: boolean;
   onSelect: (task: Task) => void;
   onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
-  onPlan: (task: Task, kind: 'move' | 'resize', target: string) => void;
+  onPlan: (task: Task, kind: PlanGestureKind, target: string) => void;
   draftId?: string | undefined;
   intervals?: ReadonlyMap<string, TimelineInterval | null> | undefined;
 }
 interface Gesture {
   task: Task;
-  kind: 'move' | 'resize';
+  kind: PlanGestureKind;
   anchor: string;
   clientX: number;
   delta: number;
   pointerId: number;
+  capture: SVGElement;
 }
 export function Gantt({
   tree,
@@ -91,27 +95,51 @@ export function Gantt({
   const partialTasks = new Set(partial?.partialCriticalTaskIds ?? []);
   const partialEdges = new Set(partial?.partialCriticalDependencyIds ?? []);
   const partialSummaries = new Set(partial?.partialCriticalSummaryIds ?? []);
+  const cancelGesture = useCallback(() => {
+    const gesture = gestureRef.current;
+    gestureRef.current = null;
+    setPreview(null);
+    if (!gesture) return;
+    suppressClick.current = true;
+    // Clear the intent before release: the resulting lostcapture is not a second action.
+    gesture.capture.releasePointerCapture?.(gesture.pointerId);
+  }, []);
   useEffect(() => {
     const cancel = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && gestureRef.current) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        gestureRef.current = null;
-        setPreview(null);
-        suppressClick.current = true;
+        cancelGesture();
       }
     };
     window.addEventListener('keydown', cancel, true);
-    return () => window.removeEventListener('keydown', cancel, true);
-  }, []);
+    return () => {
+      window.removeEventListener('keydown', cancel, true);
+      cancelGesture();
+    };
+  }, [cancelGesture]);
   useEffect(() => {
-    gestureRef.current = null;
-    setPreview(null);
-  }, [tree.project.revision, disabled, start, scale, rows]);
+    cancelGesture();
+  }, [
+    cancelGesture,
+    tree.project.id,
+    tree.project.revision,
+    tree.project.calendarType,
+    disabled,
+    start,
+    scale,
+    rows,
+    draftId,
+    suppliedIntervals,
+    fullIntervals,
+  ]);
   function editable(task: Task) {
     return (
       !disabled &&
       task.status !== 'done' &&
+      task.id !== draftTaskId &&
+      !summaries.has(task.id) &&
+      realInterval(task, tree.project.calendarType) !== null &&
       fullIntervals.get(task.id)?.kind === 'work' &&
       !tree.schedule.summaries[task.id] &&
       !!tree.schedule.tasks[task.id]?.startDate
@@ -120,9 +148,15 @@ export function Gantt({
   function begin(
     event: PointerEvent<SVGElement>,
     task: Task,
-    kind: 'move' | 'resize',
+    kind: PlanGestureKind,
   ) {
-    if (!editable(task) || event.button !== 0) return;
+    if (
+      !editable(task) ||
+      event.button !== 0 ||
+      event.isPrimary === false ||
+      gestureRef.current
+    )
+      return;
     const interval = fullIntervals.get(task.id);
     if (!interval?.finish) return;
     event.stopPropagation();
@@ -131,32 +165,56 @@ export function Gantt({
     gestureRef.current = {
       task,
       kind,
-      anchor: kind === 'move' ? interval.start : interval.finish,
+      anchor: kind === 'resize' ? interval.finish : interval.start,
       clientX: event.clientX,
       delta: 0,
       pointerId: event.pointerId,
+      capture: event.currentTarget,
     };
+  }
+  function targetFor(gesture: Gesture) {
+    // Unlike display shiftDate, an input intent must never clamp a date at the range boundary.
+    return gesture.kind === 'resize-start'
+      ? indexToDate(gesture.delta, gesture.anchor, 'all-days')
+      : shiftDate(gesture.anchor, gesture.delta);
   }
   function move(event: PointerEvent<SVGElement>) {
     const gesture = gestureRef.current;
     if (!gesture || event.pointerId !== gesture.pointerId) return;
     const delta = Math.round((event.clientX - gesture.clientX) / view.dayWidth);
-    gestureRef.current = { ...gesture, delta };
-    setPreview(gestureRef.current);
+    const next = { ...gesture, delta };
+    gestureRef.current = next;
+    try {
+      if (next.kind === 'resize-start')
+        validateStartResize(
+          next.task,
+          tree.project.calendarType,
+          targetFor(next),
+        );
+      setPreview(next);
+    } catch {
+      setPreview(null);
+    }
   }
   function finish(event: PointerEvent<SVGElement>) {
     const gesture = gestureRef.current;
     if (!gesture || event.pointerId !== gesture.pointerId) return;
     gestureRef.current = null;
     setPreview(null);
-    if (gesture.delta) {
-      suppressClick.current = true;
-      onPlan(
-        gesture.task,
-        gesture.kind,
-        shiftDate(gesture.anchor, gesture.delta),
-      );
+    gesture.capture.releasePointerCapture?.(gesture.pointerId);
+    if (!gesture.delta) return;
+    suppressClick.current = true;
+    try {
+      const target = targetFor(gesture);
+      if (gesture.kind === 'resize-start')
+        validateStartResize(gesture.task, tree.project.calendarType, target);
+      if (target !== gesture.anchor) onPlan(gesture.task, gesture.kind, target);
+    } catch {
+      setHint(strings.invalidGesture);
     }
+  }
+  function cancelPointer(event: PointerEvent<SVGElement>) {
+    if (event.pointerId === gestureRef.current?.pointerId) cancelGesture();
   }
   const positions = new Map(rows.map((row, index) => [row.task.id, index]));
   const intervals = new Map(
@@ -342,12 +400,15 @@ export function Gantt({
           if (preview.kind === 'move') {
             x1 += preview.delta * view.dayWidth;
             x2 += preview.delta * view.dayWidth;
-          } else x2 += preview.delta * view.dayWidth;
+          } else if (preview.kind === 'resize-start')
+            x1 += preview.delta * view.dayWidth;
+          else x2 += preview.delta * view.dayWidth;
         }
         const visible = interval && x2 >= 0 && x1 < view.width;
         const bar = visible;
         const cx1 = cap(x1),
           cx2 = cap(Math.max(x1 + 3, x2));
+        const edgeWidth = Math.min(7, Math.max(0, (cx2 - cx1) / 3));
         return (
           <g
             key={task.id}
@@ -388,10 +449,8 @@ export function Gantt({
                 onPointerDown={(event) => begin(event, task, 'move')}
                 onPointerMove={move}
                 onPointerUp={finish}
-                onPointerCancel={() => {
-                  gestureRef.current = null;
-                  setPreview(null);
-                }}
+                onPointerCancel={cancelPointer}
+                onLostPointerCapture={cancelPointer}
                 onClick={() => {
                   if (task.id === draftTaskId) {
                     document.getElementById('quick-task')?.focus();
@@ -475,13 +534,59 @@ export function Gantt({
                 )}
                 {editable(task) &&
                   interval.kind === 'work' &&
+                  x1 >= 0 &&
+                  x1 < view.width && (
+                    <rect
+                      data-gantt-resize-start={task.id}
+                      x={x1}
+                      y={y + 9}
+                      width={edgeWidth}
+                      height={20}
+                      className="gantt-resize gantt-resize-start"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${strings.resizeStartBar}: ${task.title}`}
+                      onPointerDown={(event) =>
+                        begin(event, task, 'resize-start')
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        suppressClick.current = false;
+                      }}
+                      onKeyDown={(event) => {
+                        // Handles are independent buttons: Enter/Space do not select the body either.
+                        event.stopPropagation();
+                        if (!['ArrowLeft', 'ArrowRight'].includes(event.key))
+                          return;
+                        event.preventDefault();
+                        try {
+                          const target = indexToDate(
+                            event.key === 'ArrowRight' ? 1 : -1,
+                            interval.start,
+                            tree.project.calendarType,
+                          );
+                          validateStartResize(
+                            task,
+                            tree.project.calendarType,
+                            target,
+                          );
+                          if (target !== interval.start)
+                            onPlan(task, 'resize-start', target);
+                        } catch {
+                          setHint(strings.invalidGesture);
+                        }
+                      }}
+                    />
+                  )}
+                {editable(task) &&
+                  interval.kind === 'work' &&
                   x2 >= 0 &&
                   x2 <= view.width && (
                     <rect
                       data-gantt-resize={task.id}
-                      x={x2 - 7}
+                      x={x2 - edgeWidth}
                       y={y + 9}
-                      width={7}
+                      width={edgeWidth}
                       height={20}
                       className="gantt-resize"
                       role="button"
@@ -586,17 +691,11 @@ export function Gantt({
           className="gantt-preview"
           x={Math.max(
             5,
-            cap(
-              dateX(
-                shiftDate(preview.anchor, preview.delta),
-                start,
-                view.dayWidth,
-              ),
-            ) - 50,
+            cap(dateX(targetFor(preview), start, view.dayWidth)) - 50,
           )}
           y={HEADER_HEIGHT - 6}
         >
-          {shiftDate(preview.anchor, preview.delta)}
+          {targetFor(preview)}
         </text>
       )}
     </svg>

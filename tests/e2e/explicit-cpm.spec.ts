@@ -725,6 +725,7 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
   expect(p10.schedule.criticalTaskIds).toEqual([by.A!, by.B!].sort());
   expect(p10.schedule.criticalDependencyIds).toEqual([ab]);
   await page.reload();
+  await page.getByRole('navigation', { name: 'Проекты' }).hover();
   await page.getByRole('button', { name: 'Действия проекта' }).click();
   await page
     .getByRole('button', { name: 'Настройки проекта', exact: true })

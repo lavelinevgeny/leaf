@@ -591,3 +591,227 @@ it('uses sibling HTML chain controls for conditional leaves and Alt+L without st
   view.rerender(<Gantt {...p} disabled onPredecessors={onPredecessors} />);
   expect(trigger).toBeDisabled();
 });
+
+function leftPointer(
+  node: Element,
+  type: string,
+  clientX: number,
+  pointerId = 7,
+  button = 0,
+) {
+  const event = new MouseEvent(type, { bubbles: true, button, clientX });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  fireEvent(node, event);
+}
+function leftSetup() {
+  const tree = optionalTreeFixture(),
+    p = props(tree);
+  const view = render(<Gantt {...p} />);
+  const handle = screen.getByRole('button', {
+    name: 'Изменить начало: Работа A',
+  });
+  const capture = vi.fn(),
+    release = vi.fn();
+  Object.defineProperty(handle, 'setPointerCapture', { value: capture });
+  Object.defineProperty(handle, 'releasePointerCapture', { value: release });
+  return { tree, p, view, handle, capture, release };
+}
+it('uses the left keyboard independently, working-day stepping and fixed finish', () => {
+  const { tree, p, handle } = leftSetup();
+  handle.focus();
+  fireEvent.keyDown(handle, { key: 'ArrowLeft', shiftKey: true });
+  expect(p.onPlan).toHaveBeenCalledExactlyOnceWith(
+    tree.tasks[1],
+    'resize-start',
+    '2026-10-02',
+  );
+  expect(handle).toHaveFocus();
+  expect(p.onSelect).not.toHaveBeenCalled();
+  p.onPlan.mockClear();
+  fireEvent.keyDown(handle, { key: 'ArrowRight' });
+  expect(p.onPlan).toHaveBeenCalledExactlyOnceWith(
+    tree.tasks[1],
+    'resize-start',
+    '2026-10-06',
+  );
+});
+it('previews only the left edge and sends the new civil start once', () => {
+  const { tree, p, view, handle, release } = leftSetup();
+  const bar = view.container.querySelector(
+    `[data-gantt-bar="${optionalIds.a}"]`,
+  )!;
+  const originalX = Number(bar.getAttribute('x')),
+    right = originalX + Number(bar.getAttribute('width'));
+  leftPointer(handle, 'pointerdown', 100);
+  leftPointer(handle, 'pointermove', 10);
+  expect(Number(bar.getAttribute('x'))).toBe(originalX - 90);
+  expect(
+    Number(bar.getAttribute('x')) + Number(bar.getAttribute('width')),
+  ).toBe(right);
+  leftPointer(handle, 'pointerup', 10);
+  expect(p.onPlan).toHaveBeenCalledExactlyOnceWith(
+    tree.tasks[1],
+    'resize-start',
+    '2026-10-02',
+  );
+  expect(release).toHaveBeenCalledWith(7);
+  fireEvent.click(handle);
+  expect(p.onSelect).not.toHaveBeenCalled();
+});
+it.each([
+  ['weekend', -60],
+  ['reversed', 90],
+])('rejects %s left previews without reversing or dispatching', (_, delta) => {
+  const { p, view, handle } = leftSetup();
+  const bar = view.container.querySelector(
+    `[data-gantt-bar="${optionalIds.a}"]`,
+  )!;
+  const before = bar.getAttribute('x');
+  leftPointer(handle, 'pointerdown', 100);
+  leftPointer(handle, 'pointermove', 100 + Number(delta));
+  expect(bar.getAttribute('x')).toBe(before);
+  leftPointer(handle, 'pointerup', 100 + Number(delta));
+  expect(p.onPlan).not.toHaveBeenCalled();
+  expect(screen.getByRole('status')).toHaveTextContent('Недопустимая дата');
+});
+it.each([
+  'escape',
+  'pointercancel',
+  'lostpointercapture',
+  'scale',
+  'calendar',
+  'source',
+  'project',
+  'revision',
+  'rows',
+  'disabled',
+  'unmount',
+])('cancels left gesture on %s and releases capture', (reason) => {
+  const { tree, p, view, handle, release } = leftSetup();
+  leftPointer(handle, 'pointerdown', 100);
+  leftPointer(handle, 'pointermove', 10);
+  if (reason === 'escape') fireEvent.keyDown(window, { key: 'Escape' });
+  else if (reason === 'pointercancel' || reason === 'lostpointercapture')
+    leftPointer(handle, reason, 10);
+  else if (reason === 'unmount') view.unmount();
+  else {
+    const changed = structuredClone(tree);
+    if (reason === 'source') changed.tasks[1]!.inputStart = '2026-10-02';
+    if (reason === 'calendar') changed.project.calendarType = 'all-days';
+    if (reason === 'project') changed.project.id = 'another-project';
+    if (reason === 'revision') changed.project.revision++;
+    view.rerender(
+      <Gantt
+        {...p}
+        tree={changed}
+        scale={reason === 'scale' ? 'weeks' : 'days'}
+        rows={reason === 'rows' ? p.rows.slice(0, 2) : p.rows}
+        disabled={reason === 'disabled'}
+      />,
+    );
+  }
+  leftPointer(handle, 'pointerup', 10);
+  expect(p.onPlan).not.toHaveBeenCalled();
+  expect(release).toHaveBeenCalledWith(7);
+});
+it('ignores foreign pointers, non-primary buttons and no-op left drags', () => {
+  const { p, handle, capture } = leftSetup();
+  leftPointer(handle, 'pointerdown', 100, 7, 2);
+  expect(capture).not.toHaveBeenCalled();
+  leftPointer(handle, 'pointerdown', 100);
+  leftPointer(handle, 'pointermove', 10, 8);
+  leftPointer(handle, 'pointerup', 10, 8);
+  leftPointer(handle, 'pointerup', 100);
+  expect(p.onPlan).not.toHaveBeenCalled();
+});
+it.each(['days', 'weeks', 'months'] as const)(
+  'separates one-day left/right/body hit regions in %s',
+  (scale) => {
+    const tree = optionalTreeFixture();
+    tree.tasks[1]!.inputStart = '2026-10-06';
+    tree.schedule = calculateSchedule({
+      tasks: tree.tasks,
+      dependencies: [],
+      calendarType: 'weekdays',
+    });
+    const p = props(tree),
+      view = render(<Gantt {...p} scale={scale} />);
+    const left = view.container.querySelector(
+      `[data-gantt-resize-start="${optionalIds.a}"]`,
+    )!;
+    const right = view.container.querySelector(
+      `[data-gantt-resize="${optionalIds.a}"]`,
+    )!;
+    expect(
+      Number(left.getAttribute('x')) + Number(left.getAttribute('width')),
+    ).toBeLessThan(Number(right.getAttribute('x')));
+    fireEvent.keyDown(left, { key: 'ArrowRight' });
+    expect(p.onPlan).not.toHaveBeenCalled();
+    fireEvent.keyDown(right, { key: 'ArrowRight' });
+    expect(p.onPlan).toHaveBeenCalledExactlyOnceWith(
+      tree.tasks[1],
+      'resize',
+      '2026-10-07',
+    );
+  },
+);
+it.each([
+  'done',
+  'summary',
+  'conditional',
+  'disabled',
+  'clipped',
+  'unavailable',
+  'invalid',
+  'draft',
+])('hides the left handle for %s', (kind) => {
+  const tree = optionalTreeFixture();
+  const a = tree.tasks[1]!;
+  if (kind === 'done') a.status = 'done';
+  if (kind === 'summary') tree.tasks[2]!.parentId = a.id;
+  if (kind === 'conditional') a.inputFinish = null;
+  if (kind === 'draft') a.id = 'quick-add-draft';
+  if (kind === 'invalid') a.inputStart = '2026-10-03';
+  if (kind === 'unavailable') tree.schedule.tasks[a.id]!.startDate = null;
+  const p = props(tree);
+  const view = render(
+    <Gantt
+      {...p}
+      disabled={kind === 'disabled'}
+      start={kind === 'clipped' ? '2026-10-06' : p.start}
+      draftId={kind === 'draft' ? 'synthetic-draft' : undefined}
+    />,
+  );
+  expect(
+    view.container.querySelector(`[data-gantt-resize-start="${a.id}"]`),
+  ).toBeNull();
+  expect(
+    view.container.querySelector(
+      `[data-gantt-resize-start="${optionalIds.p}"]`,
+    ),
+  ).toBeNull();
+});
+
+it('rejects a left pointer date outside the civil range without clamping or dispatching', () => {
+  const tree = optionalTreeFixture();
+  tree.project.calendarType = 'all-days';
+  tree.tasks[1]!.inputStart = '9999-12-31';
+  tree.tasks[1]!.inputFinish = '9999-12-31';
+  tree.schedule = calculateSchedule({
+    tasks: tree.tasks,
+    dependencies: [],
+    calendarType: 'all-days',
+  });
+  const p = props(tree),
+    view = render(<Gantt {...p} start="9999-12-28" />);
+  const handle = screen.getByRole('button', {
+    name: 'Изменить начало: Работа A',
+  });
+  Object.defineProperty(handle, 'setPointerCapture', { value: vi.fn() });
+  leftPointer(handle, 'pointerdown', 100);
+  leftPointer(handle, 'pointermove', 130);
+  expect(view.container.querySelector('.gantt-preview')).toBeNull();
+  leftPointer(handle, 'pointerup', 130);
+  expect(p.onPlan).not.toHaveBeenCalled();
+  expect(screen.getByRole('status')).toHaveTextContent('Недопустимая дата');
+});

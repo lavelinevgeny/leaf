@@ -468,6 +468,30 @@ describe('optional source fields', () => {
 });
 
 describe('inactive scheduling contract V2', () => {
+  it('accepts only the strict start-resize intent without source or relation extras', () => {
+    const command = {
+      type: 'task.resizeStart',
+      taskId,
+      inputStart: '2026-10-02',
+    };
+    expect(commandV2Schema.parse(command)).toEqual(command);
+    for (const invalid of [
+      { ...command, taskId: 'invalid' },
+      { ...command, inputStart: null },
+      { ...command, inputStart: undefined },
+      ...['2026-02-29', '0000-01-01', '10000-01-01'].map((inputStart) => ({
+        ...command,
+        inputStart,
+      })),
+      ...[
+        { inputFinish: '2026-10-09' },
+        { durationDays: 6 },
+        { predecessorIds: [] },
+        { status: 'todo' },
+      ].map((extra) => ({ ...command, ...extra })),
+    ])
+      expect(commandV2Schema.safeParse(invalid).success).toBe(false);
+  });
   it('requires version 2 inside a new canonical command and rename body', () => {
     const envelope = {
       contractVersion: 2,

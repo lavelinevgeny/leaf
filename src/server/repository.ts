@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { randomUUID, createHash } from 'node:crypto';
 import {
   commandEnvelopeSchema,
+  sourcePatchSchema,
   createProjectSchema,
   projectTreeV2Schema,
   liveProjectTreeV2Schema,
@@ -32,10 +33,12 @@ import type { OptionalInput } from '../domain/scheduling-types.js';
 import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import {
   emptyPlanning,
+  realInterval,
   validateSourceInput,
   validateDependencies,
   validateDependency,
 } from '../domain/planning.js';
+import { workingDaysInclusive } from '../domain/calendar.js';
 
 import { canonical } from '../shared/canonical.js';
 import { replayLegacyOperation } from './legacy-compatibility.js';
@@ -213,9 +216,12 @@ export class Repository {
           this.apply(snapshot, input.command, timestamp);
           validateDependencies(snapshot.tasks, snapshot.dependencies);
           if (
-            !['task.create', 'task.edit', 'dependency.create'].includes(
-              input.command.type,
-            )
+            ![
+              'task.create',
+              'task.edit',
+              'task.resizeStart',
+              'dependency.create',
+            ].includes(input.command.type)
           )
             return;
           const previousTasks = new Map(
@@ -272,7 +278,8 @@ export class Repository {
             changedSourceTaskIds,
             addedDependencyIds,
             explicitlyEditedTaskId:
-              input.command.type === 'task.edit' &&
+              (input.command.type === 'task.edit' ||
+                input.command.type === 'task.resizeStart') &&
               changedSourceTaskIds.includes(input.command.taskId)
                 ? input.command.taskId
                 : null,
@@ -502,6 +509,57 @@ export class Repository {
       }
     };
     switch (command.type) {
+      case 'task.resizeStart': {
+        const task = find(command.taskId);
+        if (tasks.some((item) => item.parentId === task.id))
+          throw new DomainError(
+            'SUMMARY_DATES',
+            'Сводная задача не имеет собственных сроков.',
+          );
+        if (task.status === 'done')
+          throw new DomainError(
+            'DONE_PLAN_LOCKED',
+            'Сначала верните завершённую работу в работу.',
+          );
+        const unavailable = snapshot.legacyIntervalUnavailable.includes(
+          task.id,
+        );
+        const interval = realInterval(task, snapshot.project.calendarType);
+        if (unavailable || !interval)
+          throw new DomainError(
+            'INVALID_INTERVAL',
+            'Укажите допустимый полный интервал.',
+          );
+        if (command.inputStart === task.inputStart) break;
+        let durationDays: number;
+        try {
+          durationDays = workingDaysInclusive(
+            command.inputStart,
+            interval.finishDate,
+            snapshot.project.calendarType,
+          );
+        } catch (error) {
+          if (!(error instanceof RangeError)) throw error;
+          throw new DomainError(
+            'INVALID_INTERVAL',
+            'Проверьте порядок дат, рабочие дни и допустимый диапазон.',
+          );
+        }
+        const patch = { inputStart: command.inputStart, durationDays };
+        if (!sourcePatchSchema.safeParse(patch).success)
+          throw new DomainError(
+            'INVALID_INTERVAL',
+            'Длительность должна быть от 1 до 1 000 000 дней.',
+          );
+        const result = applyPrivateSourcePatch(
+          task,
+          patch,
+          snapshot.project.calendarType,
+          unavailable,
+        );
+        Object.assign(task, result.task, { updatedAt: timestamp });
+        break;
+      }
       case 'task.edit': {
         const { predecessorIds, ...scalarChanges } = command.changes;
         const task = find(command.taskId);

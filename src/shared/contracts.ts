@@ -365,6 +365,11 @@ const detailsPatchV2Schema = z
 export const commandV2Schema = z.discriminatedUnion('type', [
   optionalEditSchema,
   z.strictObject({
+    type: z.literal('task.resizeStart'),
+    taskId: uuidSchema,
+    inputStart: calendarDateSchema,
+  }),
+  z.strictObject({
     type: z.literal('task.update'),
     taskId: uuidSchema,
     changes: detailsPatchV2Schema,

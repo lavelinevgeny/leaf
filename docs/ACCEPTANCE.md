@@ -69,3 +69,7 @@ Actual-server browser matrix в 1440×900 и 1280×800: основной QuickAd
 ## Размещение новой FS-связи C25 / D18
 
 L01–L09 из [спецификации](superpowers/specs/2026-10-08-fs-link-placement-design.md): strict inclusive-finish boundary, совместный source/relation edit с каноническими датами, maximum fan-in, реальные nullable поля, атомарные retry/undo/rollback, условная цепочка по полному графу, смена today в обе стороны, filter/collapse/reveal, keyboard и clipped overflow. Условная геометрия не подменяет реальные FS/CPM/summary.
+
+## Левая ручка Ганта C27 / D19
+
+[GSR01–GSR07](superpowers/specs/2026-10-09-gantt-start-resize-design.md) проверяют фиксированное включительное окончание, literal рабочую длительность и прежний null при undo, minimum one-day/границы/выходной без snapping, incoming FS rollback без push целевой работы, неизменный downstream и пересчитанные summary/CPM. Strict V2/V1 compatibility, exact retry/receipt/restart, stale revision, done/summary/conditional/unavailable и no-op guards обязательны. Actual-server pointer/keyboard/cancel/focus/no-ack/dirty regressions выполняются в 1440×900 и 1280×800; C18, body move и правая ручка сохраняют поведение.

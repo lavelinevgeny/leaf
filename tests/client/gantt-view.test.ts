@@ -1,3 +1,4 @@
+import { validateStartResize } from '../../src/client/planning-view.js';
 import { expect, it } from 'vitest';
 import {
   ganttInterval,
@@ -165,4 +166,21 @@ it('shows a no-anchor root today without changing real labels or the schedule', 
     }),
   ).toBeNull();
   expect(tree).toEqual(before);
+});
+
+it('validates left intent without mutating nullable source or accepting range/weekend/reverse/overflow', () => {
+  const a = optionalTreeFixture().tasks[1]!;
+  const before = structuredClone(a);
+  expect(() => validateStartResize(a, 'weekdays', '2026-10-02')).not.toThrow();
+  expect(() => validateStartResize(a, 'weekdays', '2026-10-06')).not.toThrow();
+  for (const target of ['2026-10-03', '2026-10-07', '0000-01-01', '2026-02-30'])
+    expect(() => validateStartResize(a, 'weekdays', target)).toThrow();
+  expect(() =>
+    validateStartResize(
+      { ...a, inputStart: '9999-12-31', inputFinish: '9999-12-31' },
+      'all-days',
+      '0001-01-01',
+    ),
+  ).toThrow('DURATION_RANGE_EXCEEDED');
+  expect(a).toEqual(before);
 });

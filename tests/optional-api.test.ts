@@ -290,3 +290,79 @@ it.each([
   }
   for (const spy of spies) expect(spy).not.toHaveBeenCalled();
 });
+
+it('HTTP start-resize returns authoritative source, exact retry, strict errors and undo', async () => {
+  const send = (payload: Record<string, unknown>) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/commands`,
+      headers: { origin, cookie, 'x-leaf-contract-version': '2' },
+      payload,
+    });
+  const created = await send({
+    contractVersion: 2,
+    expectedRevision: 0,
+    operationId: randomUUID(),
+    command: {
+      type: 'task.create',
+      title: 'B',
+      parentId: null,
+      inputStart: '2026-10-05',
+      inputFinish: '2026-10-09',
+    },
+  });
+  expect(created.statusCode).toBe(200);
+  const payload = {
+    contractVersion: 2,
+    expectedRevision: 1,
+    operationId: randomUUID(),
+    command: {
+      type: 'task.resizeStart',
+      taskId: created.json().tasks[0].id,
+      inputStart: '2026-10-02',
+    },
+  };
+  const resized = await send(payload);
+  expect(resized.statusCode).toBe(200);
+  expect(resized.json().tasks[0]).toMatchObject({
+    inputStart: '2026-10-02',
+    inputFinish: '2026-10-09',
+    durationDays: 6,
+  });
+  expect((await send(payload)).body).toBe(resized.body);
+  const before = rawSyntheticCountsAndRevision(db, projectId);
+  const reused = await send({
+    ...payload,
+    command: { ...payload.command, inputStart: '2026-10-09' },
+  });
+  expect(reused.statusCode).toBe(409);
+  expect(reused.json().code).toBe('OPERATION_REUSED');
+  expect(
+    (await send({ ...payload, operationId: randomUUID() })).statusCode,
+  ).toBe(409);
+  const extra = await send({
+    ...payload,
+    expectedRevision: 2,
+    operationId: randomUUID(),
+    command: { ...payload.command, inputFinish: '2026-10-12' },
+  });
+  expect(extra.statusCode).toBe(400);
+  const weekend = await send({
+    ...payload,
+    expectedRevision: 2,
+    operationId: randomUUID(),
+    command: { ...payload.command, inputStart: '2026-10-03' },
+  });
+  expect(weekend.statusCode).toBe(400);
+  expect(weekend.json().code).toBe('INVALID_INTERVAL');
+  expect(rawSyntheticCountsAndRevision(db, projectId)).toEqual(before);
+  const undo = await send({
+    contractVersion: 2,
+    expectedRevision: 2,
+    operationId: randomUUID(),
+    command: { type: 'undo' },
+  });
+  expect(undo.statusCode).toBe(200);
+  expect(undo.json().tasks).toEqual(created.json().tasks);
+  expect(undo.json().schedule).toEqual(created.json().schedule);
+});

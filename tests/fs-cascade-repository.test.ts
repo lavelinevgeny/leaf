@@ -719,3 +719,343 @@ it('equal supplied source remains relation-only and receives the new incoming bo
     durationDays: null,
   });
 });
+
+it('resizes the start with a fixed inclusive finish and exact undo', () => {
+  let tree = create(fresh(), 'B', '2026-10-05', '2026-10-09');
+  const b = task(tree, 'B');
+  expect(b.durationDays).toBeNull();
+  tree = step(tree, {
+    type: 'task.resizeStart',
+    taskId: b.id,
+    inputStart: '2026-10-04',
+  });
+  expect(task(tree, 'B')).toMatchObject({
+    inputStart: '2026-10-04',
+    inputFinish: '2026-10-09',
+    durationDays: 6,
+  });
+  tree = step(tree, { type: 'undo' });
+  expect(task(tree, 'B')).toMatchObject({
+    inputStart: '2026-10-05',
+    inputFinish: '2026-10-09',
+    durationDays: null,
+  });
+});
+it.each([null, 5])(
+  'uses inclusive weekdays and preserves finish with old duration %s',
+  (durationDays) => {
+    let tree = step(fresh(), {
+      type: 'project.schedule',
+      changes: { calendarType: 'weekdays' },
+    });
+    tree = step(tree, {
+      type: 'task.create',
+      title: 'B',
+      parentId: null,
+      inputStart: '2026-10-05',
+      inputFinish: '2026-10-09',
+      durationDays,
+    });
+    const original = tree;
+    tree = step(tree, {
+      type: 'task.resizeStart',
+      taskId: task(tree, 'B').id,
+      inputStart: '2026-10-02',
+    });
+    expect(task(tree, 'B')).toMatchObject({
+      inputStart: '2026-10-02',
+      inputFinish: '2026-10-09',
+      durationDays: 6,
+    });
+    tree = step(tree, {
+      type: 'task.resizeStart',
+      taskId: task(tree, 'B').id,
+      inputStart: '2026-10-09',
+    });
+    expect(task(tree, 'B')).toMatchObject({
+      inputStart: '2026-10-09',
+      inputFinish: '2026-10-09',
+      durationDays: 1,
+    });
+    tree = step(step(tree, { type: 'undo' }), { type: 'undo' });
+    expect(tree.tasks).toEqual(original.tasks);
+    expect(tree.schedule).toEqual(original.schedule);
+  },
+);
+it('accepts source no-op through receipts without materializing null duration or timestamps', () => {
+  const original = create(fresh(), 'B', '2026-10-05', '2026-10-09');
+  clock += 1000;
+  const spy = vi.spyOn(cascade, 'cascadeFs');
+  const tree = step(original, {
+    type: 'task.resizeStart',
+    taskId: task(original, 'B').id,
+    inputStart: '2026-10-05',
+  });
+  expect(tree.tasks).toEqual(original.tasks);
+  expect(tree.schedule).toEqual(original.schedule);
+  expect(tree.project.revision).toBe(original.project.revision + 1);
+  expect(spy).not.toHaveBeenCalled();
+});
+it.each([
+  'done',
+  'summary',
+  'null-start',
+  'null-finish',
+  'unavailable',
+  'weekend',
+  'after-finish',
+  'overflow',
+  'invalid-source',
+  'missing',
+] as const)(
+  'start-resize %s rejection leaves every synthetic row unchanged',
+  (kind) => {
+    let tree = step(fresh(), {
+      type: 'project.schedule',
+      changes: { calendarType: 'weekdays' },
+    });
+    tree = create(
+      tree,
+      'B',
+      kind === 'null-start' || kind === 'summary' ? null : '2026-10-05',
+      kind === 'null-finish'
+        ? null
+        : kind === 'summary'
+          ? null
+          : kind === 'overflow'
+            ? '9999-12-31'
+            : '2026-10-09',
+    );
+    const id = task(tree, 'B').id;
+    if (kind === 'done')
+      tree = step(tree, {
+        type: 'task.edit',
+        taskId: id,
+        changes: { status: 'done' },
+      });
+    if (kind === 'summary')
+      tree = create(tree, 'Child', null, null, undefined, id);
+    if (kind === 'unavailable') mark(id);
+    if (kind === 'invalid-source')
+      db.prepare('UPDATE tasks SET durationDays=17 WHERE id=?').run(id);
+    const before = rows();
+    expect(() =>
+      step(tree, {
+        type: 'task.resizeStart',
+        taskId: kind === 'missing' ? randomUUID() : id,
+        inputStart:
+          kind === 'weekend'
+            ? '2026-10-03'
+            : kind === 'after-finish'
+              ? '2026-10-12'
+              : kind === 'overflow'
+                ? '0001-01-01'
+                : '2026-10-02',
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code:
+          kind === 'done'
+            ? 'DONE_PLAN_LOCKED'
+            : kind === 'summary'
+              ? 'SUMMARY_DATES'
+              : kind === 'missing'
+                ? 'TASK_NOT_FOUND'
+                : 'INVALID_INTERVAL',
+      }),
+    );
+    expect(rows()).toEqual(before);
+  },
+);
+it.each(['complete', 'finish-only', 'unknown'] as const)(
+  'enforces real incoming %s FS bounds and leaves unknown dates unknown',
+  (kind) => {
+    let tree = step(fresh(), {
+      type: 'project.schedule',
+      changes: { calendarType: 'weekdays' },
+    });
+    tree = create(
+      tree,
+      'P',
+      kind === 'complete' ? '2026-10-05' : null,
+      kind === 'unknown' ? null : '2026-10-06',
+    );
+    tree = create(tree, 'B', '2026-10-07', '2026-10-09', [task(tree, 'P').id]);
+    const before = rows(),
+      originalP = task(tree, 'P');
+    if (kind !== 'unknown') {
+      expect(() =>
+        step(tree, {
+          type: 'task.resizeStart',
+          taskId: task(tree, 'B').id,
+          inputStart: '2026-10-06',
+        }),
+      ).toThrow(
+        expect.objectContaining({ code: 'EXPLICIT_PRECEDENCE_CONFLICT' }),
+      );
+      expect(rows()).toEqual(before);
+    } else {
+      tree = step(tree, {
+        type: 'task.resizeStart',
+        taskId: task(tree, 'B').id,
+        inputStart: '2026-10-02',
+      });
+      expect(task(tree, 'B').durationDays).toBe(6);
+    }
+    tree = step(tree, {
+      type: 'task.resizeStart',
+      taskId: task(tree, 'B').id,
+      inputStart: '2026-10-08',
+    });
+    expect(task(tree, 'B')).toMatchObject({
+      inputStart: '2026-10-08',
+      inputFinish: '2026-10-09',
+      durationDays: 2,
+    });
+    expect(task(tree, 'P')).toEqual(originalP);
+  },
+);
+it('keeps downstream dates and edge IDs while recalculating ancestor intervals', () => {
+  let tree = step(fresh(), {
+    type: 'project.schedule',
+    changes: { calendarType: 'weekdays' },
+  });
+  tree = create(tree, 'Parent', null, null);
+  tree = create(
+    tree,
+    'B',
+    '2026-10-07',
+    '2026-10-09',
+    undefined,
+    task(tree, 'Parent').id,
+  );
+  tree = create(tree, 'C', '2026-10-12', '2026-10-13', [task(tree, 'B').id]);
+  const original = tree,
+    parentId = task(tree, 'Parent').id;
+  expect(tree.schedule.summaries[parentId]).toMatchObject({
+    startDate: '2026-10-07',
+    finishDate: '2026-10-09',
+    calendarSpanDays: 3,
+  });
+  tree = step(tree, {
+    type: 'task.resizeStart',
+    taskId: task(tree, 'B').id,
+    inputStart: '2026-10-08',
+  });
+  expect(task(tree, 'C')).toEqual(task(original, 'C'));
+  expect(tree.dependencies).toEqual(original.dependencies);
+  expect(tree.schedule.summaries[parentId]).toMatchObject({
+    startDate: '2026-10-08',
+    finishDate: '2026-10-09',
+    calendarSpanDays: 2,
+  });
+});
+it('recalculates literal CPM reserves against an unchanged finish horizon', () => {
+  let tree = step(fresh(), {
+    type: 'project.schedule',
+    changes: { calendarType: 'weekdays' },
+  });
+  tree = create(
+    create(tree, 'A', '2026-10-05', '2026-10-06'),
+    'B',
+    '2026-10-07',
+    '2026-10-09',
+  );
+  const a = task(tree, 'A').id,
+    b = task(tree, 'B').id;
+  for (const value of [
+    tree,
+    step(tree, {
+      type: 'task.resizeStart',
+      taskId: b,
+      inputStart: '2026-10-09',
+    }),
+  ]) {
+    expect(value.schedule).toMatchObject({
+      horizonFinishDate: '2026-10-09',
+      criticalTaskIds: [b],
+    });
+    expect(value.schedule.tasks[a]).toMatchObject({
+      projectFloat: 3,
+      constraintFloat: 3,
+    });
+    expect(value.schedule.tasks[b]).toMatchObject({
+      projectFloat: 0,
+      constraintFloat: 0,
+    });
+  }
+});
+it('persists exact start-resize receipts across restart and undo; stale or changed replay never mutates', () => {
+  const before = create(fresh(), 'B', '2026-10-05', '2026-10-09');
+  const envelope = {
+    contractVersion: 2 as const,
+    expectedRevision: before.project.revision,
+    operationId: randomUUID(),
+    command: {
+      type: 'task.resizeStart' as const,
+      taskId: task(before, 'B').id,
+      inputStart: '2026-10-04',
+    },
+  };
+  const after = repository.applyCommand(before.project.id, envelope, session),
+    saved = rows();
+  expect(after.project.revision).toBe(before.project.revision + 1);
+  expect(repository.applyCommand(before.project.id, envelope, session)).toEqual(
+    after,
+  );
+  expect(rows()).toEqual(saved);
+  db.close();
+  db = openDatabase(path);
+  repository = new Repository(db, () => clock);
+  expect(repository.getTree(after.project.id, session)).toEqual(after);
+  const undone = step(after, { type: 'undo' });
+  expect(undone.tasks).toEqual(before.tasks);
+  expect(undone.schedule).toEqual(before.schedule);
+  db.close();
+  db = openDatabase(path);
+  repository = new Repository(db, () => clock);
+  expect(repository.getTree(undone.project.id, session)).toEqual(undone);
+  const cascadeSpy = vi.spyOn(cascade, 'cascadeFs'),
+    cpmSpy = vi.spyOn(scheduling, 'calculateSchedule'),
+    state = rows();
+  expect(repository.applyCommand(before.project.id, envelope, session)).toEqual(
+    after,
+  );
+  expect(() =>
+    repository.applyCommand(
+      before.project.id,
+      {
+        ...envelope,
+        command: { ...envelope.command, inputStart: '2026-10-03' },
+      },
+      session,
+    ),
+  ).toThrow(expect.objectContaining({ code: 'OPERATION_REUSED' }));
+  expect(() =>
+    repository.applyCommand(
+      before.project.id,
+      { ...envelope, operationId: randomUUID() },
+      session,
+    ),
+  ).toThrow(
+    expect.objectContaining({ code: 'REVISION_CONFLICT', statusCode: 409 }),
+  );
+  expect(rows()).toEqual(state);
+  expect(cascadeSpy).not.toHaveBeenCalled();
+  expect(cpmSpy).not.toHaveBeenCalled();
+});
+it('rolls back start-resize source, revision, outcome and undo on transaction failure', () => {
+  const tree = create(fresh(), 'B', '2026-10-05', '2026-10-09'),
+    before = rows();
+  db.exec(
+    "CREATE TRIGGER synthetic_resize_fail BEFORE INSERT ON tasks BEGIN SELECT RAISE(ABORT,'synthetic resize save failure'); END",
+  );
+  expect(() =>
+    step(tree, {
+      type: 'task.resizeStart',
+      taskId: task(tree, 'B').id,
+      inputStart: '2026-10-04',
+    }),
+  ).toThrow('synthetic resize save failure');
+  expect(rows()).toEqual(before);
+});

@@ -2147,3 +2147,160 @@ it('opens the shared action in the reused subtask tree and blocks list/Gantt/gra
   ).toBeDisabled();
   expect(commands).toHaveLength(0);
 });
+
+it('dispatches additive left resize without a duration choice and respects dirty panel guard', async () => {
+  const a = {
+    ...task(1, 'Left work'),
+    inputStart: '2026-10-05',
+    inputFinish: '2026-10-06',
+    durationDays: 2,
+  };
+  tree.tasks = [a];
+  tree.schedule.tasks[a.id] = {
+    startDate: '2026-10-05',
+    finishDate: '2026-10-06',
+    calendarSpanDays: 2,
+  };
+  await open();
+  const handle = await screen.findByRole('button', {
+    name: 'Изменить начало: Left work',
+  });
+  handle.focus();
+  fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+  await waitFor(() => expect(commands).toHaveLength(1));
+  expect(commands[0]!.command).toEqual({
+    type: 'task.resizeStart',
+    taskId: a.id,
+    inputStart: '2026-10-02',
+  });
+  expect(
+    screen.queryByRole('dialog', { name: 'Длительность не совпадает' }),
+  ).toBeNull();
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Изменить начало: Left work' }),
+    ).toHaveFocus(),
+  );
+  await userEvent.click(screen.getByRole('treeitem', { name: /Left work,/ }));
+  await userEvent.type(screen.getByLabelText('Описание'), 'dirty synthetic');
+  expect(
+    screen.queryByRole('button', { name: 'Изменить начало: Left work' }),
+  ).toBeNull();
+  fireEvent.keyDown(screen.getByRole('button', { name: /Left work, 2026/ }), {
+    key: 'ArrowLeft',
+  });
+  expect(commands).toHaveLength(1);
+});
+
+it('restores start handle only after revealing a confirmed keyboard start before the period', async () => {
+  const a = {
+    ...task(1, 'Boundary work'),
+    inputStart: '2026-10-05',
+    inputFinish: '2026-10-06',
+  };
+  tree.tasks = [a];
+  tree.schedule.tasks[a.id] = {
+    startDate: '2026-10-05',
+    finishDate: '2026-10-06',
+    calendarSpanDays: 2,
+  };
+  await open();
+  Object.defineProperty(
+    document.querySelector(`[data-task-id="${a.id}"]`)!,
+    'scrollIntoView',
+    { value: vi.fn() },
+  );
+  const handle = () =>
+    screen.getByRole('button', { name: 'Изменить начало: Boundary work' });
+  const ack = (
+    inputStart: string,
+    durationDays: number,
+    revision: number,
+  ): ProjectTree => ({
+    ...tree,
+    project: { ...tree.project, revision },
+    tasks: [{ ...a, inputStart, durationDays }],
+    schedule: {
+      ...tree.schedule,
+      analysisStatus: 'pending-policy',
+      tasks: {
+        [a.id]: {
+          startDate: inputStart,
+          finishDate: '2026-10-06',
+          calendarSpanDays: durationDays,
+        },
+      },
+    },
+  });
+  handle().focus();
+  fetchMock.mockImplementationOnce(() => json(ack('2026-10-02', 3, 1)));
+  fireEvent.keyDown(handle(), { key: 'ArrowLeft' });
+  await waitFor(() => expect(handle()).toHaveFocus());
+  fetchMock.mockImplementationOnce(() => json(ack('2026-10-01', 4, 2)));
+  fireEvent.keyDown(handle(), { key: 'ArrowLeft' });
+  await waitFor(() => expect(handle()).toHaveFocus());
+  expect(
+    screen.getByRole('button', { name: /Boundary work, 2026/ }),
+  ).toHaveAccessibleName(/2026-10-01 – 2026-10-06/);
+});
+
+it.each([false, true])(
+  'keeps a user focus takeover during delayed start ack without a filter change (blur=%s)',
+  async (blur) => {
+    const a = {
+      ...task(1, 'Owned focus work'),
+      inputStart: '2026-10-05',
+      inputFinish: '2026-10-06',
+    };
+    tree.tasks = [a];
+    tree.schedule.tasks[a.id] = {
+      startDate: '2026-10-05',
+      finishDate: '2026-10-06',
+      calendarSpanDays: 2,
+    };
+    await open();
+    const left = screen.getByRole('button', {
+      name: 'Изменить начало: Owned focus work',
+    });
+    const ack: ProjectTree = {
+      ...tree,
+      project: { ...tree.project, revision: 1 },
+      tasks: [{ ...a, inputStart: '2026-10-02', durationDays: 3 }],
+      schedule: {
+        ...tree.schedule,
+        analysisStatus: 'pending-policy',
+        tasks: {
+          [a.id]: {
+            startDate: '2026-10-02',
+            finishDate: '2026-10-06',
+            calendarSpanDays: 3,
+          },
+        },
+      },
+    };
+    let release!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((r) => {
+          release = r;
+        }),
+    );
+    left.focus();
+    fireEvent.keyDown(left, { key: 'ArrowLeft' });
+    const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
+    act(() => search.focus());
+    expect(search).toHaveFocus();
+    if (blur) act(() => search.blur());
+    await act(async () => {
+      release(await json(ack));
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /Owned focus work, 2026/ }),
+      ).toHaveAccessibleName(/2026-10-02 – 2026-10-06/),
+    );
+    if (blur) expect(document.activeElement).toBe(document.body);
+    else expect(search).toHaveFocus();
+    expect(search).toHaveValue('');
+  },
+);

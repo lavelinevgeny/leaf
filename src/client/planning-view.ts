@@ -6,6 +6,20 @@ import {
 import { realInterval } from '../domain/planning.js';
 import type { CalendarType } from '../domain/scheduling-types.js';
 import type { Task, SourceFields, SourcePatch } from '../shared/contracts.js';
+export type PlanGestureKind = 'move' | 'resize' | 'resize-start';
+
+// Only validates the display intent; the server computes and stores duration.
+export function validateStartResize(
+  task: Task,
+  calendar: CalendarType,
+  target: string,
+): void {
+  const interval = realInterval(task, calendar);
+  if (task.status === 'done' || !interval) throw new RangeError('LOCKED_PLAN');
+  if (workingDaysInclusive(target, interval.finishDate, calendar) > 1_000_000)
+    throw new RangeError('DURATION_RANGE_EXCEEDED');
+}
+
 export function sourceOf(task: Task): SourceFields {
   return {
     inputStart: task.inputStart,

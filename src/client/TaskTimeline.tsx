@@ -1,3 +1,4 @@
+import type { PlanGestureKind } from './planning-view.js';
 import {
   useEffect,
   useId,
@@ -36,7 +37,11 @@ import {
   filterTasks,
   type TaskFilter,
 } from './task-filter.js';
-export type GanttReveal = { taskId: string; sequence: number };
+export type GanttReveal = {
+  taskId: string;
+  sequence: number;
+  focusStart?: boolean;
+};
 interface Props {
   tree: ProjectTree;
   selectedId: string | null;
@@ -45,10 +50,12 @@ interface Props {
   onSelect: (task: Task) => void;
   onAction: (action: TreeAction, task: Task) => void;
   onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
-  onPlan: (task: Task, kind: 'move' | 'resize', target: string) => void;
+  onPlan: (task: Task, kind: PlanGestureKind, target: string) => void;
   disabled: boolean;
   show: boolean;
   reveal: GanttReveal | null;
+  onViewChange?: () => void;
+  onStartHandleVisible?: (taskId: string) => void;
   filter?: TaskFilter;
   viewControl?: ReactNode;
   draft?: {
@@ -70,6 +77,8 @@ export function TaskTimeline({
   disabled,
   show,
   reveal,
+  onViewChange,
+  onStartHandleVisible,
   viewControl,
   draft,
   filter = emptyTaskFilter,
@@ -181,7 +190,20 @@ export function TaskTimeline({
       row?.scrollIntoView({ block: 'nearest' });
     });
   }, [reveal]);
+  // The first reveal commit can still be clipped; complete only after start has rendered.
+  useLayoutEffect(() => {
+    if (
+      reveal?.focusStart &&
+      show &&
+      !disabled &&
+      horizontal.current?.querySelector(
+        `[data-gantt-resize-start="${reveal.taskId}"]`,
+      )
+    )
+      onStartHandleVisible?.(reveal.taskId);
+  }, [reveal, start, show, disabled, onStartHandleVisible]);
   const movePeriod = (direction: number) => {
+    onViewChange?.();
     setStart((previous) =>
       shiftDate(
         previous,
@@ -229,7 +251,10 @@ export function TaskTimeline({
               <select
                 aria-label={strings.scale}
                 value={scale}
-                onChange={(event) => setScale(event.target.value as Scale)}
+                onChange={(event) => {
+                  onViewChange?.();
+                  setScale(event.target.value as Scale);
+                }}
               >
                 {Object.entries(scaleLabels).map(([value, label]) => (
                   <option key={value} value={value}>
@@ -254,6 +279,7 @@ export function TaskTimeline({
                 onFocus={() => setTodayFocused(true)}
                 onBlur={() => setTodayFocused(false)}
                 onClick={() => {
+                  onViewChange?.();
                   setStart(shiftDate(today, -3));
                   if (horizontal.current) horizontal.current.scrollLeft = 0;
                 }}
