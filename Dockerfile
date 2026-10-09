@@ -17,7 +17,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && node --input-type=module -e "import Database from 'better-sqlite3'; const db=new Database(':memory:'); if(db.prepare('SELECT 1 AS ok').get().ok!==1) process.exit(1); db.close();"
 
 FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
-ENV NODE_ENV=production LEAF_HOST=0.0.0.0 LEAF_PORT=3000 LEAF_DATA_DIR=/data LEAF_PUBLIC_ORIGIN=http://127.0.0.1:3000
+ENV NODE_ENV=production LEAF_HOST=0.0.0.0 LEAF_PORT=3000 LEAF_DATA_DIR=/data
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY package.json package-lock.json LICENSE ./

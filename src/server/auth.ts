@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { DomainError } from '../domain/tree.js';
+import { DemoLimits, DEMO_BUSY } from './demo-limits.js';
 
 const N = 131072;
 const r = 8;
@@ -35,12 +36,16 @@ export class Auth {
     { count: number; until: number }
   >();
   private activeLogins = 0;
+  private readonly demoLimits: DemoLimits;
   private readonly dummySalt = randomBytes(16);
   private readonly dummyHash = randomBytes(64);
   constructor(
     private readonly db: Database.Database,
     private readonly now: () => number = Date.now,
-  ) {}
+    private readonly demoMode = false,
+  ) {
+    this.demoLimits = new DemoLimits(now);
+  }
   hasAccount(): boolean {
     return Boolean(this.db.prepare('SELECT id FROM account WHERE id=1').get());
   }
@@ -90,7 +95,41 @@ export class Auth {
       })
       .immediate();
   }
+  enterDemo(existingToken?: string): string {
+    if (!this.demoMode || !this.hasAccount())
+      throw new DomainError('DEMO_DISABLED', 'Демо недоступно.', 403);
+    if (this.session(existingToken)) return existingToken!;
+    return this.db
+      .transaction(() => {
+        const timestamp = this.now();
+        this.db
+          .prepare(
+            'DELETE FROM undo_snapshots WHERE sessionId IN (SELECT id FROM sessions WHERE expiresAt<=?)',
+          )
+          .run(timestamp);
+        this.db
+          .prepare('DELETE FROM sessions WHERE expiresAt<=?')
+          .run(timestamp);
+        const { count } = this.db
+          .prepare('SELECT COUNT(*) AS count FROM sessions')
+          .get() as { count: number };
+        if (count >= 100) throw new DomainError('DEMO_LIMIT', DEMO_BUSY, 429);
+        this.demoLimits.admitSession();
+        const token = randomBytes(32).toString('base64url');
+        this.db
+          .prepare('INSERT INTO sessions(id,expiresAt) VALUES (?,?)')
+          .run(sessionHash(token), timestamp + SESSION_SECONDS * 1000);
+        return token;
+      })
+      .immediate();
+  }
   async login(password: string, ip: string): Promise<string> {
+    if (this.demoMode)
+      throw new DomainError(
+        'DEMO_PASSWORD_DISABLED',
+        'В демо вход по паролю отключён.',
+        403,
+      );
     const timestamp = this.now();
     for (const [address, attempt] of this.attempts)
       if (attempt.until <= timestamp) this.attempts.delete(address);

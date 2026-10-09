@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: leaf-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /readyz
+    autoDeployTrigger: off
+    envVars:
+      - key: LEAF_DEMO_MODE
+        value: "1"
+      - key: LEAF_HOST
+        value: 0.0.0.0
+      - key: LEAF_PORT
+        value: "3000"
+      - key: PORT
+        value: "3000"

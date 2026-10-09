@@ -802,3 +802,17 @@ h2 {
     max-width: 300px;
   }
 }
+
+.demo-notice {
+  margin: 0;
+  padding: 8px 16px;
+  color: #46544b;
+  background: var(--leaf-accent-soft);
+  border-bottom: 1px solid var(--leaf-border);
+  font-size: 12px;
+}
+.auth-card .demo-notice {
+  margin: 16px 0;
+  border: 1px solid var(--leaf-border);
+  border-radius: 6px;
+}

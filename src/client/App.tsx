@@ -374,6 +374,19 @@ export function App() {
       setLoading(false);
     }
   }
+  useEffect(() => {
+    if (error?.status !== 401 || !session?.demoMode || !session.authenticated)
+      return;
+    setSession({ authenticated: false, setupRequired: false, demoMode: true });
+    setProjects([]);
+    setTree(null);
+    treeRef.current = null;
+    currentProject.current = null;
+    setSelected(null);
+    setQuickDrafts({});
+    setPending(null);
+    setConflict(false);
+  }, [error, session]);
   async function initialize() {
     setLoading(true);
     setError(null);
@@ -955,12 +968,14 @@ export function App() {
     if (success) setRename(null);
   }
   async function login() {
-    if (lock.current || !password) return;
+    if (lock.current || (!session?.demoMode && !password)) return;
     lock.current = true;
     setBusy(true);
     setError(null);
     try {
-      const auth = await api.login(password);
+      const auth = await (session?.demoMode
+        ? api.enterDemo()
+        : api.login(password));
       setPassword('');
       setSession(auth);
       if (auth.authenticated) await loadProjects();
@@ -983,7 +998,11 @@ export function App() {
     setError(null);
     try {
       await api.logout();
-      setSession({ authenticated: false, setupRequired: false });
+      setSession({
+        authenticated: false,
+        setupRequired: false,
+        ...(session?.demoMode ? { demoMode: true } : {}),
+      });
       setProjects([]);
       setTree(null);
       treeRef.current = null;
@@ -1093,8 +1112,23 @@ export function App() {
       <main className="auth-screen">
         <div className="auth-card">
           <h1>{strings.app}</h1>
+          {session?.demoMode && (
+            <p className="demo-notice">{strings.demoNotice}</p>
+          )}
           {loading ? (
             <p role="status">{strings.loading}</p>
+          ) : session?.demoMode ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void login();
+              }}
+            >
+              <button type="submit" className="primary" disabled={busy}>
+                {strings.demoEntry}
+              </button>
+              {busy && <p role="status">{strings.loading}</p>}
+            </form>
           ) : session?.setupRequired ? (
             <p>{strings.setup}</p>
           ) : (
@@ -1220,6 +1254,9 @@ export function App() {
         busy={busy || !!pending || conflict || loading || createUncertain}
       />
       <main className="workspace">
+        {session.demoMode && (
+          <p className="demo-notice">{strings.demoNotice}</p>
+        )}
         <header
           className={`workspace-header${selectedTask ? ' panel-visible' : ''}`}
         >
