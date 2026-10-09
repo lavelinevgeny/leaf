@@ -103,4 +103,4 @@ npm run db:backup -- /var/tmp/leaf-backups/new-snapshot.sqlite
 
 ## Публикация и лицензия
 
-Production-данные и конфигурация не входят в публичный репозиторий или образ. См. [SECURITY.md](SECURITY.md) и [LICENSE-NOTE.md](LICENSE-NOTE.md). Лицензия ещё не выбрана владельцем. Push, публикация образа и deployment требуют отдельного поручения; CI их не выполняет.
+Production-данные и конфигурация не входят в публичный репозиторий или образ. Код распространяется по [MIT License](LICENSE); происхождение материалов и лицензии зависимостей описаны в [LICENSE-NOTE.md](LICENSE-NOTE.md). См. также [SECURITY.md](SECURITY.md). Push, публикация образа и deployment требуют отдельного поручения; CI их не выполняет.

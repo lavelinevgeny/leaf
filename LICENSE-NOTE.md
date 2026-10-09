@@ -1,7 +1,7 @@
-# License decision pending
+# License and material provenance
 
-The owner requested a public repository but has not selected a software license. This starter kit deliberately does not invent a copyright holder or apply MIT, Apache, GPL or another license on the owner's behalf. `package.json` is `private: true` and `license: UNLICENSED` to prevent accidental package publication and an implied license choice.
+leaf is distributed under the [MIT License](LICENSE), selected by the owner on 2026-10-09. The owner confirmed the right to publish the project code and the three approved UI references. The copyright notice uses the collective attribution “leaf contributors”; no personal contact information is included.
 
-Before public distribution of application code, the owner should choose the intended license and add its proper LICENSE file. Public visibility and an open-source license are different decisions. Do not claim that leaf is an MIT/open-source project until that decision exists.
+`package.json` remains `private: true` to prevent accidental npm publication. Third-party dependencies retain their own licenses and required notices; the project license does not relicense them. Publication of the repository, packages or images remains a separate owner-authorized action.
 
 UI references are selected generated concepts supplied in the project conversation, not extracted source code or assets from Quire. They are design references only. Do not copy Quire logos, proprietary code, photographs, fonts or third-party assets into leaf. Do not infer rights to unprovided assets from a visual reference.

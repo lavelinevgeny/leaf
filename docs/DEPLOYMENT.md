@@ -22,7 +22,7 @@ Healthcheck обращается к `/readyz`; `/healthz` проверяет ж�
 
 ## Границы образа
 
-`.dockerignore` запрещает всё, кроме точных build inputs и TypeScript/CSS source. `npm run check:package` проверяет эту политику и отсутствие source symlinks. Runtime содержит только production dependencies, dist, migrations и package/lockfile; docs, макеты, tests, Git, env, agent settings и runtime storage не копируются.
+`.dockerignore` запрещает всё, кроме точных build inputs, лицензии и TypeScript/CSS source. `npm run check:package` проверяет эту политику, отсутствие source symlinks и копирование лицензии. Runtime содержит только production dependencies, dist, migrations, package/lockfile и MIT `LICENSE`; docs, макеты, tests, Git, env, agent settings и runtime storage не копируются.
 
 Builder использует `npm ci --strict-allow-scripts` с Python/make для reviewed implicit GYP. Production dependencies устанавливаются через `npm ci --omit=dev --ignore-scripts`: better-sqlite3 содержит bundled Node-API prebuild, загрузка которого и реальный SQLite query обязательны в самом build stage. Это не заявление о компиляции driver. Контейнерный smoke дополнительно проверяет native storage, CLI, статическую SPA и рестарт.
 

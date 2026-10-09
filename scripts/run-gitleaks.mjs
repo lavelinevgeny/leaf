@@ -62,7 +62,8 @@ try {
   // Freeze the exact policy for this run. Unstaged rules cannot replace index policy.
   snapshotConfig(root);
   if (mode === '--history') {
-    scan(['git', '--log-opts=--all', '.']);
+    // Include merge results: default Git patch output omits merge diffs.
+    scan(['git', '--log-opts=--all --full-history --diff-merges=separate', '.']);
     const metadata = readGitMetadata(root);
     if (metadata.length) scan(['stdin'], combine(metadata.map((entry) => entry.bytes)));
     console.log(`Gitleaks passed: file history and ${metadata.length} Git metadata objects; no covered secrets.`);

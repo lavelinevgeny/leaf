@@ -208,6 +208,37 @@ test('real Gitleaks detects metadata secrets with clean file history', (t) => {
   assert.equal((result.stdout + result.stderr).includes(token()), false);
 });
 
+test('real Gitleaks detects a scanner-only secret introduced by a merge and later removed', (t) => {
+  const dir = repo(t);
+  write(dir, 'demo.txt', 'Synthetic clean baseline');
+  git(dir, 'add', '--', '.');
+  committed(dir);
+  const originalBranch = git(dir, 'branch', '--show-current').trim();
+  git(dir, 'switch', '-q', '-c', 'fixture-side');
+  write(dir, 'side.txt', 'Synthetic side change');
+  git(dir, 'add', '--', 'side.txt');
+  committed(dir);
+  git(dir, 'switch', '-q', originalBranch);
+  write(dir, 'main.txt', 'Synthetic main change');
+  git(dir, 'add', '--', 'main.txt');
+  committed(dir);
+  git(dir, '-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--no-commit', 'fixture-side');
+  const marker = 'xo' + 'xb-' + '123456789012-123456789012-' + createHash('sha256').update('synthetic merge-only fixture').digest('hex').slice(0, 24);
+  write(dir, 'demo.txt', marker);
+  git(dir, 'add', '--', 'demo.txt');
+  committed(dir, 'Synthetic merge result');
+  const merge = git(dir, 'rev-parse', 'HEAD').trim();
+  for (const parent of ['^1', '^2']) assert.equal(git(dir, 'show', `${merge}${parent}:demo.txt`).includes(marker), false);
+  write(dir, 'demo.txt', 'Synthetic clean final snapshot');
+  git(dir, 'add', '--', 'demo.txt');
+  committed(dir);
+  assert.deepEqual(runGuard(dir, '--history').findings, [], 'Positive control must require Gitleaks rather than the lightweight guard.');
+  assert.equal(git(dir, 'show', 'HEAD:demo.txt').includes(marker), false);
+  const result = node(dir, 'run-gitleaks.mjs', ['--history']);
+  assert.equal(result.status, 1, 'The removed merge-only secret must still block publication.');
+  assert.equal((result.stdout + result.stderr).includes(marker), false, 'Scanner output must never disclose the synthetic value.');
+});
+
 test('real Gitleaks passes clean synthetic history', (t) => {
   const dir = repo(t);
   write(dir, 'demo.txt', 'Synthetic task A');

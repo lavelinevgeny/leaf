@@ -20,7 +20,7 @@ FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc
 ENV NODE_ENV=production LEAF_HOST=0.0.0.0 LEAF_PORT=3000 LEAF_DATA_DIR=/data LEAF_PUBLIC_ORIGIN=http://127.0.0.1:3000
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json LICENSE ./
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
 RUN mkdir /data && chown node:node /data && chmod 700 /data

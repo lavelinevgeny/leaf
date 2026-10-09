@@ -962,3 +962,37 @@ PASS: doctor; verify — typecheck, lint, 774/774 unit/integration tests в 42 �
 Tests-first: новая actual-server регрессия воспроизвела постоянную opacity 1, после исправления прошла в обоих viewport. PASS на закреплённом Node: doctor; verify — typecheck, lint, 774/774 unit/integration tests, production build; format:check; check:kit; security:workspace; git diff --check. Профильный E2E compact-workspace — 8/8 в 1440×900 и 1280×800 без skips/retries: hover/уход курсора, выбор проекта, открытое меню, Tab/Enter/Escape, touch, геометрия и существующие settings/rename/undo. Синтетические screenshots основного экрана и меню просмотрены. Первоначальный doctor на незакреплённой версии Node отказал; повтор на уже установленной закреплённой версии прошёл.
 
 При подготовке локального коммита полный preflight PASS: doctor, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. Staged diff проверен; прежние несвязанные записи STATUS оставлены вне index. Не запускались полный E2E, Docker и sandbox probe; push/deployment не выполнялись. Следующий шаг — проверка интерфейса владельцем и продолжение S4–S6.
+
+
+## Аудит публичной публикации, 2026-10-09
+
+Проверен локальный кандидат по public-repo-readiness: workspace/index/history guard и Gitleaks без находок; независимый history scan с full-history и отдельными merge-диффами также без находок. Проверены 115 достижимых коммитов, 957 версий файлов, три утверждённых PNG и две версии SVG. PASS: check:kit, 52/52 test:kit, check:package. Первичный doctor/preflight отказал на незакреплённой версии Node; повторный doctor на уже установленном закреплённом runtime PASS.
+
+Ограничения: remotes отсутствуют, поэтому серверные refs, материалы GitHub и защиты не проверены. Лицензия и право на публикацию требуют решения владельца. Штатный Gitleaks history вызов не задаёт merge-диффы; Dependabot version updates охватывает только Actions. Полный ручной обзор исторических текстов и происхождения материалов не подтверждён. Закрытый отчёт хранится вне checkout. Application tests/build/E2E, Docker, sandbox probe и публикация в этом аудите не выполнялись. Прежние изменения STATUS сохранены; application code и активные конфигурации не менялись. Следующий шаг — закрыть непроверенные области и решения владельца перед публикацией.
+
+Повторный полный preflight на закреплённых Node/npm PASS: doctor, 52/52 kit tests, workspace/index/history и metadata guard/Gitleaks; index не изменён.
+
+
+## Подготовка первой публичной публикации, 2026-10-09
+
+Владелец уточнил: проект существует только локально. Серверные материалы GitHub пока отсутствуют; их настройки и проверка относятся к будущей первой публикации. Подтверждены права на код и три утверждённых макета, выбрана MIT. Добавлен LICENSE с коллективной атрибуцией leaf contributors, согласованы package/lockfile, README и LICENSE-NOTE. Runtime Dockerfile копирует LICENSE; allowlist и check:package проверяют эту границу. Лицензии сторонних dependencies сохраняются.
+
+Gitleaks history теперь включает all/full-history и отдельные merge-диффы. Новая синтетическая регрессия воспроизвела пропуск scanner-only секрета, добавленного только merge-коммитом и позднее удалённого; после исправления публикация блокируется без раскрытия значения. Dependabot получил еженедельные npm version updates с лимитом три PR; автоматический merge не добавлен. PRIVACY/DEPLOYMENT синхронизированы. Прежняя незакоммиченная запись STATUS сохранена.
+
+PASS: полный preflight на закреплённых Node/npm, 53/53 kit tests, workspace/index/history и metadata guard/Gitleaks; verify — typecheck, lint, 835/835 tests в 42 файлах и production build; format:check; check:package; git diff --check. Дополнительно просмотрены все 115 commit subjects, состав 957 исторических path/blob версий и выделенные исторические URL-контексты (24 версии): синтетические адреса и публичные источники. Чувствительных данных в этом объёме не выявлено. Полный ручной построчный просмотр всех исторических текстов не подтверждён; автоматический guard не заменяет его.
+
+Закрытый отчёт вне checkout обновлён с учётом первой публикации и согласованных решений. Не выполнены свежая установка в чистой среде, E2E, Docker build/smoke и OS sandbox probe; продуктовая V1/S4–S6 не объявлены готовыми. Git index, history, remotes и серверные настройки не менялись; commit/push/deployment не выполнялись. Следующий шаг — review локального diff, завершение ручной privacy-проверки и отдельная подготовка GitHub/первого push по поручению владельца.
+
+
+## Тематический privacy-review истории, 2026-10-09
+
+По поручению владельца завершён дополнительный обзор достижимой локальной истории: 115 коммитов, 957 уникальных path/blob версий, сообщения и имена refs, метаданные, удалённые paths, текстовые данные фикстур, literal названия/описания и шаблонные строки, публичные URL/пути и privacy-контексты документов. AST inventory: 2208 semantic strings и 202 template fragments; данные рассмотрены по тематическому privacy-перечню вместе с полными автоматическими сканами. Deleted paths — только четыре source-модуля; исторические entries regular, tags/notes/submodules/symlinks отсутствуют. Метаданные не добавляют новых identity names относительно прежних review sources; одобренные author/committer email сохраняются и будут публичны вместе с авторством.
+
+Повторные security:history, security:workspace и workspace Gitleaks PASS: покрываемых секретов/PII и новых privacy-блокеров не выявлено. Изображения проверены в предыдущем аудите. Закрытый отчёт вне checkout дополнен доказательствами и фактическим охватом. Это тематический аудит публикационных данных, не построчный code review всех snapshots и не гарантия распознавания любого скрытого PII; unreachable objects/private runtime не читались и не включаются в обычный push.
+
+Локальный кандидат пригоден к подготовке первого публичного push в проверенном объёме. Перед отправкой нужны финальный review diff, штатные hooks/checks и точный набор refs; будущие GitHub protections/visibility проверяются отдельно. Application/config changes, commit, push, history rewrite и remote operations в этом этапе не выполнялись. Предыдущие правки сохранены.
+
+
+## Первый public GitHub — подготовка, 2026-10-09
+
+Владелец явно разрешил создать public repository, опубликовать проверенную историю и настроить защиты. Создан пустой public GitHub repository с main по умолчанию; до отправки кода включены secret scanning/push protection, private vulnerability reporting, Dependabot alerts/security updates и read-only Actions token без права approvals. GET подтвердил private reporting, security updates и Actions permissions. SECURITY обновлён под действительный приватный канал, O04 закрыт в DECISIONS. Проверенная локальная ветка будет отправлена как main; прочие heads и служебные refs не отправляются. Прежняя несвязанная запись STATUS остаётся только в рабочей копии. Финальный preflight PASS 53/53 kit tests и все privacy scans; push/CI и branch protection результаты будут записаны после выполнения.

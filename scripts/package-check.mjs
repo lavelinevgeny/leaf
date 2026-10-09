@@ -7,6 +7,7 @@ const expected = [
   '!.dockerignore',
   '!package.json',
   '!package-lock.json',
+  '!LICENSE',
   '!tsconfig.json',
   '!tsconfig.server.json',
   '!vite.config.ts',
@@ -46,6 +47,7 @@ inspect('src');
 const docker = readFileSync('Dockerfile', 'utf8');
 if (
   /^COPY\s+\.\s/m.test(docker) ||
+  !docker.includes('COPY package.json package-lock.json LICENSE ./') ||
   !docker.includes('USER node') ||
   !docker.includes('HEALTHCHECK')
 )

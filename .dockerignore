@@ -4,6 +4,7 @@
 !.dockerignore
 !package.json
 !package-lock.json
+!LICENSE
 !tsconfig.json
 !tsconfig.server.json
 !vite.config.ts

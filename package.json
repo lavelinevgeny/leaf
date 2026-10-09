@@ -2,7 +2,7 @@
   "name": "leaf",
   "version": "0.0.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "description": "Small self-hosted planner: transactional task tree foundation",
   "type": "module",
   "engines": {
