@@ -996,3 +996,8 @@ PASS: полный preflight на закреплённых Node/npm, 53/53 kit t
 ## Первый public GitHub — подготовка, 2026-10-09
 
 Владелец явно разрешил создать public repository, опубликовать проверенную историю и настроить защиты. Создан пустой public GitHub repository с main по умолчанию; до отправки кода включены secret scanning/push protection, private vulnerability reporting, Dependabot alerts/security updates и read-only Actions token без права approvals. GET подтвердил private reporting, security updates и Actions permissions. SECURITY обновлён под действительный приватный канал, O04 закрыт в DECISIONS. Проверенная локальная ветка будет отправлена как main; прочие heads и служебные refs не отправляются. Прежняя несвязанная запись STATUS остаётся только в рабочей копии. Финальный preflight PASS 53/53 kit tests и все privacy scans; push/CI и branch protection результаты будут записаны после выполнения.
+
+
+## Исправление первого публичного CI, 2026-10-09
+
+Публичный репозиторий создан; включены secret scanning, push protection, private vulnerability reporting, Dependabot и защиты main/release tags. Первый CI выявил две ошибки окружения: source install Gitleaks не задавал version linker variable, а shallow application checkout не содержал исторический S3 registry для migration test. Исправлены закреплённая сборка scanner и полный checkout; проверки не отключены. Локальные проверки и повторный GitHub CI фиксируются отдельно по фактическим результатам.
