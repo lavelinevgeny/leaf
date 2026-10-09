@@ -244,8 +244,8 @@ test('demo explicitly opens a shared example and resets on restart', async ({ pa
 
 **Interfaces:** consumes prepareServerRuntime and main startup, exposes PORT=LEAF_PORT=3000 plus `/readyz`. No new application API. Explicit public origin override and validated Render hostname fallback are Task1 contracts.
 
-- [ ] **3.1 Write configuration RED.** Verify exact blueprint free/docker/single-service/manual/no-disk settings; Docker no baked-in origin; origin tests validate RENDER=true + hostname fallback, explicit HTTPS custom origin precedence, missing/malformed hostname failure, explicit HTTP rejection on Render and normal defaults.
-- [ ] **3.2 Add Blueprint.** No actual service creation or remote CLI invocation.
+- [x] **3.1 Write configuration RED.** Verify exact blueprint free/docker/single-service/manual/no-disk settings; Docker no baked-in origin; origin tests validate RENDER=true + hostname fallback, explicit HTTPS custom origin precedence, missing/malformed hostname failure, explicit HTTP rejection on Render and normal defaults.
+- [x] **3.2 Add Blueprint.** No actual service creation or remote CLI invocation.
 
 ```yaml
 services:
@@ -268,9 +268,9 @@ services:
         value: '3000'
 ```
 
-- [ ] **3.3 Align Docker defaults.** Remove only LEAF_PUBLIC_ORIGIN from ENV; normal loadConfig computes same loopback default, Compose retains explicit origin. Keep pinned digest, USER node, native SQLite probe, no shell startup, no build-time seed/runtime files. `render.yaml` does not need inclusion in .dockerignore allowlist or runtime layers.
+- [x] **3.3 Align Docker defaults.** Remove only LEAF_PUBLIC_ORIGIN from ENV; normal loadConfig computes same loopback default, Compose retains explicit origin. Keep pinned digest, USER node, native SQLite probe, no shell startup, no build-time seed/runtime files. `render.yaml` does not need inclusion in .dockerignore allowlist or runtime layers.
 - [ ] **3.4 Run synthetic container smoke.** Build reviewed source; create disposable container/resources with unique names and cleanup ownership. Normal mode before setup401/route404; normal CLI synthetic setup/login, edit/restart persistence; demo startup without CLI, readyz, SPA, passwordless session, seed/edit/restart reset and old-cookie rejection. Test read-only root plus tmpfs `/tmp`, no mounted private data. Check Docker healthcheck and SIGTERM exit; remove only created containers/volumes.
-- [ ] **3.5 Verify HTTPS locally.** Temporary self-signed test certificate created outside checkout; local TLS reverse proxy forwards to actual server with configured HTTPS origin. Use only test client trust override scoped to this fixture; never change app TLS/security settings. Assert Secure/HttpOnly/SameSite cookie, same-origin entry/edit/logout, foreign/missing Origin403, spoofed Forwarded/X-Forwarded-Host ignored. Do not print cookie/key/body. Run real Render only after separate owner authorization, not in this plan.
+- [x] **3.5 Verify HTTPS locally.** Temporary self-signed test certificate created outside checkout; local TLS reverse proxy forwards to actual server with configured HTTPS origin. Use only test client trust override scoped to this fixture; never change app TLS/security settings. Assert Secure/HttpOnly/SameSite cookie, same-origin entry/edit/logout, foreign/missing Origin403, spoofed Forwarded/X-Forwarded-Host ignored. Do not print cookie/key/body. Run real Render only after separate owner authorization, not in this plan.
 
 ```ts
 expect(httpsEntry.headers.get('set-cookie')).toMatch(/; Secure(?:;|$)/i);
@@ -280,7 +280,7 @@ expect(spoofedForwardedOrigin.status).toBe(403);
 // Assert actual persisted revision through authenticated API after HTTPS edit.
 ```
 
-- [ ] **3.6 Write deployment instructions.** Clearly label free/shared/reset; public notice/no personal data; local LEAF_DEMO_MODE command with exact origin; Render manual Blueprint or Dashboard workflow, no credentials in source. Explain HOST/PORT pair, fallback hostname, explicit custom-domain HTTPS origin, readyz, cold start/quotas, automatic restart/reset, manual deploy setting and no shell/setup requirement. Mention stop/restart affects all visitors. Link primary Render docs and checked date; no invented live URL or success claim.
+- [x] **3.6 Write deployment instructions.** Clearly label free/shared/reset; public notice/no personal data; local LEAF_DEMO_MODE command with exact origin; Render manual Blueprint or Dashboard workflow, no credentials in source. Explain HOST/PORT pair, fallback hostname, explicit custom-domain HTTPS origin, readyz, cold start/quotas, automatic restart/reset, manual deploy setting and no shell/setup requirement. Mention stop/restart affects all visitors. Link primary Render docs and checked date; no invented live URL or success claim.
 - [ ] **3.7 Run all final checks.** `npm run verify`, `npm run format:check`, `npm run test:unit`, `npm run test:integration`, `npm run test:e2e`, `npm run check:kit`, `npm run check:package`, `npm run preflight`, `git diff --check`. Reuse already-passed unchanged checks within block; repeat only after relevant changes. Preflight includes real scanner/metadata and must not silently skip missing tooling. If linked-worktree policy rejects .git pointer, report limitation and ask coordinator to perform equivalent ordinary-checkout gates without changing guard policy.
 - [ ] **3.8 Task3 review then commit.** STATUS separates passed/failed/not run, local TLS/Docker smoke from real Render. Independent reviewer validates spec A7–A8 and no privacy changes; fix findings, rerun affected checks; positive final-diff review before `feat: prepare free Render demo deployment` commit.
 - [ ] **3.9 Whole-branch independent review.** Review exact reviewed commits from pre-task base, contracts crossing server/client/container, restart/expiry/normal-mode regression, docs truthfulness and all A1–A8. Findings return to original block implementer and new scoped approval before corrective commit. Coordinator runs remaining root gates preserving unrelated owner changes; final report contains local commit IDs, passed checks, limitations, and explicit no publication.
