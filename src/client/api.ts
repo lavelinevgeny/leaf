@@ -95,6 +95,7 @@ export const api = {
       true,
     ),
   session: () => request('/auth/session', sessionSchema),
+  enterDemo: () => request('/auth/demo', sessionSchema, 'POST', {}),
   login: (password: string) =>
     request('/auth/login', sessionSchema, 'POST', { password }),
   logout: () => request('/auth/logout', z.unknown(), 'POST', {}),
