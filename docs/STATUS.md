@@ -1,5 +1,11 @@
 # Статус разработки
 
+## Render demo — спецификация и план, 2026-10-09
+
+Подготовлены C28/D20, ADR013, спецификация изолированного публичного demo runtime и план трёх блоков: сервер/seed/session, клиент/actual-server browser, Render/Docker/deployment smoke. Точный session contract — optional demoMode и conditional POST /api/auth/demo; обычные auth/storage правила сохраняются. План требует independent review каждого блока до коммита и whole-branch review. START_HERE дополнен навигацией. Подтверждённые требования отделены от инженерных defaults.
+
+Проверено чтением текущих server/client contracts и трёх утверждённых PNG; официальные Render Free/Blueprint/env/web-service docs сверены 2026-10-09. Self-review сопоставил все требования спецификации с Task1–3 и проверил одинаковые global constraints. PASS: `npm run check:kit` — 64 Markdown files, 320 local links, 3 approved references, 10 CPM и 4 calendar examples; `git diff --check`; точное совпадение global constraints спецификации/плана. Код приложения в этом блоке не менялся; application tests, Docker/TLS smoke и реальное размещение здесь не выполнялись. Следующий шаг — независимый review точного документационного diff, затем реализация Task1 по утверждённому направлению.
+
 ## Кнопка FS только на диаграмме Ганта — 2026-10-09
 
 Убрана цепочка «После окончания» из общего дерева: отдельный список, левая часть режима Ганта и вкладка «Подзадачи». Удалены её CSS, refs, callback и Alt+L из строк дерева. «+ Подзадача» и Shift+Enter сохранены. На диаграмме цепочка и Alt+L, picker в быстром вводе и Details работают через прежние механизмы. Сервер, scheduling/API, исходные даты и зависимости не менялись.
