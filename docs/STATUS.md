@@ -1,5 +1,20 @@
 # Статус разработки
 
+## Render demo — Task 1, серверный кандидат, 2026-10-09
+
+Подготовлены изолированный demo runtime, атомарный синтетический seed, conditional guest-session endpoint и server-only in-memory limits. Только LEAF_DEMO_MODE=1 создаёт fresh temp вне checkout, игнорирует исходный LEAF_DATA_DIR и включает optional demoMode. CLI остаётся на normal loadConfig; network validation выделена без изменения normal правил, чтобы проверить demo configuration до allocation. Main закрывает app/SQLite до очистки собственного temp при startup failure и SIGINT/SIGTERM; поздний onClose cleanup исключён из-за обратного порядка hooks Fastify.
+
+Seed через существующие Repository commands создаёт 10 задач, уровни 1–3, три FS связи и честный incomplete/partial CPM; даты nullable, UTC/weekdays, условные display даты не записываются. Seed history удаляется внутри transaction. Гостевые opaque sessions хранятся hashed, reuse не выделяет новые rows, logout/expiry и undo независимы. Exact Origin/JSON, strict empty entry body, Secure/HttpOnly/SameSite cookies и normal fail-closed сохраняются; demo password login отключён до scrypt. Limits проверяются до Repository; parsed JSON UTF-8 budget уточнён в D20/spec, per-request bodyLimit сохранён.
+
+Tests-first RED: отсутствующий runtime module; demo endpoint404 и прежняя session metadata. Seed rollback/UTC/weekend/year-boundary проверены независимо; startup build/storage/setup/seed/static/listen failures и оба graceful signals проверены с утверждением SQLite close до cleanup. Дополнительные HTTP/regression tests покрывают no-read sentinel/symlink, unsafe TMPDIR, hashed session/re-entry/expiry, shared editing/session undo, exact rate/count/UTF-8 limits, cached/409 attempts, отсутствие persistent growth при rejection и normal 201 mutations без demo limits.
+
+PASS: typecheck, lint, format:check; unit — 580 tests в 28 файлах; integration — 297 tests в 19 файлах; check:kit — 64 Markdown files, 320 local links, 3 approved references, 10 CPM и 4 calendar examples; diff whitespace. Последний ошибочный static-failure fixture исправлен на относительный staticRoot и прошёл focused repeat8/8; актуальных failed checks нет. Staged privacy guard/Gitleaks PASS:17 entries/blobs, covered findings отсутствуют. Независимый review точного кандидата ожидается; commit approval здесь не заявляется.
+
+Не запускались в Task1: client/browser E2E, production build, Docker/TLS smoke, package/preflight и реальное размещение; эти проверки остаются для следующих блоков и root acceptance. Нет новых dependencies, lockfile, SQL/schema или CPM изменений, remote actions не выполнялись. Следующий шаг — независимые spec/quality reviews Task1 до коммита, затем клиент Task2; S4–S6 и первый релиз остаются незавершёнными.
+
+Scoped fix round1 после независимого review: SIGINT/SIGTERM handlers регистрируются до async buildApp/account setup; shutdown intent сериализован с pending initialization и одним closing Promise. После сигнала listen подавляется, повторные сигналы не запускают повторную очистку; app/SQLite закрывается до собственного temp также при rejected startup. Tests-first RED6/6 воспроизвёл отсутствие обработчиков во время setup/build. GREEN48/48 в demo-main/runtime/API, включая оба сигнала, delayed setup/build/rejection, close-before-cleanup и shared boundary для create/rename/commands/undo/legacy replay. Typecheck/lint/format:check повторены; полный unit/integration результат выше относится к кандидату до scoped fix. Повторный независимый review ожидается; коммита нет.
+
+
 ## Render demo — спецификация и план, 2026-10-09
 
 Подготовлены C28/D20, ADR013, спецификация изолированного публичного demo runtime и план трёх блоков: сервер/seed/session, клиент/actual-server browser, Render/Docker/deployment smoke. Точный session contract — optional demoMode и conditional POST /api/auth/demo; обычные auth/storage правила сохраняются. План требует independent review каждого блока до коммита и whole-branch review. START_HERE дополнен навигацией. Подтверждённые требования отделены от инженерных defaults.

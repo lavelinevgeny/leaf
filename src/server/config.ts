@@ -64,17 +64,9 @@ export function validateDatabasePath(databasePath: string): string {
   }
   return destination;
 }
-export function loadConfig(
-  environment: Record<string, string | undefined> = process.env,
-): RuntimeConfig {
-  const dataDirectory = environment.LEAF_DATA_DIR;
-  if (!dataDirectory || !isAbsolute(dataDirectory))
-    throw new Error(
-      'LEAF_DATA_DIR must be an absolute directory outside the application checkout',
-    );
-  const destination = resolvedDestination(dataDirectory);
-  if (inside(destination, realpathSync(applicationRoot)))
-    throw new Error('LEAF_DATA_DIR must be outside the application checkout');
+export function loadNetworkConfig(
+  environment: Record<string, string | undefined>,
+): Pick<RuntimeConfig, 'host' | 'port' | 'publicOrigin'> {
   const portString = environment.LEAF_PORT ?? '3000';
   const port = Number(portString);
   if (
@@ -94,6 +86,20 @@ export function loadConfig(
     !['http:', 'https:'].includes(parsed.protocol)
   )
     throw new Error('LEAF_PUBLIC_ORIGIN must be an exact HTTP origin');
+  return { host, port, publicOrigin };
+}
+export function loadConfig(
+  environment: Record<string, string | undefined> = process.env,
+): RuntimeConfig {
+  const dataDirectory = environment.LEAF_DATA_DIR;
+  if (!dataDirectory || !isAbsolute(dataDirectory))
+    throw new Error(
+      'LEAF_DATA_DIR must be an absolute directory outside the application checkout',
+    );
+  const destination = resolvedDestination(dataDirectory);
+  if (inside(destination, realpathSync(applicationRoot)))
+    throw new Error('LEAF_DATA_DIR must be outside the application checkout');
+  const { host, port, publicOrigin } = loadNetworkConfig(environment);
   const databasePath = validateDatabasePath(join(destination, 'leaf.sqlite'));
   mkdirSync(destination, { recursive: true, mode: 0o700 });
   return {

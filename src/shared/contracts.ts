@@ -436,6 +436,7 @@ export const loginSchema = z.strictObject({
 export const sessionSchema = z.strictObject({
   authenticated: z.boolean(),
   setupRequired: z.boolean(),
+  demoMode: z.boolean().optional(),
 });
 export const errorSchema = z.strictObject({
   code: z.string(),

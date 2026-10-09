@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { seedDemo } from './demo-seed.js';
+import { DemoLimits } from './demo-limits.js';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import staticPlugin from '@fastify/static';
@@ -20,6 +23,7 @@ export interface BuildAppOptions {
   publicOrigin: string;
   staticRoot?: string;
   now?: () => number;
+  demoMode?: boolean;
 }
 declare module 'fastify' {
   interface FastifyInstance {
@@ -56,7 +60,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     bodyLimit: 64 * 1024,
     trustProxy: false,
   });
-  app.decorate('auth', new Auth(db, options.now));
+  app.decorate('auth', new Auth(db, options.now, options.demoMode));
   app.decorate('repository', new Repository(db, options.now));
   app.addHook('onClose', () => {
     db.close();
@@ -68,7 +72,13 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     path: '/',
     maxAge: SESSION_SECONDS,
   };
+  const demoLimits = options.demoMode ? new DemoLimits(options.now) : undefined;
+  const demoSession = options.demoMode ? { demoMode: true } : {};
   try {
+    if (options.demoMode) {
+      await app.auth.setup(randomBytes(32).toString('base64url'));
+      seedDemo(db, app.repository, options.now ?? Date.now);
+    }
     await app.register(cookie);
     app.addHook('onRequest', async (request, reply) => {
       reply
@@ -143,8 +153,22 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     app.get('/api/auth/session', (request) => ({
       authenticated: Boolean(app.auth.session(request.cookies.leaf_session)),
       setupRequired: !app.auth.hasAccount(),
+      ...demoSession,
     }));
+    if (options.demoMode)
+      app.post('/api/auth/demo', (request, reply) => {
+        z.strictObject({}).parse(request.body);
+        const token = app.auth.enterDemo(request.cookies.leaf_session);
+        reply.setCookie('leaf_session', token, cookieOptions);
+        return { authenticated: true, setupRequired: false, ...demoSession };
+      });
     app.post('/api/auth/login', async (request, reply) => {
+      if (options.demoMode)
+        throw new DomainError(
+          'DEMO_PASSWORD_DISABLED',
+          'В демо вход по паролю отключён.',
+          403,
+        );
       const input = loginSchema.parse(request.body);
       const token = await app.auth.login(input.password, request.ip);
       reply.setCookie('leaf_session', token, cookieOptions);
@@ -155,7 +179,11 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       z.strictObject({}).parse(request.body);
       app.auth.logout(request.cookies.leaf_session);
       reply.clearCookie('leaf_session', cookieOptions);
-      return { authenticated: false, setupRequired: !app.auth.hasAccount() };
+      return {
+        authenticated: false,
+        setupRequired: !app.auth.hasAccount(),
+        ...demoSession,
+      };
     });
     app.get('/api/projects', (request) => {
       requireSession(request);
@@ -166,19 +194,21 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       requireSession(request);
       requireContractVersion(request);
       const input = createProjectSchema.parse(request.body);
+      demoLimits?.admitMutation(request.body);
       return reply.code(201).send(app.repository.createProject(input.title));
     });
     app.patch('/api/projects/:id', (request) => {
       const session = requireSession(request);
       requireContractVersion(request, true);
       const { id } = projectParamsSchema.parse(request.params);
-      if (request.headers['x-leaf-legacy-replay'] === '1')
+      if (request.headers['x-leaf-legacy-replay'] === '1') {
+        if (demoLimits) z.object({}).parse(request.body);
+        demoLimits?.admitMutation(request.body);
         return app.repository.replayLegacy(id, request.body, session);
-      return app.repository.renameProject(
-        id,
-        renameProjectSchema.parse(request.body),
-        session,
-      );
+      }
+      const input = renameProjectSchema.parse(request.body);
+      demoLimits?.admitMutation(request.body);
+      return app.repository.renameProject(id, input, session);
     });
     app.get('/api/projects/:id/tree', (request) => {
       const session = requireSession(request);
@@ -201,13 +231,14 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       const session = requireSession(request);
       requireContractVersion(request, true);
       const { id } = projectParamsSchema.parse(request.params);
-      if (request.headers['x-leaf-legacy-replay'] === '1')
+      if (request.headers['x-leaf-legacy-replay'] === '1') {
+        if (demoLimits) z.object({}).parse(request.body);
+        demoLimits?.admitMutation(request.body);
         return app.repository.replayLegacy(id, request.body, session);
-      return app.repository.applyCommand(
-        id,
-        commandEnvelopeSchema.parse(request.body),
-        session,
-      );
+      }
+      const input = commandEnvelopeSchema.parse(request.body);
+      demoLimits?.admitMutation(request.body);
+      return app.repository.applyCommand(id, input, session);
     });
     if (options.staticRoot) {
       await app.register(staticPlugin, {
