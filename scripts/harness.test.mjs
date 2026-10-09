@@ -529,3 +529,77 @@ test('doctor accepts major or exact Node pins and rejects a different patch or m
   write(dir, '.nvmrc', 'synthetic-invalid-version');
   assert.ok(inspectEnvironment(dir).some((check) => check.id === 'node-version' && !check.ok));
 });
+
+
+test('reviewed GitHub service identities stay scoped to configured commit fields', async () => {
+  const { parseMetadataReviews, reviewedCommitEmails, metadataFindings } = await import('./git-metadata-reviews.mjs');
+  const services = [
+    { service: 'github-dependabot', fields: ['author'], review: 'Owner approved public service signature.' },
+    { service: 'github-web-flow', fields: ['committer'], review: 'Owner approved public service signature.' },
+  ];
+  const manifest = { version: 2, commitEmailReviews: [], serviceEmailReviews: services };
+  const reviews = parseMetadataReviews(Buffer.from(JSON.stringify(manifest)));
+  const approved = reviewedCommitEmails([], reviews);
+  const bot = '49699333+dependabot[bot]' + '@' + 'users.noreply.github.com';
+  const web = 'noreply' + '@' + 'github.com';
+  const bytes = Buffer.from(`tree ${'a'.repeat(40)}\nauthor dependabot[bot] <${bot}> 1 +0000\ncommitter GitHub <${web}> 1 +0000\n\nSynthetic dependency update\n`);
+  const entry = { kind: 'commit', oid: 'b'.repeat(40), bytes };
+  assert.deepEqual(metadataFindings(entry, approved), []);
+  for (const candidate of [
+    { ...entry, kind: 'tag' },
+    { ...entry, bytes: Buffer.from(bytes.toString() + web) },
+    { ...entry, bytes: Buffer.from(bytes.toString().replace('dependabot[bot] <', `${web} <`)) },
+    { ...entry, bytes: Buffer.from(bytes.toString().replace(bot, web)) },
+    { ...entry, bytes: Buffer.from(bytes.toString().replace(bot, 'other' + '@' + 'identity.test')) },
+  ]) assert.ok(metadataFindings(candidate, approved).includes('EMAIL_REVIEW_REQUIRED'));
+  assert.ok(metadataFindings({ ...entry, bytes: Buffer.from(bytes.toString() + token()) }, approved).includes('GITHUB_TOKEN'));
+  assert.ok(metadataFindings(entry, reviewedCommitEmails([], [])).includes('EMAIL_REVIEW_REQUIRED'));
+  for (const data of [
+    { ...manifest, serviceEmailReviews: [{ ...services[0], service: '*' }] },
+    { ...manifest, serviceEmailReviews: [{ ...services[0], fields: ['message'] }] },
+    { ...manifest, serviceEmailReviews: [{ ...services[0], email: bot }] },
+    { ...manifest, serviceEmailReviews: [services[0], services[0]] },
+  ]) assert.throws(() => parseMetadataReviews(Buffer.from(JSON.stringify(data))));
+});
+
+
+test('GitHub service review must be indexed and never allows an email in a file', (t) => {
+  const dir = repo(t);
+  const bot = 'noreply' + '@' + 'github.com';
+  git(dir, 'config', '--local', 'user.email', bot);
+  write(dir, 'demo.txt', 'Synthetic dependency fixture');
+  git(dir, 'add', '--', 'demo.txt');
+  committed(dir);
+  write(dir, 'config/public-git-metadata.json', JSON.stringify({ version: 2, commitEmailReviews: [], serviceEmailReviews: [{ service: 'github-web-flow', fields: ['author', 'committer'], review: 'Owner approved public service signature.' }] }));
+  assert.ok(runGuard(dir, '--history').findings.some((finding) => finding.rule === 'EMAIL_REVIEW_REQUIRED'));
+  git(dir, 'add', '--', 'config/public-git-metadata.json');
+  assert.deepEqual(runGuard(dir, '--history').findings, []);
+  write(dir, 'contact.txt', bot);
+  git(dir, 'add', '--', 'contact.txt');
+  assert.ok(runGuard(dir, '--staged').findings.some((finding) => finding.path === 'contact.txt' && finding.rule === 'EMAIL_REVIEW_REQUIRED'));
+});
+
+
+test('Dependabot trailer review only permits the exact final trailer for the reviewed bot author', async () => {
+  const { parseMetadataReviews, reviewedCommitEmails, metadataFindings } = await import('./git-metadata-reviews.mjs');
+  const review = { service: 'github-dependabot', fields: ['author'], allowSignedOffBy: true, review: 'Owner approved exact service trailer.' };
+  const manifest = { version: 2, commitEmailReviews: [], serviceEmailReviews: [review] };
+  const approved = reviewedCommitEmails([], parseMetadataReviews(Buffer.from(JSON.stringify(manifest))));
+  const bot = '49699333+dependabot[bot]' + '@' + 'users.noreply.github.com';
+  const support = 'support' + '@' + 'github.com';
+  const trailer = `Signed-off-by: dependabot[bot] <${support}>`;
+  const bytes = Buffer.from(`tree ${'a'.repeat(40)}\nauthor dependabot[bot] <${bot}> 1 +0000\ncommitter Fixture <fixture@example.test> 1 +0000\n\nSynthetic update\n\n${trailer}\n`);
+  const entry = { kind: 'commit', oid: 'c'.repeat(40), bytes };
+  assert.deepEqual(metadataFindings(entry, approved), []);
+  assert.ok(metadataFindings(entry, reviewedCommitEmails([], [])).includes('EMAIL_REVIEW_REQUIRED'));
+  for (const candidate of [
+    { ...entry, kind: 'tag' },
+    { ...entry, bytes: Buffer.from(bytes.toString().replace('author dependabot[bot]', 'author Other')) },
+    { ...entry, bytes: Buffer.from(bytes.toString().replace(bot, 'different' + '@' + 'users.noreply.github.com')) },
+    { ...entry, bytes: Buffer.from(bytes.toString().replace(trailer, `${trailer} extra`)) },
+    { ...entry, bytes: Buffer.from(bytes.toString() + 'Other text\n') },
+    { ...entry, bytes: Buffer.from(bytes.toString().replace('Synthetic update', `Synthetic contact ${support}`)) },
+  ]) assert.ok(metadataFindings(candidate, approved).includes('EMAIL_REVIEW_REQUIRED'));
+  assert.ok(metadataFindings({ ...entry, bytes: Buffer.from(bytes.toString().replace('Synthetic update', token())) }, approved).includes('GITHUB_TOKEN'));
+  assert.throws(() => parseMetadataReviews(Buffer.from(JSON.stringify({ ...manifest, serviceEmailReviews: [{ ...review, service: 'github-web-flow' }] }))));
+});

@@ -1001,3 +1001,8 @@ PASS: полный preflight на закреплённых Node/npm, 53/53 kit t
 ## Исправление первого публичного CI, 2026-10-09
 
 Публичный репозиторий создан; включены secret scanning, push protection, private vulnerability reporting, Dependabot и защиты main/release tags. Первый CI выявил две ошибки окружения: source install Gitleaks не задавал version linker variable, а shallow application checkout не содержал исторический S3 registry для migration test. Исправлены закреплённая сборка scanner и полный checkout; проверки не отключены. Локальные проверки и повторный GitHub CI фиксируются отдельно по фактическим результатам.
+
+
+## Служебные подписи GitHub, 2026-10-09
+
+После явного согласования владельца metadata manifest v2 разрешает только две закреплённые служебные подписи GitHub Dependabot/web-flow в author/committer коммитов. Существующие правила synthetic/example и публичного users.noreply domain сохраняются. Тесты проверяют отсутствие разрешения без indexed review, ограничение по полям, отсутствие новых исключений для адресов в файлах/именах/сообщениях/тегах, неизвестных services и wildcard; остальные secret rules сохраняются. Дополнительно согласовано точное исключение последней Signed-off-by строки только при стандартном Dependabot author; самостоятельные адреса и изменённые trailers остаются blocking. Первый application CI после исправления checkout успешно прошёл включая Chromium E2E.

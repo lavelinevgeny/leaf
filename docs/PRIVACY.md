@@ -61,3 +61,8 @@ History rewrite, purge artifacts, удаление releases и force-push — т
 ## Чеклист первого push
 
 Все изменения ожидаемы; только synthetic fixtures; нет настоящей БД/экспортов; локальные env/agent files ignored; новые binaries вручную одобрены; index и history прошли guard/Gitleaks; author metadata проверены; push protection доступна и настроена; owner явно разрешил отправку. Если хотя бы один пункт не подтверждён, не объявлять публикацию безопасной.
+
+
+Подтверждение владельца 2026-10-09: config/public-git-metadata.json явно разрешает стандартные публичные служебные подписи GitHub Dependabot и web-flow только в author/committer коммитов. Новые metadata exceptions точно фиксированы в guard, без wildcard. Существующие правила для synthetic/example и публичного users.noreply domain сохраняются. Эти исключения не действуют в именах, сообщениях, файлах и тегах; остальные правила сохраняются. Версия 2 manifest добавляет serviceEmailReviews; прежние commitEmailReviews по достижимым source commits работают без изменений.
+
+Дополнительное подтверждение владельца 2026-10-09: allowSignedOffBy разрешает единственную точную завершающую служебную строку Dependabot только в commit message с точным стандартным Dependabot author. Другие строки, адреса, имена, теги и файлы не получают нового исключения. Это проверка метаданных, не криптографическое подтверждение происхождения коммита.

@@ -1,15 +1,40 @@
 {
-  "version": 1,
+  "version": 2,
   "commitEmailReviews": [
     {
       "oid": "51f3b0d4ad8210e0a596ba7e1e85dfd03c7cec00",
-      "fields": ["author", "committer"],
+      "fields": [
+        "author",
+        "committer"
+      ],
       "review": "Owner approved public commit identity email on 2026-10-07."
     },
     {
       "oid": "d7d642e23cfdb27b938abeb0cb05b2c5c1701b89",
-      "fields": ["author", "committer"],
+      "fields": [
+        "author",
+        "committer"
+      ],
       "review": "Owner approved public commit identity email on 2026-10-07."
+    }
+  ],
+  "serviceEmailReviews": [
+    {
+      "service": "github-dependabot",
+      "fields": [
+        "author",
+        "committer"
+      ],
+      "review": "Owner approved public service identity and the exact final Signed-off-by trailer on 2026-10-09; trailer requires the exact Dependabot author.",
+      "allowSignedOffBy": true
+    },
+    {
+      "service": "github-web-flow",
+      "fields": [
+        "author",
+        "committer"
+      ],
+      "review": "Owner approved this public GitHub service signature on 2026-10-09; commit identity fields only."
     }
   ]
 }
