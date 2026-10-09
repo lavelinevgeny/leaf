@@ -1,5 +1,15 @@
 # Статус разработки
 
+## Кнопка FS только на диаграмме Ганта — 2026-10-09
+
+Убрана цепочка «После окончания» из общего дерева: отдельный список, левая часть режима Ганта и вкладка «Подзадачи». Удалены её CSS, refs, callback и Alt+L из строк дерева. «+ Подзадача» и Shift+Enter сохранены. На диаграмме цепочка и Alt+L, picker в быстром вводе и Details работают через прежние механизмы. Сервер, scheduling/API, исходные даты и зависимости не менялись.
+
+Изменены TaskTree, передача callback в TaskTimeline/TaskPanel/App, CSS, client/browser tests, UI/DECISIONS/ACCEPTANCE и уточнение спецификации C24. Две новые регрессии сначала подтвердили лишнюю кнопку в обоих режимах, затем прошли. Прежние тесты ввода FS из списка перенесены на Гант с сохранением retry/acknowledgement/dirty/focus проверок. В browser-сценарии Alt+L локатор исправлен на фокусируемый элемент полосы; отдельный повтор прошёл в обоих viewport.
+
+PASS: `verify` — typecheck/lint, 835/835 unit/integration tests в 42 файлах, production build; `format:check`, `check:kit`, `check:package`, `git diff --check`. Итоговый профильный actual-server E2E (`fs-dependencies` и `inline-add`) — 44/44 в 1440×900 и 1280×800 без skips/retries. После последней правки browser-локатора повторно прошли typecheck/lint и format:check. Актуальных failed checks нет.
+
+При подготовке локального коммита повторно прошли `verify` (835/835 tests), `format:check`, `check:kit`, `check:package`, профильный E2E (44/44 без skips/retries) и полный `preflight` с 52/52 kit tests настоящего Gitleaks, workspace/index/history и metadata checks. Staged diff проверен; отдельная прежняя запись аудита STATUS оставлена вне index. Полный E2E, Docker smoke и sandbox probe не запускались; push/deployment не выполнялись. Следующий шаг — проверка повседневного UX владельцем, затем продолжение S4–S6.
+
 ## Меню всех проектов — 2026-10-09
 
 Кнопка `⋯` теперь есть в каждой строке левой панели, включая невыбранные проекты. Существующие hover/focus/touch правила и постоянное место кнопки сохраняют геометрию названия. Рабочее поведение нажатия у невыбранного проекта: выбрать его, загрузить актуальное дерево и открыть меню с клавиатурным фокусом; существующий navigation guard защищает черновики. Ошибка загрузки допускает повтор, действия не открываются для прежнего проекта. Изменены App, ProjectSidebar, ProjectControls, профильные client/browser tests, UI и уточнение C20 в DECISIONS. Прежние несвязанные изменения STATUS сохранены дословно.

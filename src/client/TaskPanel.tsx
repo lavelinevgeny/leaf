@@ -44,7 +44,6 @@ interface Props {
   onSelect: (task: Task) => void;
   onAction: (action: TreeAction, task: Task) => void;
   onMove: (task: Task, parentId: string | null) => void;
-  onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onSave: (
     changes: Extract<Command, { type: 'task.edit' }>['changes'],
   ) => Promise<ProjectTree | null>;
@@ -75,7 +74,6 @@ export function TaskPanel({
   onSelect,
   onAction,
   onMove,
-  onPredecessors,
   onSave,
   saveAcknowledgement,
   onDirty,
@@ -481,7 +479,6 @@ export function TaskPanel({
                 onToggle={onToggle}
                 onSelect={onSelect}
                 onAction={onAction}
-                onPredecessors={onPredecessors}
                 label={strings.subtasks}
                 schedule={tree.schedule}
                 quickInputId="quick-subtask"

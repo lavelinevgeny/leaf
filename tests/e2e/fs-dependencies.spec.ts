@@ -328,7 +328,58 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   expect(restored.dependencies).toEqual(tree.dependencies);
 });
 
-test('list and conditional Gantt use single immediate commands without opening or dragging task', async ({
+test('tree rows expose child creation without a chain in list and Gantt views', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await project(page, runtime);
+  tree = await create(page, runtime, tree, 'P');
+  tree = await create(page, runtime, tree, 'B', taskId(tree, 'P'));
+  await show(page);
+  const taskRow = row(page, taskId(tree, 'B'));
+  for (const view of ['Список', 'Гант']) {
+    await page.getByRole('button', { name: view, exact: true }).click();
+    await taskRow.hover();
+    await expect(
+      taskRow.getByRole('button', { name: /^После окончания:/ }),
+    ).toHaveCount(0);
+    await expect(
+      taskRow.getByRole('button', {
+        name: 'Добавить подзадачу: B',
+        exact: true,
+      }),
+    ).toHaveCSS('opacity', '1');
+    await taskRow.focus();
+    await taskRow.press('Alt+l');
+    await expect(picker(page)).toHaveCount(0);
+    await expect(
+      taskRow.getByRole('button', { name: /^После окончания:/ }),
+    ).toHaveCount(0);
+  }
+  const ganttRow = page.locator(`[data-gantt-row="${taskId(tree, 'B')}"]`);
+  await ganttRow.hover();
+  await expect(
+    ganttRow.getByRole('button', { name: 'После окончания: B', exact: true }),
+  ).toHaveCSS('opacity', '1');
+  await row(page, taskId(tree, 'P')).click();
+  await page.getByRole('tab', { name: 'Подзадачи', exact: true }).click();
+  const subtaskRow = panel(page)
+    .getByRole('tree', { name: 'Подзадачи', exact: true })
+    .locator(`[data-task-id="${taskId(tree, 'B')}"]`);
+  await subtaskRow.hover();
+  await expect(
+    subtaskRow.getByRole('button', { name: /^После окончания:/ }),
+  ).toHaveCount(0);
+  await expect(
+    subtaskRow.getByRole('button', {
+      name: 'Добавить подзадачу: B',
+      exact: true,
+    }),
+  ).toHaveCSS('opacity', '1');
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+});
+
+test('conditional Gantt uses single immediate commands without opening or dragging task', async ({
   page,
   runtime,
 }) => {
@@ -341,43 +392,38 @@ test('list and conditional Gantt use single immediate commands without opening o
     if (request.url().endsWith('/commands') && request.method() === 'POST')
       commands.push(request.postDataJSON().command);
   });
-  const listTrigger = row(page, taskId(tree, 'B')).getByRole('button', {
+  const ganttRow = page.locator(`[data-gantt-row="${taskId(tree, 'B')}"]`);
+  const ganttTrigger = ganttRow.getByRole('button', {
     name: 'После окончания: B',
     exact: true,
   });
-  await row(page, taskId(tree, 'B')).hover();
-  const chainBounds = await listTrigger.boundingBox(),
-    childBounds = await row(page, taskId(tree, 'B'))
-      .getByRole('button', { name: 'Добавить подзадачу: B', exact: true })
-      .boundingBox();
-  expect(chainBounds!.x + chainBounds!.width).toBeLessThanOrEqual(
-    childBounds!.x,
-  );
-  await listTrigger.click();
+  await ganttRow.hover();
+  await expect(ganttTrigger).toBeVisible();
+  expect(
+    await ganttTrigger.evaluate((el) => el.parentElement?.tagName),
+  ).not.toBe('BUTTON');
+  await ganttTrigger.click();
   await picker(page).getByRole('searchbox').fill('A');
   await picker(page).getByRole('searchbox').press('Enter');
   await expect(picker(page)).toHaveCount(0);
-  await expect(listTrigger).toBeFocused();
+  await expect(ganttTrigger).toBeFocused();
   await expect(panel(page)).toHaveCount(0);
   let current = await readTree(page, runtime.origin, tree.project.id);
   expect(current.project.revision).toBe(tree.project.revision + 1);
   expect(current.dependencies).toHaveLength(1);
   await expect(page.locator('.gantt-edge.conditional')).toHaveCount(1);
-  await listTrigger.click();
+  await ganttTrigger.click();
   await picker(page)
     .getByRole('button', { name: 'Убрать предшественника: A', exact: true })
     .click();
   await expect(picker(page)).toHaveCount(0);
-  await expect(listTrigger).toBeFocused();
+  await expect(ganttTrigger).toBeFocused();
   current = await readTree(page, runtime.origin, tree.project.id);
   expect(current.project.revision).toBe(tree.project.revision + 2);
   expect(current.dependencies).toEqual([]);
   await expect(page.locator('[data-gantt-edge]')).toHaveCount(0);
-  const bar = page.locator(`[data-gantt-bar="${taskId(tree, 'B')}"]`);
+  const bar = ganttRow.getByRole('button', { name: /^B,/ });
   await bar.focus();
-  const ganttTrigger = page
-    .getByRole('group', { name: 'Гант', exact: true })
-    .getByRole('button', { name: 'После окончания: B', exact: true });
   await expect(ganttTrigger).toBeVisible();
   expect(
     await ganttTrigger.evaluate((el) => el.parentElement?.tagName),
@@ -473,10 +519,12 @@ test('saved FS from a completed task to an undated subtask stays visible after r
     changes: { status: 'done' },
   });
   await show(page);
-  const trigger = row(page, taskId(tree, 'B')).getByRole('button', {
+  const ganttRow = page.locator(`[data-gantt-row="${taskId(tree, 'B')}"]`);
+  const trigger = ganttRow.getByRole('button', {
     name: 'После окончания: B',
     exact: true,
   });
+  await ganttRow.hover();
   await trigger.click();
   await picker(page).getByRole('searchbox').fill('A');
   await picker(page).getByRole('searchbox').press('Enter');
@@ -645,8 +693,11 @@ test('whole-project picker distinguishes hidden duplicate titles and preserves r
     .fill('B');
   const target = row(page, taskId(tree, 'B')),
     before = await target.boundingBox();
-  await target.focus();
-  await target.press('Alt+l');
+  const bar = page
+    .locator(`[data-gantt-row="${taskId(tree, 'B')}"]`)
+    .getByRole('button', { name: /^B,/ });
+  await bar.focus();
+  await bar.press('Alt+l');
   await picker(page).getByRole('searchbox').fill('Одинаковая');
   await expect(picker(page).getByRole('option')).toHaveCount(2);
   await picker(page).getByRole('option').filter({ hasText: 'Q' }).click();
@@ -753,7 +804,7 @@ test('real stale 409 keeps Details source and IDs through reload and corrected r
   ]);
 });
 
-test('source conflict rejects real save and dirty Details guards list Gantt and graph', async ({
+test('source conflict rejects real save and dirty Details guards Gantt and graph', async ({
   page,
   runtime,
 }) => {
@@ -797,7 +848,7 @@ test('source conflict rejects real save and dirty Details guards list Gantt and 
       name: 'После окончания: A',
       exact: true,
     }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await row(page, taskId(tree, 'A')).press('Alt+l');
   await expect(picker(page)).toHaveCount(0);
   await expect(
@@ -984,7 +1035,12 @@ test('empty project picker exposes accessible empty state and summary is no rela
   await expect(picker(page)).toHaveCount(0);
   await expect(
     page.getByText('Выберите конечную работу', { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(
+    page
+      .locator(`[data-gantt-row="${taskId(tree, 'P')}"]`)
+      .getByRole('button', { name: 'После окончания: P', exact: true }),
+  ).toHaveCount(0);
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
 });
 
@@ -1143,10 +1199,12 @@ test('immediate picker waits for genuine server acknowledgement before rendering
     { times: 1 },
   );
   try {
-    const trigger = row(page, taskId(tree, 'B')).getByRole('button', {
+    const ganttRow = page.locator(`[data-gantt-row="${taskId(tree, 'B')}"]`);
+    const trigger = ganttRow.getByRole('button', {
       name: 'После окончания: B',
       exact: true,
     });
+    await ganttRow.hover();
     await trigger.click();
     await picker(page).getByRole('option').filter({ hasText: 'A' }).click();
     await reached;

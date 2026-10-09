@@ -894,21 +894,6 @@
 .task-tree {
   position: relative;
 }
-.task-tree .predecessor-hint {
-  position: absolute;
-  z-index: 12;
-  top: 0;
-  right: 8px;
-  padding: 4px 8px;
-  border: 1px solid var(--leaf-border);
-  border-radius: 4px;
-  background: white;
-  font-size: 12px;
-}
-.tree-predecessor {
-  position: absolute;
-  right: 112px;
-}
 .task-panel .quick-line {
   grid-template-columns: 18px minmax(0, 1fr) auto;
 }

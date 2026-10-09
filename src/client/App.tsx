@@ -1427,7 +1427,6 @@ export function App() {
           onDependency={(value) =>
             canNavigate() ? command(value) : Promise.resolve(false)
           }
-          onPredecessors={openPredecessors}
           onNeighbor={selectNeighbor}
           onShow={showOnGantt}
           backTask={backTask}

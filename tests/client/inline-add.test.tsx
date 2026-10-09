@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  within,
+} from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -217,39 +223,45 @@ it('keeps the inline editor, selection and selected tree row on actual pointer s
   expect(p.onToggle).not.toHaveBeenCalled();
 });
 
-it('opens the leaf chain action with Alt+L without selection/move and keeps its actual trigger', async () => {
-  const tree = optionalTreeFixture(),
-    onPredecessors = vi.fn(),
-    onSelect = vi.fn(),
-    onAction = vi.fn();
-  render(
-    <TaskTree
-      tasks={tree.tasks}
-      collapsed={new Set()}
-      selectedId={null}
-      onToggle={vi.fn()}
-      onSelect={onSelect}
-      onAction={onAction}
-      onPredecessors={onPredecessors}
-    />,
-  );
-  const row = screen.getByRole('treeitem', { name: /^Работа C,/ }),
-    trigger = screen.getByRole('button', { name: 'После окончания: Работа C' });
-  expect(trigger).toBeInstanceOf(HTMLButtonElement);
-  fireEvent.keyDown(row, { key: 'l', altKey: true });
-  expect(onPredecessors).toHaveBeenLastCalledWith(tree.tasks[2], trigger);
-  await userEvent.click(trigger);
-  expect(onPredecessors).toHaveBeenCalledTimes(2);
-  expect(onSelect).not.toHaveBeenCalled();
-  expect(onAction).not.toHaveBeenCalled();
-  expect(
-    screen.queryByRole('button', { name: 'После окончания: Этап P' }),
-  ).not.toBeInTheDocument();
-  fireEvent.keyDown(screen.getByRole('treeitem', { name: /^Этап P,/ }), {
-    key: 'l',
-    altKey: true,
-  });
-  expect(screen.getByRole('status')).toHaveTextContent(
-    'Выберите конечную работу',
-  );
-});
+it.each([false, true])(
+  'keeps tree rows free of chain actions while child creation works (Gantt: %s)',
+  async (show) => {
+    const tree = optionalTreeFixture(),
+      onPredecessors = vi.fn(),
+      onSelect = vi.fn(),
+      onAction = vi.fn();
+    render(
+      <TaskTimeline
+        tree={tree}
+        collapsed={new Set()}
+        selectedId={null}
+        onToggle={vi.fn()}
+        onSelect={onSelect}
+        onAction={onAction}
+        onPredecessors={onPredecessors}
+        onPlan={vi.fn()}
+        disabled={false}
+        show={show}
+        reveal={null}
+      />,
+    );
+    const row = screen.getByRole('treeitem', { name: /^Работа C,/ });
+    await userEvent.hover(row);
+    expect(
+      within(row).queryByRole('button', { name: /^После окончания:/ }),
+    ).not.toBeInTheDocument();
+    row.focus();
+    expect(
+      within(row).queryByRole('button', { name: /^После окончания:/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(row, { key: 'l', altKey: true });
+    expect(onPredecessors).not.toHaveBeenCalled();
+    await userEvent.click(
+      within(row).getByRole('button', { name: 'Добавить подзадачу: Работа C' }),
+    );
+    expect(onAction).toHaveBeenLastCalledWith('child', tree.tasks[2]);
+    fireEvent.keyDown(row, { key: 'Enter', shiftKey: true });
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onSelect).not.toHaveBeenCalled();
+  },
+);

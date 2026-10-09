@@ -1832,20 +1832,23 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       }
     },
   );
-  it.each(['list', 'gantt'] as const)(
-    'uses confirmed IDs and restores %s action focus after global retry without opening the panel',
+  it.each(['pointer', 'keyboard'] as const)(
+    'uses confirmed IDs and restores Gantt action focus after global retry with %s input without opening the panel',
     async (entry) => {
       tree.tasks = [task(1, 'A'), task(2, 'B', null, 1)];
       await open();
       const user = userEvent.setup();
-      const host =
-        entry === 'list'
-          ? screen.getByRole('treeitem', { name: /^B,/ })
-          : document.querySelector(`[data-gantt-row="${id(2)}"]`)!;
+      const host = document.querySelector(`[data-gantt-row="${id(2)}"]`)!;
       const trigger = within(host as HTMLElement).getByRole('button', {
         name: 'После окончания: B',
       });
-      await user.click(trigger);
+      if (entry === 'pointer') await user.click(trigger);
+      else {
+        within(host as HTMLElement)
+          .getByRole('button', { name: /^B,/ })
+          .focus();
+        await user.keyboard('{Alt>}l{/Alt}');
+      }
       expect(
         screen.queryByRole('complementary', { name: 'Задача' }),
       ).not.toBeInTheDocument();
@@ -1897,6 +1900,11 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         inputFinish: '2026-10-09',
       },
     ];
+    tree.schedule.tasks[id(1)] = {
+      startDate: '2026-10-08',
+      finishDate: '2026-10-09',
+      calendarSpanDays: 2,
+    };
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /^B,/ }));
@@ -1910,10 +1918,9 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       screen.getByText('Есть несохранённые изменения'),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByRole('treeitem', { name: /^A,/ })).getByRole(
-        'button',
-        { name: 'После окончания: A' },
-      ),
+      within(
+        document.querySelector<HTMLElement>(`[data-gantt-row="${id(1)}"]`)!,
+      ).getByRole('button', { name: 'После окончания: A' }),
     ).toBeDisabled();
     fetchMock.mockImplementationOnce(() =>
       Promise.reject(new TypeError('synthetic offline')),
@@ -1964,7 +1971,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
   });
 });
 
-it('searches collapsed/filtered leaves from a list host and restores the quick input when the trigger disappears', async () => {
+it('searches collapsed/filtered leaves from a Gantt host and restores the quick input when the trigger disappears', async () => {
   tree.tasks = [
     task(1, 'P'),
     task(2, 'A скрытая', id(1)),
@@ -1975,8 +1982,10 @@ it('searches collapsed/filtered leaves from a list host and restores the quick i
   const main = screen.getByRole('tree');
   await user.click(within(main).getByRole('button', { name: 'Свернуть P' }));
   await user.type(screen.getByRole('searchbox', { name: 'Поиск задач' }), 'B');
-  const row = screen.getByRole('treeitem', { name: /^B,/ });
-  row.focus();
+  const bar = within(
+    document.querySelector<HTMLElement>(`[data-gantt-row="${id(3)}"]`)!,
+  ).getByRole('button', { name: /^B,/ });
+  bar.focus();
   await user.keyboard('{Alt>}l{/Alt}');
   await user.type(
     screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
@@ -2010,7 +2019,9 @@ it('keeps confirmed immediate chips/query on rejection and sends one deletion on
   await open();
   const user = userEvent.setup();
   await user.click(
-    within(screen.getByRole('treeitem', { name: /^B,/ })).getByRole('button', {
+    within(
+      document.querySelector<HTMLElement>(`[data-gantt-row="${id(2)}"]`)!,
+    ).getByRole('button', {
       name: 'После окончания: B',
     }),
   );
@@ -2105,22 +2116,24 @@ it('retains same-title changed relation IDs from queued draft events after a def
   ).not.toBeInTheDocument();
 });
 
-it('opens the shared action in the reused subtask tree and blocks list/Gantt/graph actions with dirty Details', async () => {
+it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph actions with dirty Details', async () => {
   tree.tasks = [task(1, 'P'), task(2, 'B', id(1)), task(3, 'A', null, 1)];
   await open();
   const user = userEvent.setup();
   await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
   await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
   const panel = within(screen.getByRole('complementary', { name: 'Задача' })),
-    row = panel.getByRole('treeitem', { name: /^B,/ }),
-    trigger = within(row).getByRole('button', { name: 'После окончания: B' });
+    row = panel.getByRole('treeitem', { name: /^B,/ });
+  await user.hover(row);
+  expect(
+    within(row).queryByRole('button', { name: 'После окончания: B' }),
+  ).not.toBeInTheDocument();
   row.focus();
   await user.keyboard('{Alt>}l{/Alt}');
   expect(
-    screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
-  ).toHaveFocus();
-  await user.keyboard('{Escape}');
-  await waitFor(() => expect(trigger).toHaveFocus());
+    screen.queryByRole('dialog', { name: 'После окончания' }),
+  ).not.toBeInTheDocument();
+  expect(row).toHaveFocus();
   await user.click(row);
   await user.click(screen.getByRole('tab', { name: 'Детали' }));
   await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
@@ -2132,12 +2145,17 @@ it('opens the shared action in the reused subtask tree and blocks list/Gantt/gra
     screen.queryByRole('dialog', { name: 'После окончания' }),
   ).not.toBeInTheDocument();
   expect(
-    within(mainRow).getByRole('button', { name: 'После окончания: A' }),
-  ).toBeDisabled();
+    within(mainRow).queryByRole('button', { name: 'После окончания: A' }),
+  ).not.toBeInTheDocument();
   const bar = document.querySelector(
     `[data-gantt-row="${id(3)}"] [role="button"]`,
   )!;
   fireEvent.keyDown(bar, { key: 'l', altKey: true });
+  expect(
+    within(
+      document.querySelector<HTMLElement>(`[data-gantt-row="${id(3)}"]`)!,
+    ).getByRole('button', { name: 'После окончания: A' }),
+  ).toBeDisabled();
   expect(
     screen.queryByRole('dialog', { name: 'После окончания' }),
   ).not.toBeInTheDocument();

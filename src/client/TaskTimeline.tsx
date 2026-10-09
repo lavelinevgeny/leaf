@@ -224,7 +224,6 @@ export function TaskTimeline({
     ...(projection.active ? { matchIds: projection.matchIds } : {}),
     onSelect,
     onAction,
-    onPredecessors,
   };
   return (
     <div
