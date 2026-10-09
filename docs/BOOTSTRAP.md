@@ -34,7 +34,7 @@ npm run hooks:install
 Хуки требуют **Gitleaks 8.30.1 или совместимую проверенную версию**. Установить из официального проекта, проверив происхождение и checksum. Один из вариантов при наличии Go с поддержкой toolchain selection:
 
 ```sh
-go install github.com/zricethezav/gitleaks/v8@v8.30.1
+go install -ldflags="-X github.com/zricethezav/gitleaks/v8/version.Version=8.30.1" github.com/zricethezav/gitleaks/v8@v8.30.1
 ```
 
 Добавить каталог Go bin в личный PATH, не записывая персональные пути в репозиторий. Альтернатива — официальный release binary с checksum. Go не нужен приложению leaf, только этому способу установки dev-инструмента. Не скачивать и не выполнять случайный shell installer.
