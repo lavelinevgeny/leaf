@@ -1,5 +1,13 @@
 # Статус разработки
 
+## C27 — одинаковое оформление ручек Ганта, 2026-10-09
+
+По утверждённому визуальному уточнению удалён прозрачный CSS override левой ручки: оба видимых редактируемых реальных края используют существующую полупрозрачную белую заливку `#ffffff99`. Светлая накладка обозначает изменение размера; классы, отдельные зоны `edgeWidth`, жесты, клавиатура и серверная семантика сохранены. Обновлены planning.css, UI, спецификация, строка C27 в DECISIONS и приёмка. Новых тестов, dependencies, schema/migrations, lockfile или PNG нет.
+
+PASS с закреплённым Node: verify — typecheck, lint, 831/831 unit/integration tests в 42 файлах, production build; format:check, check:kit, doctor и staged privacy guard/Gitleaks (6 blobs). Existing actual-server C27 — 34/34 за 38.6s, viewport 1440×900 и 1280×800, без skips/retries: pointer/keyboard/focus/cancel, однодневные days/weeks/months, смена календаря, empty/loading/error/done/summary/conditional и прежние C18/body/right сценарии. Внешняя синтетическая Chromium-проверка — 12/12: computed fill обоих краёв `rgba(255, 255, 255, 0.6)` на длинной и однодневной полосе во всех трёх масштабах и обоих viewport. Шесть снимков и три утверждённых PNG просмотрены вне checkout; минимальная month-полоса сохраняет отдельные края по 2 px и тело 2 px.
+
+Независимые SpecCompliance и Quality review приняты без замечаний. Изменения интегрированы побайтово; ordinary-root build и полный preflight PASS, включая 52/52 kit tests с настоящим Gitleaks, workspace/index/staged/history/metadata scans. Прежние несвязанные owner изменения STATUS сохранены дословно вне index; ограничение linked-worktree .git pointer закрыто ordinary-root проверкой без изменения политики. Полный application E2E, Docker, OS sandbox и remote CI для этой ограниченной CSS-правки не запускались; публикации/deployment нет. Следующая продуктовая работа — проверка владельцем и продолжение S4–S6; первый релиз остаётся незавершённым.
+
 ## C27 — завершение изменения начала Ганта, 2026-10-09
 
 [Спецификация](superpowers/specs/2026-10-09-gantt-start-resize-design.md) и [план](superpowers/plans/2026-10-09-gantt-start-resize.md) выполнены отдельными агентами: документы, сервер, затем интерфейс и actual-server acceptance. Независимые spec/quality reviews каждого этапа и финальное whole-change review приняты; открытых замечаний нет. Два цикла исправлений закрыли потерю клавиатурного повтора при выходе начала за период и перехват выбранного пользователем фокуса поздним acknowledgement.
