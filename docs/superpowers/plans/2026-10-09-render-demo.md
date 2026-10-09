@@ -91,7 +91,7 @@ export class DemoLimits {
 
 Normal `loadConfig` остаётся entrypoint CLI; `prepareServerRuntime` используется main и synthetic tests. Внутренние runtime interfaces не становятся клиентским API. Seed не меняет shared domain contracts/CPM. Guest admission counter вызывается только при необходимости новой сессии.
 
-- [ ] **1.1 Write runtime failures first.** Создать только synthetic sentinel в mkdtemp; передать его как LEAF_DATA_DIR в demo, сохранить bytes/mode и проверить после cleanup. Отдельные случаи: symlink sentinel, unsafe TMPDIR внутри checkout, invalid flag/origin/hostname, Render without hostname, malformed host, cleanup twice, два запуска с разными databasePath; normal defaults/symlink rejection остаются.
+- [x] **1.1 Write runtime failures first.** Создать только synthetic sentinel в mkdtemp; передать его как LEAF_DATA_DIR в demo, сохранить bytes/mode и проверить после cleanup. Отдельные случаи: symlink sentinel, unsafe TMPDIR внутри checkout, invalid flag/origin/hostname, Render without hostname, malformed host, cleanup twice, два запуска с разными databasePath; normal defaults/symlink rejection остаются.
 
 ```ts
 it('never uses an existing data directory in demo mode', () => {
@@ -112,8 +112,8 @@ it('never uses an existing data directory in demo mode', () => {
 });
 ```
 
-- [ ] **1.2 Run RED.** `npx vitest run tests/demo-runtime.test.ts` ожидаемо падает из-за отсутствующего helper; зафиксировать причину, без ослабления assertions.
-- [ ] **1.3 Implement runtime.** Нормальная ветка вызывает loadConfig; demo валидирует env, создаёт только собственный temp вне checkout, закрывает cleanup над этим путём. При любом loadConfig failure удаляет собственный temp. Strict hostname regex для single DNS label с допустимыми дефисами и длиной1–63, suffix `.onrender.com`; Render requires HTTPS. Explicit origin имеет приоритет, чужие headers не читаются.
+- [x] **1.2 Run RED.** `npx vitest run tests/demo-runtime.test.ts` ожидаемо падает из-за отсутствующего helper; зафиксировать причину, без ослабления assertions.
+- [x] **1.3 Implement runtime.** Нормальная ветка вызывает loadConfig; demo валидирует env, создаёт только собственный temp вне checkout, закрывает cleanup над этим путём. При любом loadConfig failure удаляет собственный temp. Strict hostname regex для single DNS label с допустимыми дефисами и длиной1–63, suffix `.onrender.com`; Render requires HTTPS. Explicit origin имеет приоритет, чужие headers не читаются.
 
 ```ts
 const config = loadConfig({
@@ -127,7 +127,7 @@ return { ...config, demoMode: true, cleanup: removeOwnedDirectory };
 // build/listen failure: await app?.close(), finally runtime.cleanup().
 ```
 
-- [ ] **1.4 Write API/seed failures.** Tests use app.inject over own temporary DB. Normal route404/no account401; demo GET unauthenticated true flag; missing/foreign Origin403, non-JSON415, extras400; successful cookie HttpOnly/SameSite/HTTPS Secure. Two tokens share tree but logout/undo independent; expiry; repeated existing-token entry does not allocate. Demo password route403 without scrypt. Mock/fake now exercises rate/session/lifetime/byte bounds and proves request denied before repository rows/revision change. Forwarded headers cannot bypass limits/origin. Direct Auth.enterDemo with default mode rejects.
+- [x] **1.4 Write API/seed failures.** Tests use app.inject over own temporary DB. Normal route404/no account401; demo GET unauthenticated true flag; missing/foreign Origin403, non-JSON415, extras400; successful cookie HttpOnly/SameSite/HTTPS Secure. Two tokens share tree but logout/undo independent; expiry; repeated existing-token entry does not allocate. Demo password route403 without scrypt. Mock/fake now exercises rate/session/lifetime/byte bounds and proves request denied before repository rows/revision change. Forwarded headers cannot bypass limits/origin. Direct Auth.enterDemo with default mode rejects.
 
 ```ts
 const denied = await app.inject({ method: 'POST', url: '/api/auth/demo', payload: {} });
@@ -143,7 +143,7 @@ expect(String(entered.headers['set-cookie'])).toContain('Secure');
 // Keep cookie only in test memory; do not print response headers/body.
 ```
 
-- [ ] **1.5 Seed via current commands.** Generate one internal random account password in memory, await Auth.setup before seed. Inside outer db.transaction(...).immediate create project then task.create and dependency.create envelopes using fresh UUID/expectedRevision and one private seed session identifier. Build table from spec §5 with existing calendar helpers and explicit UTC/weekday semantics. Remove seed history within transaction; assert current tree/schedule validators before returning. Inject a command failure to prove rollback and startup failure cleanup. Fixed Friday/weekend/date-boundary clocks validate workday offsets/null fields, depth>=3, critical branch/partial result and dependencies independently of seed helper calculations.
+- [x] **1.5 Seed via current commands.** Generate one internal random account password in memory, await Auth.setup before seed. Inside outer db.transaction(...).immediate create project then task.create and dependency.create envelopes using fresh UUID/expectedRevision and one private seed session identifier. Build table from spec §5 with existing calendar helpers and explicit UTC/weekday semantics. Remove seed history within transaction; assert current tree/schedule validators before returning. Inject a command failure to prove rollback and startup failure cleanup. Fixed Friday/weekend/date-boundary clocks validate workday offsets/null fields, depth>=3, critical branch/partial result and dependencies independently of seed helper calculations.
 
 ```ts
 const envelope: CommandEnvelope = {
@@ -159,10 +159,10 @@ const envelope: CommandEnvelope = {
 tree = repository.applyCommand(projectId, envelope, seedSessionId);
 ```
 
-- [ ] **1.6 Implement session and limits.** Optional demoMode schema; conditional route uses z.strictObject({}); normal route code preserved. Demo Auth guard, hashed sessions and SESSION_SECONDS; no user-provided password or bypass of session lookup. In-memory fixed windows lazily reset; enforce 60 new-entry attempts/min,100 sessions,120 mutation attempts/min,200 per process and256 KiB JSON bytes. All limits checked before increments/Repository; exact spec429 copy. Preserve API no-store and normal auth regression.
-- [ ] **1.7 Run GREEN.** `npx vitest run tests/demo-runtime.test.ts tests/demo-api.test.ts tests/demo-seed.test.ts tests/api.test.ts tests/runtime.test.ts tests/admin.test.ts`; then `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration`, `npm run format:check`, `npm run check:kit`. Repair failures caused by this block and rerun affected checks.
-- [ ] **1.8 Update STATUS and review.** Report exact counts, no live deployment. Independent reviewer examines spec A1–A5, normal auth, temp ownership/error cleanup, limits and truthful CPM. Fix findings, rerun checks, obtain positive review of final diff.
-- [ ] **1.9 Commit only after approval.** Stage only Task1 files; run staged guard; subject `feat: add isolated synthetic demo runtime and sessions`. Coordinator records exact commit and hands interfaces to Task2.
+- [x] **1.6 Implement session and limits.** Optional demoMode schema; conditional route uses z.strictObject({}); normal route code preserved. Demo Auth guard, hashed sessions and SESSION_SECONDS; no user-provided password or bypass of session lookup. In-memory fixed windows lazily reset; enforce 60 new-entry attempts/min,100 sessions,120 mutation attempts/min,200 per process and256 KiB JSON bytes. All limits checked before increments/Repository; exact spec429 copy. Preserve API no-store and normal auth regression.
+- [x] **1.7 Run GREEN.** `npx vitest run tests/demo-runtime.test.ts tests/demo-api.test.ts tests/demo-seed.test.ts tests/api.test.ts tests/runtime.test.ts tests/admin.test.ts`; then `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration`, `npm run format:check`, `npm run check:kit`. Repair failures caused by this block and rerun affected checks.
+- [x] **1.8 Update STATUS and review.** Report exact counts, no live deployment. Independent reviewer examines spec A1–A5, normal auth, temp ownership/error cleanup, limits and truthful CPM. Fix findings, rerun checks, obtain positive review of final diff.
+- [x] **1.9 Commit only after approval.** Stage only Task1 files; run staged guard; subject `feat: add isolated synthetic demo runtime and sessions`. Coordinator records exact commit and hands interfaces to Task2.
 
 ### Task 2: Вход и предупреждение в клиенте, настоящий browser E2E
 
@@ -177,8 +177,8 @@ tree = repository.applyCommand(projectId, envelope, seedSessionId);
 
 **Interfaces:** consumes Task1 `AuthSession.demoMode?: boolean`, GET session and POST `/api/auth/demo`; produces `api.enterDemo(): Promise<AuthSession>`. The helper returns `{ origin: string; restart(): Promise<void>; close(): Promise<void> }`; no password field. Existing syntheticRuntime remains normal and unaffected.
 
-- [ ] **2.1 Read UI and inspect all three PNGs.** Keep current compact workspace. Использовать существующий `src/client/styles/app.css` для demo notice.
-- [ ] **2.2 Write client RED.** Mock existing api boundary: unauthenticated demo flag displays button/notice, password field absent; click/keyboard Enter enters and loads project. Assert loading disabled, rejected entry role=alert/retry, session-fetch failure retry, logout keeps demo flag, missing flag renders normal password/setup. Server DEMO_LIMIT message remains visible, reads still work.
+- [x] **2.1 Read UI and inspect all three PNGs.** Keep current compact workspace. Использовать существующий `src/client/styles/app.css` для demo notice.
+- [x] **2.2 Write client RED.** Mock existing api boundary: unauthenticated demo flag displays button/notice, password field absent; click/keyboard Enter enters and loads project. Assert loading disabled, rejected entry role=alert/retry, session-fetch failure retry, logout keeps demo flag, missing flag renders normal password/setup. Server DEMO_LIMIT message remains visible, reads still work.
 
 ```tsx
 vi.spyOn(api, 'session').mockResolvedValue({
@@ -192,8 +192,8 @@ await user.click(button);
 expect(api.enterDemo).toHaveBeenCalledOnce();
 ```
 
-- [ ] **2.3 Run RED.** `npx vitest run tests/client/demo.test.tsx`; new demo tests fail for missing API/UI.
-- [ ] **2.4 Implement compatible client branch.** Add centralized strings with exact spec notice and button copy. Reuse login busy/error/session loading flow, explicit api.enterDemo, preserve flag on logout/auth expiry, conditional top notice in login/workspace. Normal responses without flag mean false; do not infer demo from URL or process.env. No fetch-on-render auto-entry, no local seed/reset, no new browser persistence.
+- [x] **2.3 Run RED.** `npx vitest run tests/client/demo.test.tsx`; new demo tests fail for missing API/UI.
+- [x] **2.4 Implement compatible client branch.** Add centralized strings with exact spec notice and button copy. Reuse login busy/error/session loading flow, explicit api.enterDemo, preserve flag on logout/auth expiry, conditional top notice in login/workspace. Normal responses without flag mean false; do not infer demo from URL or process.env. No fetch-on-render auto-entry, no local seed/reset, no new browser persistence.
 
 ```ts
 enterDemo: () => request('/auth/demo', sessionSchema, 'POST', {}),
@@ -205,7 +205,7 @@ enterDemo: () => request('/auth/demo', sessionSchema, 'POST', {}),
 // project loading; catch uses existing error rendering, finally clears pending.
 ```
 
-- [ ] **2.5 Implement actual-server helper and E2E.** Start compiled main via child_process with LEAF_DEMO_MODE=1/explicit loopback origin/own env and stdio ignore. Allocate random loopback port; wait readyz with bounded timeout; stop SIGTERM with timeout/error handling before removing only own helper resources. restart creates fresh runtime. No HTTP project/auth mocks in acceptance browser scenario; route delays are allowed only for separately named loading/error UI tests.
+- [x] **2.5 Implement actual-server helper and E2E.** Start compiled main via child_process with LEAF_DEMO_MODE=1/explicit loopback origin/own env and stdio ignore. Allocate random loopback port; wait readyz with bounded timeout; stop SIGTERM with timeout/error handling before removing only own helper resources. restart creates fresh runtime. No HTTP project/auth mocks in acceptance browser scenario; route delays are allowed only for separately named loading/error UI tests.
 
 ```ts
 test('demo explicitly opens a shared example and resets on restart', async ({ page }) => {
@@ -227,10 +227,10 @@ test('demo explicitly opens a shared example and resets on restart', async ({ pa
 });
 ```
 
-- [ ] **2.6 Extend browser coverage.** Assert initial three tree levels, dates near today, Gantt conditional bars/dependency arrows/critical labels; enter via keyboard; edit and undo before restart; reload preserves edits before restart. Second browser context sees shared change after refresh, stale revision gives409 recovery, independent logout does not log out first visitor. Notice remains visible, normal task-tree/password regression passes. Both configured viewport projects run, no skips/retries.
-- [ ] **2.7 Run GREEN.** `npx vitest run tests/client/demo.test.tsx tests/client/App.test.tsx`; `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration`, `npm run build`, `npm run format:check`; `npx playwright test tests/e2e/demo.spec.ts tests/e2e/task-tree.spec.ts`; `npm run check:kit`. Screenshots only synthetic, outside checkout, never publish raw artifacts.
-- [ ] **2.8 Update UI/STATUS and review.** Independent spec/quality review covers A6, focus/loading/error/empty states, existing references and real browser assertions. Resolve findings and obtain positive final-diff review.
-- [ ] **2.9 Commit only after approval.** Stage Task2 files, staged checks; subject `feat: expose explicit public demo entry and notice`.
+- [x] **2.6 Extend browser coverage.** Assert initial three tree levels, dates near today, Gantt conditional bars/dependency arrows/critical labels; enter via keyboard; edit and undo before restart; reload preserves edits before restart. Second browser context sees shared change after refresh, stale revision gives409 recovery, independent logout does not log out first visitor. Notice remains visible, normal task-tree/password regression passes. Both configured viewport projects run, no skips/retries.
+- [x] **2.7 Run GREEN.** `npx vitest run tests/client/demo.test.tsx tests/client/App.test.tsx`; `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration`, `npm run build`, `npm run format:check`; `npx playwright test tests/e2e/demo.spec.ts tests/e2e/task-tree.spec.ts`; `npm run check:kit`. Screenshots only synthetic, outside checkout, never publish raw artifacts.
+- [x] **2.8 Update UI/STATUS and review.** Independent spec/quality review covers A6, focus/loading/error/empty states, existing references and real browser assertions. Resolve findings and obtain positive final-diff review.
+- [x] **2.9 Commit only after approval.** Stage Task2 files, staged checks; subject `feat: expose explicit public demo entry and notice`.
 
 ### Task 3: Render Blueprint, Docker and deployment verification
 
@@ -281,9 +281,9 @@ expect(spoofedForwardedOrigin.status).toBe(403);
 ```
 
 - [x] **3.6 Write deployment instructions.** Clearly label free/shared/reset; public notice/no personal data; local LEAF_DEMO_MODE command with exact origin; Render manual Blueprint or Dashboard workflow, no credentials in source. Explain HOST/PORT pair, fallback hostname, explicit custom-domain HTTPS origin, readyz, cold start/quotas, automatic restart/reset, manual deploy setting and no shell/setup requirement. Mention stop/restart affects all visitors. Link primary Render docs and checked date; no invented live URL or success claim.
-- [ ] **3.7 Run all final checks.** `npm run verify`, `npm run format:check`, `npm run test:unit`, `npm run test:integration`, `npm run test:e2e`, `npm run check:kit`, `npm run check:package`, `npm run preflight`, `git diff --check`. Reuse already-passed unchanged checks within block; repeat only after relevant changes. Preflight includes real scanner/metadata and must not silently skip missing tooling. If linked-worktree policy rejects .git pointer, report limitation and ask coordinator to perform equivalent ordinary-checkout gates without changing guard policy.
-- [ ] **3.8 Task3 review then commit.** STATUS separates passed/failed/not run, local TLS/Docker smoke from real Render. Independent reviewer validates spec A7–A8 and no privacy changes; fix findings, rerun affected checks; positive final-diff review before `feat: prepare free Render demo deployment` commit.
-- [ ] **3.9 Whole-branch independent review.** Review exact reviewed commits from pre-task base, contracts crossing server/client/container, restart/expiry/normal-mode regression, docs truthfulness and all A1–A8. Findings return to original block implementer and new scoped approval before corrective commit. Coordinator runs remaining root gates preserving unrelated owner changes; final report contains local commit IDs, passed checks, limitations, and explicit no publication.
+- [x] **3.7 Run all final checks.** `npm run verify`, `npm run format:check`, `npm run test:unit`, `npm run test:integration`, `npm run test:e2e`, `npm run check:kit`, `npm run check:package`, `npm run preflight`, `git diff --check`. Reuse already-passed unchanged checks within block; repeat only after relevant changes. Preflight includes real scanner/metadata and must not silently skip missing tooling. If linked-worktree policy rejects .git pointer, report limitation and ask coordinator to perform equivalent ordinary-checkout gates without changing guard policy.
+- [x] **3.8 Task3 review then commit.** STATUS separates passed/failed/not run, local TLS/Docker smoke from real Render. Independent reviewer validates spec A7–A8 and no privacy changes; fix findings, rerun affected checks; positive final-diff review before `feat: prepare free Render demo deployment` commit.
+- [x] **3.9 Whole-branch independent review.** Review exact reviewed commits from pre-task base, contracts crossing server/client/container, restart/expiry/normal-mode regression, docs truthfulness and all A1–A8. Findings return to original block implementer and new scoped approval before corrective commit. Coordinator runs remaining root gates preserving unrelated owner changes; final report contains local commit IDs, passed checks, limitations, and explicit no publication.
 
 ## Coverage self-review
 

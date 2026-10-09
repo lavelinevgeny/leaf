@@ -54,7 +54,7 @@ it('disables entry while loading and supports retry after an entry error', async
   );
   expect(screen.getByRole('button', { name: 'Открыть демо' })).toBeDisabled();
   expect(screen.getByRole('status')).toHaveTextContent('Загрузка');
-  reject(new ApiError('DEMO_LIMIT', 'Достигнут лимит демо.', 409));
+  reject(new ApiError('DEMO_LIMIT', 'Достигнут лимит демо.', 429));
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'Достигнут лимит демо.',
   );
@@ -99,7 +99,7 @@ it.each([false, true])(
 it('shows a demo write limit while leaving project reads available', async () => {
   vi.mocked(api.session).mockResolvedValue({ ...guest, authenticated: true });
   vi.spyOn(api, 'createProject').mockRejectedValue(
-    new ApiError('DEMO_LIMIT', 'Достигнут лимит демо: проектов.', 409),
+    new ApiError('DEMO_LIMIT', 'Достигнут лимит демо: проектов.', 429),
   );
   render(<App />);
   await userEvent.click(
