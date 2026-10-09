@@ -133,6 +133,134 @@ function reply(page: Page) {
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
   );
 }
+async function createOtherProject(
+  page: Page,
+  runtime: Awaited<ReturnType<typeof syntheticRuntime>>,
+) {
+  const created = await page.request.post(runtime.origin + '/api/projects', {
+    headers: { Origin: runtime.origin, 'X-Leaf-Contract-Version': '2' },
+    data: {
+      title:
+        'Другой синтетический проект с длинным названием для проверки меню',
+    },
+  });
+  expect(created.status()).toBe(201);
+  return readTree(page, runtime.origin, (await created.json()).id);
+}
+
+test('every project row reveals dots and opens actions for that project', async ({
+  page,
+  runtime,
+}, info) => {
+  const tree = await seedOptionalRuntime(page, runtime);
+  const other = await createOtherProject(page, runtime);
+  await page.goto(runtime.origin);
+  await expect(
+    page.getByRole('heading', { name: tree.project.title, exact: true }),
+  ).toBeVisible();
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (!['GET', 'HEAD'].includes(request.method()))
+      writes.push(request.method());
+  });
+  const search = page.getByRole('searchbox', { name: 'Поиск задач' });
+  const rows = page.locator('.project-item');
+  await expect(rows).toHaveCount(2);
+  for (const project of [tree.project, other.project]) {
+    const row = rows.filter({
+      has: page.getByRole('button', { name: project.title, exact: true }),
+    });
+    const opener = row.getByRole('button', { name: 'Действия проекта' });
+    await search.hover();
+    await search.focus();
+    await expect(opener).toHaveCSS('opacity', '0');
+    const titleBox = await row.locator('.project-name').boundingBox();
+    await row.hover();
+    await expect(opener).toHaveCSS('opacity', '1');
+    expect(await row.locator('.project-name').boundingBox()).toEqual(titleBox);
+    await search.hover();
+    await expect(opener).toHaveCSS('opacity', '0');
+    await row.getByRole('button', { name: project.title, exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await expect(opener).toBeFocused();
+    await expect(opener).toHaveCSS('opacity', '1');
+  }
+  await expect(
+    page.getByRole('heading', { name: tree.project.title, exact: true }),
+  ).toBeVisible();
+  expect(writes).toEqual([]);
+  const otherRow = rows.filter({
+    has: page.getByRole('button', { name: other.project.title, exact: true }),
+  });
+  await otherRow.hover();
+  const capture = join(
+    captures,
+    info.project.name + '-inactive-project-menu.png',
+  );
+  await page.screenshot({ path: capture });
+  console.log('Project menu capture', capture);
+  await otherRow.getByRole('button', { name: 'Действия проекта' }).click();
+  await expect(
+    page.getByRole('heading', { name: other.project.title, exact: true }),
+  ).toBeVisible();
+  await expect(otherRow).toHaveClass('project-item active');
+  await search.hover();
+  await expect(
+    otherRow.getByRole('button', { name: 'Действия проекта' }),
+  ).toHaveCSS('opacity', '1');
+  await expect(
+    page.getByRole('button', { name: 'Настройки проекта', exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press('Enter');
+  const settings = page.getByRole('dialog', { name: 'Настройки проекта' });
+  await expect(settings.getByLabel('Часовой пояс проекта')).toHaveValue(
+    other.project.timezone,
+  );
+  await page.keyboard.press('Escape');
+  await expect(settings).toHaveCount(0);
+  const opener = otherRow.getByRole('button', { name: 'Действия проекта' });
+  await expect(opener).toBeFocused();
+  await expect(page.getByText('В проекте пока нет задач.')).toBeVisible();
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+  expect(await readTree(page, runtime.origin, other.project.id)).toEqual(other);
+  expect(writes).toEqual([]);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  const rename = page.getByRole('dialog', { name: 'Переименовать проект' });
+  await expect(rename.getByLabel('Название проекта')).toHaveValue(
+    other.project.title,
+  );
+  await rename.getByLabel('Название проекта').fill('Переименованный проект');
+  const renamed = page.waitForResponse(
+    (response) => response.request().method() === 'PATCH',
+  );
+  await rename
+    .getByRole('button', { name: 'Переименовать проект', exact: true })
+    .click();
+  const response = await renamed;
+  expect(response.status()).toBe(200);
+  expect(response.url()).toBe(
+    runtime.origin + '/api/projects/' + other.project.id,
+  );
+  await expect(rename).toHaveCount(0);
+  await expect(
+    rows
+      .filter({
+        has: page.getByRole('button', {
+          name: 'Переименованный проект',
+          exact: true,
+        }),
+      })
+      .getByRole('button', { name: 'Действия проекта' }),
+  ).toBeFocused();
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+  const updated = await readTree(page, runtime.origin, other.project.id);
+  expect(updated.project.title).toBe('Переименованный проект');
+  expect(updated.project.revision).toBe(other.project.revision + 1);
+  expect(updated.tasks).toEqual(other.tasks);
+  expect(writes).toEqual(['PATCH']);
+});
 
 test('project dots follow row hover and keyboard focus without shifting the title', async ({
   page,
@@ -199,6 +327,7 @@ test.describe('project menu on touch screens', () => {
     runtime,
   }) => {
     const tree = await seedOptionalRuntime(page, runtime);
+    const other = await createOtherProject(page, runtime);
     await page.goto(runtime.origin);
     await expect(
       page.getByRole('heading', { name: tree.project.title, exact: true }),
@@ -206,12 +335,20 @@ test.describe('project menu on touch screens', () => {
     expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(
       true,
     );
-    const opener = page.getByRole('button', {
-      name: 'Действия проекта',
-      exact: true,
+    const rows = page.locator('.project-item');
+    await expect(rows).toHaveCount(2);
+    for (const row of await rows.all())
+      await expect(
+        row.getByRole('button', { name: 'Действия проекта' }),
+      ).toHaveCSS('opacity', '1');
+    const row = rows.filter({
+      has: page.getByRole('button', { name: other.project.title, exact: true }),
     });
-    await expect(opener).toHaveCSS('opacity', '1');
+    const opener = row.getByRole('button', { name: 'Действия проекта' });
     await opener.tap();
+    await expect(
+      page.getByRole('heading', { name: other.project.title, exact: true }),
+    ).toBeVisible();
     await expect(page.locator('.project-menu')).toBeVisible();
     await page
       .getByRole('button', { name: 'Настройки проекта', exact: true })

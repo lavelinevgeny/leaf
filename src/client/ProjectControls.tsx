@@ -22,6 +22,7 @@ interface Props {
   onOpen: () => boolean;
   onVisibility: (open: boolean) => void;
   feedback: ReactNode;
+  initialMenuOpen?: boolean;
 }
 export function ProjectControls(props: Props) {
   const {
@@ -37,7 +38,7 @@ export function ProjectControls(props: Props) {
     onVisibility,
     feedback,
   } = props;
-  const [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState(props.initialMenuOpen ?? false);
   const [action, setAction] = useState<'settings' | 'rename' | null>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);

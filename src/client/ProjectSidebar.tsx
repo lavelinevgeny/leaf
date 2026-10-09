@@ -4,7 +4,7 @@ import { strings } from './strings.js';
 interface Props {
   projects: Project[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, openMenu?: boolean) => void;
   onCreate: (title: string) => Promise<boolean>;
   onLogout: () => void;
   busy: boolean;
@@ -55,7 +55,23 @@ export function ProjectSidebar({
               <span aria-hidden="true">♧</span>
               <span className="project-name">{project.title}</span>
             </button>
-            {project.id === selectedId && controls}
+            {project.id === selectedId && controls ? (
+              controls
+            ) : (
+              <div className="project-controls">
+                <button
+                  type="button"
+                  className="quiet project-menu-trigger"
+                  aria-label={strings.projectActions}
+                  title={strings.projectActions}
+                  aria-expanded={false}
+                  disabled={busy}
+                  onClick={() => onSelect(project.id, true)}
+                >
+                  ⋯
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </nav>

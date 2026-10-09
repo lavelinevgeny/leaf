@@ -182,6 +182,9 @@ export function App() {
     }
   }, [busy, pending, loading, conflict, tree, showGantt]);
   const [projectControlsOpen, setProjectControlsOpen] = useState(false);
+  const [projectMenuTarget, setProjectMenuTarget] = useState<string | null>(
+    null,
+  );
   const [rename, setRename] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [createUncertain, setCreateUncertain] = useState(false);
@@ -985,6 +988,7 @@ export function App() {
       setTree(null);
       treeRef.current = null;
       currentProject.current = null;
+      setProjectMenuTarget(null);
       setSelected(null);
       setQuickDrafts({});
     } catch (failure) {
@@ -1187,8 +1191,10 @@ export function App() {
       <ProjectSidebar
         projects={projects}
         selectedId={tree?.project.id ?? null}
-        onSelect={(id) => {
-          if (canNavigate()) void loadProject(id);
+        onSelect={(id, openMenu = false) => {
+          if (!canNavigate()) return;
+          setProjectMenuTarget(openMenu ? id : null);
+          void loadProject(id);
         }}
         onCreate={createProject}
         onLogout={() => void logout()}
@@ -1196,6 +1202,7 @@ export function App() {
           tree && (
             <ProjectControls
               key={tree.project.id}
+              initialMenuOpen={projectMenuTarget === tree.project.id}
               project={tree.project}
               disabled={busy || loading || !!pending || conflict || dirty}
               dirty={projectDirty}

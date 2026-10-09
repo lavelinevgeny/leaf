@@ -56,22 +56,130 @@ afterEach(() => {
 });
 async function openSettings() {
   render(<App />);
-  const opener = await screen.findByRole('button', {
-    name: 'Действия проекта',
-  });
+  await screen.findByRole('heading', { name: project.title });
+  const opener = activeOpener();
   await userEvent.click(opener);
   await userEvent.click(
     screen.getByRole('button', { name: 'Настройки проекта' }),
   );
   return opener;
 }
+function activeOpener() {
+  return within(document.querySelector('.project-item.active')!).getByRole(
+    'button',
+    { name: 'Действия проекта' },
+  );
+}
+function otherOpener() {
+  return within(
+    screen.getByRole('button', { name: /Другой демо-проект/ }).parentElement!,
+  ).getByRole('button', { name: 'Действия проекта' });
+}
+it('loads the inactive project before opening its menu and renames only that project', async () => {
+  render(<App />);
+  await screen.findByRole('heading', { name: project.title });
+  let finishLoad!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(
+    () => new Promise<Response>((resolve) => (finishLoad = resolve)),
+  );
+  const opener = otherOpener();
+  opener.focus();
+  await userEvent.keyboard('{Enter}');
+  expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(
+    `/api/projects/${other.id}/tree`,
+  );
+  expect(
+    screen.queryByRole('button', { name: 'Настройки проекта' }),
+  ).toBeNull();
+  for (const button of screen.getAllByRole('button', {
+    name: 'Действия проекта',
+  }))
+    expect(button).toBeDisabled();
+  finishLoad(new Response(JSON.stringify({ ...tree, project: other })));
+  await screen.findByRole('heading', { name: other.title });
+  expect(
+    screen.getByRole('button', { name: 'Настройки проекта' }),
+  ).toHaveFocus();
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method !== 'GET')).toBe(
+    false,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Переименовать проект' }),
+  );
+  const input = screen.getByLabelText('Название проекта');
+  expect(input).toHaveValue(other.title);
+  await userEvent.clear(input);
+  await userEvent.type(input, 'Переименованный демо-проект');
+  fetchMock.mockImplementationOnce(() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          ...tree,
+          project: {
+            ...other,
+            title: 'Переименованный демо-проект',
+            revision: 1,
+          },
+        }),
+      ),
+    ),
+  );
+  await userEvent.click(
+    within(screen.getByRole('dialog')).getByRole('button', {
+      name: 'Переименовать проект',
+    }),
+  );
+  await screen.findByRole('heading', { name: 'Переименованный демо-проект' });
+  expect(
+    fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')?.[0],
+  ).toBe(`/api/projects/${other.id}`);
+  expect(
+    screen.getByRole('button', { name: new RegExp(project.title) }),
+  ).toBeVisible();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(activeOpener()).toHaveFocus();
+});
+it('keeps failed inactive-menu loading recoverable without opening the previous project menu', async () => {
+  render(<App />);
+  await screen.findByRole('heading', { name: project.title });
+  fetchMock.mockImplementationOnce(() =>
+    Promise.reject(new TypeError('synthetic offline')),
+  );
+  await userEvent.click(otherOpener());
+  expect(await screen.findByText(/Нет связи с сервером/)).toBeVisible();
+  expect(
+    screen.queryByRole('button', { name: 'Настройки проекта' }),
+  ).toBeNull();
+  fetchMock.mockImplementationOnce(() =>
+    Promise.resolve(new Response(JSON.stringify({ ...tree, project: other }))),
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+  await screen.findByRole('heading', { name: other.title });
+  expect(
+    screen.getByRole('button', { name: 'Настройки проекта' }),
+  ).toHaveFocus();
+});
+it('refuses an inactive project menu while the current settings draft is dirty', async () => {
+  await openSettings();
+  await userEvent.type(
+    screen.getByLabelText('Часовой пояс проекта'),
+    '/invalid',
+  );
+  const requests = fetchMock.mock.calls.length;
+  await userEvent.click(otherOpener());
+  expect(screen.getByRole('heading', { name: project.title })).toBeVisible();
+  expect(screen.getByLabelText('Часовой пояс проекта')).toHaveValue(
+    'UTC/invalid',
+  );
+  expect(fetchMock.mock.calls).toHaveLength(requests);
+});
 it('mounts forms on demand and returns keyboard menu focus without writes', async () => {
   render(<App />);
   await screen.findByRole('heading', { name: project.title });
   expect(screen.queryByLabelText('Часовой пояс проекта')).toBeNull();
   expect(screen.queryByLabelText('Название проекта')).toBeNull();
   const requests = fetchMock.mock.calls.length;
-  const opener = screen.getByRole('button', { name: 'Действия проекта' });
+  const opener = activeOpener();
   opener.focus();
   await userEvent.keyboard('{Enter}');
   expect(
