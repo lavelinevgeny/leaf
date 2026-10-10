@@ -1,5 +1,11 @@
 # Статус разработки
 
+## Журнал задач — этап 1, спецификация, 2026-10-10
+
+Подготовлены [спецификация](superpowers/specs/2026-10-10-task-journal-design.md), рабочий D21 и [ADR 014](adr/014-task-journal.md). Изучены current storage/API/UI, исторические snapshots/frozen replay и синтетическое архивное предложение; просмотрены его четыре PNG и три утверждённых референса. Выбраны отдельные journal revision/replay, адресное сохранение tasks и приватный sidecar записей удалённой ветки для existing Undo. Явный конфликт защищает записи при отмене создания задачи. Определены API, cursor/search, navigation/drafts, security и J01–J16 acceptance. Archive assets и transcript не добавлены.
+
+Self-review спецификации выполнен. Первый независимый standards review: PASS; technical/requirements reviews запросили исправления. Round 1 закрепляет pinned editor/delete baseline, согласование page/tree revision без сброса dirty drafts, manifest count+digest для полноты sidecar и geometry/scroll при project modal; J07/J10/J13–J15 расширены. Повторное независимое review ещё не выполнено, commit не создан. PASS: `check:kit` (66 Markdown files, 333 local links, 3 approved references, 10 CPM и 4 calendar examples), `git diff --check`. NOT RUN: application tests/build/E2E и publication gates на этом документационном этапе. Application implementation, runtime migration и remote actions не выполнялись; журнал пока не работает. Следующее действие — повторные независимые reviews исправлений, затем implementation plan и последовательные reviewed этапы. S4–S6 остаются незавершёнными.
+
 ## Render demo — Task 3, локальный deployment-кандидат, 2026-10-09
 
 Добавлен `render.yaml`: один Free Docker Web Service, `/readyz`, `autoDeployTrigger: off`, совпадающие `PORT=LEAF_PORT=3000`, без диска и credentials. Из Dockerfile удалён только встроенный loopback `LEAF_PUBLIC_ORIGIN`: normal mode вычисляет прежний default, Compose задаёт origin явно, demo на Render использует проверенный HTTPS hostname или явный HTTPS custom origin. Pinned base digest, non-root runtime, `.dockerignore` и security policy сохранены. README и DEPLOYMENT описывают локальный demo запуск, будущую ручную привязку Render/установку About → Website с фактическим URL, общий сбрасываемый пример, холодный старт и Free-квоты. Живой сервис и URL не создавались.
