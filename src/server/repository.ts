@@ -41,6 +41,8 @@ import {
 import { workingDaysInclusive } from '../domain/calendar.js';
 
 import { canonical } from '../shared/canonical.js';
+import { JournalLifecycle } from './journal-lifecycle.js';
+import type { JournalEntry } from '../shared/journal-contracts.js';
 import { replayLegacyOperation } from './legacy-compatibility.js';
 import {
   applyPrivateSourcePatch,
@@ -56,6 +58,7 @@ interface UndoRecord {
   sequence: number;
   afterRevision: number;
   beforeSnapshot: string;
+  journalLifecycleVersion: 0 | 1;
 }
 interface OperationRecord {
   projectId: string;
@@ -149,7 +152,7 @@ export class Repository {
   ): UndoRecord | undefined {
     return this.db
       .prepare(
-        'SELECT sequence,afterRevision,beforeSnapshot FROM undo_snapshots WHERE projectId=? AND sessionId=? ORDER BY sequence DESC LIMIT 1',
+        'SELECT sequence,afterRevision,beforeSnapshot,journalLifecycleVersion FROM undo_snapshots WHERE projectId=? AND sessionId=? ORDER BY sequence DESC LIMIT 1',
       )
       .get(projectId, sessionId) as UndoRecord | undefined;
   }
@@ -375,6 +378,12 @@ export class Repository {
             'Ревизия проекта изменилась. Обновите дерево.',
             409,
           );
+        const beforeTaskIds = snapshot.tasks.map((task) => task.id);
+        const lifecycle = new JournalLifecycle(this.db);
+        let restoredEntries: JournalEntry[] = [];
+        let undoRecord: UndoRecord | undefined;
+        let undoPreviousRevision: number | undefined;
+        let removedEntryCount = 0;
         const beforeSnapshot = JSON.stringify(snapshot);
         const timestamp = new Date(this.now()).toISOString();
         if (isUndo) {
@@ -388,24 +397,30 @@ export class Repository {
           snapshot = privateSnapshotV2Schema.parse(
             JSON.parse(undo.beforeSnapshot),
           );
-          this.db
-            .prepare('DELETE FROM undo_snapshots WHERE sequence=?')
-            .run(undo.sequence);
-          // Only contiguous commands from this session may remain eligible after undo.
-          const previous = this.latestUndo(projectId, sessionId);
-          if (previous?.afterRevision === snapshot.project.revision)
-            this.db
-              .prepare(
-                'UPDATE undo_snapshots SET afterRevision=? WHERE sequence=?',
-              )
-              .run(revision + 1, previous.sequence);
+          const targetIds = snapshot.tasks.map((task) => task.id);
+          const targetSet = new Set(targetIds);
+          restoredEntries = lifecycle.validateUndo(
+            undo.sequence,
+            projectId,
+            undo.journalLifecycleVersion,
+            targetIds,
+            beforeTaskIds.filter((id) => !targetSet.has(id)),
+          );
+          undoRecord = undo;
+          undoPreviousRevision = snapshot.project.revision;
         } else {
           change(snapshot, timestamp);
-          this.db
+          const inserted = this.db
             .prepare(
-              'INSERT INTO undo_snapshots(projectId,sessionId,afterRevision,beforeSnapshot) VALUES (?,?,?,?)',
+              'INSERT INTO undo_snapshots(projectId,sessionId,afterRevision,beforeSnapshot,journalLifecycleVersion) VALUES (?,?,?,?,1)',
             )
             .run(projectId, sessionId, revision + 1, beforeSnapshot);
+          const nextIds = new Set(snapshot.tasks.map((task) => task.id));
+          removedEntryCount = lifecycle.captureDeletion(
+            Number(inserted.lastInsertRowid),
+            projectId,
+            beforeTaskIds.filter((id) => !nextIds.has(id)),
+          );
           this.db
             .prepare(
               'DELETE FROM undo_snapshots WHERE projectId=? AND sessionId=? AND sequence NOT IN (SELECT sequence FROM undo_snapshots WHERE projectId=? AND sessionId=? ORDER BY sequence DESC LIMIT 20)',
@@ -417,6 +432,20 @@ export class Repository {
         validateDependencies(snapshot.tasks, snapshot.dependencies);
         this.calculate(snapshot);
         this.save(snapshot);
+        if (isUndo) {
+          lifecycle.restore(projectId, restoredEntries);
+          this.db
+            .prepare('DELETE FROM undo_snapshots WHERE sequence=?')
+            .run(undoRecord!.sequence);
+          // Only contiguous commands from this session remain eligible after Undo.
+          const previous = this.latestUndo(projectId, sessionId);
+          if (previous && previous.afterRevision === undoPreviousRevision)
+            this.db
+              .prepare(
+                'UPDATE undo_snapshots SET afterRevision=? WHERE sequence=?',
+              )
+              .run(revision + 1, previous.sequence);
+        } else lifecycle.finishDeletion(projectId, removedEntryCount);
         const result = this.getTree(projectId, sessionId);
         this.db
           .prepare(
@@ -443,17 +472,47 @@ export class Repository {
     this.db
       .prepare('DELETE FROM dependencies WHERE projectId=?')
       .run(snapshot.project.id);
-    this.db
-      .prepare('DELETE FROM tasks WHERE projectId=?')
-      .run(snapshot.project.id);
+    const projectId = snapshot.project.id;
+    const existing = new Set(
+      (
+        this.db
+          .prepare('SELECT id FROM tasks WHERE projectId=?')
+          .all(projectId) as { id: string }[]
+      ).map((row) => row.id),
+    );
+    const nextIds = new Set(snapshot.tasks.map((task) => task.id));
     const insert = this.db.prepare(
       'INSERT INTO tasks(id,projectId,parentId,title,description,sortOrder,status,inputStart,inputFinish,createdAt,updatedAt,durationDays) VALUES (@id,@projectId,@parentId,@title,@description,@sortOrder,@status,@inputStart,@inputFinish,@createdAt,@updatedAt,@durationDays)',
     );
-    for (const task of snapshot.tasks) insert.run(task);
+    const update = this.db.prepare(
+      'UPDATE tasks SET parentId=@parentId,title=@title,description=@description,sortOrder=@sortOrder,status=@status,inputStart=@inputStart,inputFinish=@inputFinish,createdAt=@createdAt,updatedAt=@updatedAt,durationDays=@durationDays WHERE projectId=@projectId AND id=@id',
+    );
+    for (const task of snapshot.tasks)
+      if (!existing.has(task.id)) insert.run(task);
+    for (const task of snapshot.tasks)
+      if (existing.has(task.id)) update.run(task);
+    const remove = this.db.prepare(
+      'DELETE FROM tasks WHERE projectId=? AND id=?',
+    );
+    for (const id of existing) if (!nextIds.has(id)) remove.run(projectId, id);
+    const desired = new Set(snapshot.legacyIntervalUnavailable);
+    const current = new Set(
+      (
+        this.db
+          .prepare(
+            'SELECT taskId FROM task_schedule_provenance WHERE taskId IN (SELECT id FROM tasks WHERE projectId=?)',
+          )
+          .all(projectId) as { taskId: string }[]
+      ).map((row) => row.taskId),
+    );
+    const removeProvenance = this.db.prepare(
+      'DELETE FROM task_schedule_provenance WHERE taskId=?',
+    );
+    for (const id of current) if (!desired.has(id)) removeProvenance.run(id);
     const provenance = this.db.prepare(
       "INSERT INTO task_schedule_provenance(taskId,reason) VALUES (?, 'legacy-interval-unavailable')",
     );
-    for (const id of snapshot.legacyIntervalUnavailable) provenance.run(id);
+    for (const id of desired) if (!current.has(id)) provenance.run(id);
     const insertEdge = this.db.prepare(
       'INSERT INTO dependencies(id,projectId,predecessorId,successorId) VALUES (@id,@projectId,@predecessorId,@successorId)',
     );

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing TypeScript, React 19, Fastify 5, better-sqlite3, Zod, Vitest/Testing Library, Playwright. `.nvmrc`: Node 24.21.0; existing pinned package/lockfile сохраняются.
 
-**Spec:** [Принятая спецификация журнала](../specs/2026-10-10-task-journal-design.md), [ADR 014](../../adr/014-task-journal.md), D21 в [DECISIONS](../../DECISIONS.md). Прочитать их целиком вместе с START_HERE/AGENTS. Stage 1 принят после независимых requirements/spec и technical/standards reviews; исходная точка — `6a7bc09`. План не меняет D21/C11–C28.
+**Spec:** [Принятая спецификация журнала](../specs/2026-10-10-task-journal-design.md), [ADR 014](../../adr/014-task-journal.md), D21 в [DECISIONS](../../DECISIONS.md). Прочитать их целиком вместе с START_HERE/AGENTS. Stage 1 принят после независимых requirements/spec и technical/standards reviews; исходная точка — `6a7bc09`. План сохраняет C11–C28. Working boundary уточнение D21 после server review: cursor cap 4096 вместо2048 для полного JSON-escaped query; body/query well-formed Unicode, malformed surrogate 400, valid NUL сохраняется; NUL-safe SQL UTF-8 byte-bound 1…30000 дополняет exact 10000 UTF-16 validation. Это техническое уточнение, не новое C-решение.
 
 ## Global Constraints
 
@@ -128,7 +128,7 @@ export type JournalTaskQuery = { limit?: number; cursor?: string };
 // and produce JournalProjectQuery / JournalTaskQuery respectively.
 ```
 
-Schemas use `z.strictObject`, existing `uuidSchema` and `calendarDateSchema`, `z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)`. UTC timestamp validation requires canonical `new Date(value).toISOString() === value` as well as ISO validity; client cannot supply timestamps. Body `z.string().min(1).max(10000).refine(value => value.trim().length > 0)` saves original string. Query has trimmed NFC/lowercase `ru` normalization, max 300 code units, optional inclusive from/to and `from <= to`; HTTP limit accepts only decimal integer text in 1–100 (reject empty, fractions, signed/exponent/unknown fields). No-query entry GET rejects all unknown query keys. Task query rejects q/from/to.
+Schemas use `z.strictObject`, existing `uuidSchema` and `calendarDateSchema`, `z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)`. UTC timestamp validation requires canonical `new Date(value).toISOString() === value` as well as ISO validity; client cannot supply timestamps. Body `z.string().min(1).max(10000).refine(value => value.trim().length > 0)` additionally requires well-formed Unicode and explicit `value.length <= 10000` UTF-16 bound; it saves the original string including NUL. Query also requires well-formed Unicode before and after normalization with explicit 300-unit bounds; malformed surrogate input is400. Query has trimmed NFC/lowercase `ru` normalization, max 300 code units, optional inclusive from/to and `from <= to`; HTTP limit accepts only decimal integer text in 1–100 (reject empty, fractions, signed/exponent/unknown fields). No-query entry GET rejects all unknown query keys. Task query rejects q/from/to.
 
 **Interfaces — server seams consumed by later tasks:**
 
@@ -168,7 +168,7 @@ export interface JournalLifecycleContract {
 // with constructor(db: Database.Database).
 ```
 
-`captureDeletion` writes mandatory manifest even for empty removedTaskIds; every new before-snapshot is lifecycle1. `finishDeletion` bumps journal revision once iff count>0 after FK deletion; `restore` bumps once iff nonempty. `validateUndo` checks manifest/sidecar/count/digest/scope/active collisions/target IDs first, then active entries on removedTaskIds; valid later entries yield `UNDO_JOURNAL_CONFLICT`409. Corruption yields safe500, even when syntactically valid body/date changed. Every sidecar task must belong to `targetTaskIds` minus current DB task IDs (restored tasks), rather than merely any target task. Historical version0 accepts no sidecar/manifest, rejects any unexpected data. No new fields in privateSnapshotV2Schema, tree V2, legacy validators or archive.
+`captureDeletion` writes mandatory manifest even for empty removedTaskIds; every new before-snapshot is lifecycle1. `finishDeletion` bumps journal revision once iff count>0 after FK deletion; `restore` bumps once iff nonempty. `validateUndo` checks manifest/sidecar/count/digest/scope/active collisions/target IDs first, then active entries on removedTaskIds; valid later entries yield `UNDO_JOURNAL_CONFLICT`409. Corruption yields safe 500, even when syntactically valid body/date changed. Every sidecar task must belong to `targetTaskIds` minus current DB task IDs (restored tasks), rather than merely any target task. Historical version0 accepts no sidecar/manifest, rejects any unexpected data. No new fields in privateSnapshotV2Schema, tree V2, legacy validators or archive.
 
 - [ ] **Step 1: Register independent tests and write contract/storage RED tests.**
 
@@ -241,7 +241,7 @@ CREATE TABLE journal_entries (
   projectId TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   taskId TEXT NOT NULL,
   workDate TEXT NOT NULL CHECK(length(workDate)=10),
-  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 10000),
+  body TEXT NOT NULL CHECK(length(CAST(body AS BLOB)) BETWEEN 1 AND 30000),
   createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
   FOREIGN KEY(projectId,taskId) REFERENCES tasks(projectId,id) ON DELETE CASCADE
 ) STRICT;
@@ -262,7 +262,7 @@ CREATE TABLE undo_journal_entries (
   undoSequence INTEGER NOT NULL REFERENCES undo_snapshots(sequence) ON DELETE CASCADE,
   id TEXT NOT NULL, projectId TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   taskId TEXT NOT NULL, workDate TEXT NOT NULL CHECK(length(workDate)=10),
-  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 10000),
+  body TEXT NOT NULL CHECK(length(CAST(body AS BLOB)) BETWEEN 1 AND 30000),
   createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
   PRIMARY KEY(undoSequence,id)
 ) STRICT;
@@ -272,7 +272,7 @@ CREATE TABLE undo_journal_manifest (
 ) STRICT;
 ```
 
-Initializer trigger is the sole future-project initializer; do not also insert state in Repository.createProject/demo seed. Validate state row exists on read/write, safe500 on corrupt missing row rather than lazy reset. SQLite length counts codepoints; schema `.max(10000)` enforces stronger UTF-16 bound before storage. Dates/timestamps require server validation beyond SQL length.
+Initializer trigger is the sole future-project initializer; do not also insert state in Repository.createProject/demo seed. Validate state row exists on read/write, safe 500 on corrupt missing row rather than lazy reset. SQLite text length stops at NUL; `length(CAST(body AS BLOB))` counts UTF-8 bytes including NUL. The 1…30000 byte bound admits every validated well-formed 10000-unit body; explicit JavaScript length refinement enforces UTF-16 before storage (installed Zod `.max` alone does not). Dates/timestamps require server validation beyond SQL length.
 
 In openDatabase extend continuous supported maximum3 to4 and migration array by004; leave schema2 approval before chmod/pragma/DDL and optional003 prepare unchanged. Add explicit `!migrations/004-task-journal.sql` to `.dockerignore` and exact expected list in package checker immediately so server build contains004. Update current max-version expectations in migration/backup tests; retain historical raw schema2/3 builders. Extend backup test to populate active entries/state/replay and deletion sidecar/manifest, backup via `backupDatabase` to a fresh external temp destination, open readonly copy and compare independent rows/integrity. Test reopening backup using schema4 binary. Run migration/optional-upgrade/backup/new migration tests.
 
@@ -290,7 +290,7 @@ Each new CRUD `db.transaction(fn).immediate()`: parse strict input; canonical pa
 
 For new operation: verify project, scoped task/entry, state; mismatch gives `JOURNAL_REVISION_CONFLICT`409; create server UUID and canonical timestamp, update original createdAt and server updatedAt (even equal fields), delete scoped ID. Increment journal state once. Strict-validate DTO, JSON serialize/digest and persist operation in same transaction. SQL uses parameters, no raw input names/interpolation. `getEntry` is one read transaction with both revisions, strict output and no solver.
 
-J06/J07 tests inject row/state/operation failures with synthetic SQL triggers and compare all affected table rows before/after; use monotonic test clock for timestamps. Two JournalRepository instances/connections share synthetic DB: both submit revision5, one success6, other409. Exact create/update/delete retries survive close/reopen, later update/delete/task deletion; no new ID/timestamp/revision. Damage replay JSON, digest, valid-but-wrong DTO/project/entry/kind and contract version; safe500/rollback. Spy on planning `getTree`, scheduler `calculateSchedule` and `cascadeFs` after setup; every journal read/new write/replay leaves spies uncalled. Compare raw project/tasks/dependencies/provenance/undo_snapshots/operations and plan canUndo before/after. Use independent fixed accepted acknowledgement fixtures for replay validator, rather than generating all malformed responses from its own serializer.
+J06/J07 tests inject row/state/operation failures with synthetic SQL triggers and compare all affected table rows before/after; use monotonic test clock for timestamps. Two JournalRepository instances/connections share synthetic DB: both submit revision5, one success6, other409. Exact create/update/delete retries survive close/reopen, later update/delete/task deletion; no new ID/timestamp/revision. Damage replay JSON, digest, valid-but-wrong DTO/project/entry/kind and contract version; safe 500/rollback. Spy on planning `getTree`, scheduler `calculateSchedule` and `cascadeFs` after setup; every journal read/new write/replay leaves spies uncalled. Compare raw project/tasks/dependencies/provenance/undo_snapshots/operations and plan canUndo before/after. Use independent fixed accepted acknowledgement fixtures for replay validator, rather than generating all malformed responses from its own serializer.
 
 - [ ] **Step 4: Write keyset/filter RED scenarios and implement one-transaction paging.**
 
@@ -305,7 +305,7 @@ export type JournalCursor = {
 };
 ```
 
-`getProjectPage`/`getTaskPage` read project/journal state and rows in one deferred transaction. Task feed verifies task scope even when empty. Normalize q once. SQL joins tasks on both projectId/id; body OR current title substring predicate, inclusive optional dates AND, direct task equality only. Limit50 default, limit+1 selection, descending tuple comparison `(workDate,createdAt,id)<(?,?,?)`. Encode canonical strict cursor with UTF8 base64url; cap raw input2048, validate encoding/JSON/strict types/last tuple and full route+normalized-filter scope independently before trusting position. Wrong scope400; either revision differs409 `JOURNAL_CURSOR_STALE`.
+`getProjectPage`/`getTaskPage` read project/journal state and rows in one deferred transaction. Task feed verifies task scope even when empty. Normalize q once. SQL joins tasks on both projectId/id; body OR current title substring predicate, inclusive optional dates AND, direct task equality only. Limit50 default, limit+1 selection, descending tuple comparison `(workDate,createdAt,id)<(?,?,?)`. Encode canonical strict cursor with UTF8 base64url; cap raw input4096, validate encoding/JSON/strict types/last tuple and full route+normalized-filter scope independently before trusting position. Wrong scope400; either revision differs409 `JOURNAL_CURSOR_STALE`.
 
 Independent fixture: 125 hand-written entries, all same createdAt, stable ascending UUID suffixes, 65 on2024-02-29 and60 on2024-02-28; first50 IDs125→76, second50 IDs75→26, final25 IDs25→1. Group boundary and tie ID expectations are arithmetic fixture constants, not journal comparator output. Table-driven Russian `Ё/ё`, composed/decomposed NFC, literal `%`, `_`, newline/HTML, body OR renamed title, inclusive/open-ended dates, no hidden period/status filter, full ancestor/direct-only feeds. After each of journal mutation/title rename/task delete/Undo, old cursor returns409 and fresh pages reflect current membership; forged project/task/query/date/limit returns400. Read/replay should not refresh tree. Run pagination/repository/replay tests GREEN.
 
@@ -358,13 +358,13 @@ For Undo: decode existing snapshot; call `validateUndo` before save, snapshot de
 
 J08: trigger abort on any DELETE of surviving task; rename/move/status/source/FS/project settings and each Undo preserve journal raw row bytes; independent provenance fixture checks reason/task IDs through source adoption and work-preserving promotion. J09 fixture: branchA→childA2→nestedA3 + siblingB, notes on each; deletingA removes exactly three notes with one revision increase, leavesB; after B edit/create/delete, Undo restores exactA IDs/date/body/timestamps and currentB rows. Inject failure after capture/task delete/restore and compare raw tables.
 
-J10 matrix builds a fresh deletion fixture for each corruption, never reuses damaged state: delete one/all sidecar rows; missing manifest; alter valid body/date; wrong count/digest; valid foreign scope/task or surviving target task instead of restored task; active ID collision; v0 unexpected sidecar. Each Undo safe500, all rows/state/snapshots/operations unchanged. v1 zero-entry manifest and historicalv0 accepted. Create task→journal later→Undo409 unchanged→explicit journal delete→new planning operationId Undo succeeds. Twenty-two new snapshots retain exactly last20 manifests/sidecars; no unrelated sequence removal. Frozen planning delete/retry after restore and frozen legacy/current replies must return original bytes without lifecycle/solver/current journal changes.
+J10 matrix builds a fresh deletion fixture for each corruption, never reuses damaged state: delete one/all sidecar rows; missing manifest; alter valid body/date; wrong count/digest; valid foreign scope/task or surviving target task instead of restored task; active ID collision; v0 unexpected sidecar. Each Undo safe 500, all rows/state/snapshots/operations unchanged. v1 zero-entry manifest and historicalv0 accepted. Create task→journal later→Undo409 unchanged→explicit journal delete→new planning operationId Undo succeeds. Twenty-two new snapshots retain exactly last20 manifests/sidecars; no unrelated sequence removal. Frozen planning delete/retry after restore and frozen legacy/current replies must return original bytes without lifecycle/solver/current journal changes.
 
 Run `npx vitest run tests/journal-lifecycle.test.ts tests/repository.test.ts tests/fs-cascade-repository.test.ts tests/explicit-cpm-repository.test.ts tests/legacy-compatibility.test.ts tests/optional-upgrade.test.ts`.
 
 - [ ] **Step 6: Add authenticated routes and complete API/demo/privacy tests.**
 
-Decorate app.journalRepository using same db/now, extend Fastify type. Six routes exactly from spec§4; reuse requireSession/requireContractVersion(false), onRequest policy/bodyLimit/no-store/error handler. Strict route params project/task/entry UUID, strict query and JSON envelope; API calls session after authentication only. Journal writes admitMutation after parse before repository, including exact retries. Return POST201 or PATCH/DELETE200; entry GET/list200; 404 for cross-project IDs, 400 invalid fields/cursor,401 auth,403 Origin,415 JSON,426 contract,413 body limit,409 conflicts, safe500 corruption. Foreign/not found errors reveal no journal data. No request logger added.
+Decorate app.journalRepository using same db/now, extend Fastify type. Six routes exactly from spec§4; reuse requireSession/requireContractVersion(false), onRequest policy/bodyLimit/no-store/error handler. Strict route params project/task/entry UUID, strict query and JSON envelope; API calls session after authentication only. Journal writes admitMutation after parse before repository, including exact retries. Return POST201 or PATCH/DELETE200; entry GET/list200; 404 for cross-project IDs, 400 invalid fields/cursor,401 auth,403 Origin,415 JSON,426 contract,413 body limit,409 conflicts, safe 500 corruption. Foreign/not found errors reveal no journal data. No request logger added.
 
 API tests use `buildApp` with isolated synthetic.sqlite and app.inject, existing test-only login pattern. Assert every route unauthorized; writes wrong/missing Origin/content type/version/legacy replay; query unknown on entry/task; foreign project/task/entry; huge body; no-store headers on success/errors. Raw synthetic table snapshots prove rejected requests do not mutate state/history. Demo fixtures show all three CRUD and retries count attempts, rollback on admission, normal server no new quota and seed/reset still works without journal requirement. Assert response union never includes session/payload/schedule/tree. Capture only synthetic logging channels to assert sentinel body/query/workDate absent; do not print request/response dumps in assertions.
 

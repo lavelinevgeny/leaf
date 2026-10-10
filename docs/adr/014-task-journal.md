@@ -16,6 +16,8 @@ Editor/delete baseline journal revision закрепляется при откр
 
 Кнопка в шапке явно называется «Отменить изменение плана» и сохраняет прежний стек; journal CRUD управляется отдельными edit/delete действиями. Migration004 добавляет только journal tables/indexes и сохраняет C17 preview gate для legacy upgrade. Новых пакетов, сервисов или state frameworks нет.
 
+Рабочее уточнение D21 после server review: cursor cap 4096 покрывает полный query из 300 UTF-16 units при worst-case JSON escaping (2048 было недостаточно). Plain text body/query должны быть well-formed Unicode: malformed surrogate отвергается 400, valid Unicode включая NUL сохраняется точно. В004 оба body CHECK используют `length(CAST(body AS BLOB)) BETWEEN 1 AND 30000`, считая UTF-8 bytes без обрыва на NUL; строгая shared schema отдельно проверяет 10000 UTF-16 units и непустой trim. Эти границы не являются новым C-решением и не меняют historical003/snapshots/replies.
+
 ## Последствия и альтернативы
 
 Создание записи не делает plan command устаревшей и не убирает canUndo; две вкладки journal получают собственный revision conflict. Current journal read после frozen ack обязателен, если известная revision новее. Bounded sidecar не гарантирует восстановление после pruning/чужой плановой записи. Deleted text может оставаться в private replay/backups, как existing planning history.

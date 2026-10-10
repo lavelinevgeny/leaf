@@ -49,7 +49,7 @@ it('backs up committed WAL state consistently while a writer remains open', asyn
         snapshot
           .prepare('SELECT MAX(version) AS version FROM migrations')
           .get(),
-      ).toEqual({ version: 3 });
+      ).toEqual({ version: 4 });
     } finally {
       snapshot.close();
     }
@@ -76,4 +76,87 @@ it('refuses overwrite, same-file backup, links and repository output without cha
     backupDatabase(source, join(process.cwd(), 'backup.sqlite')),
   ).rejects.toThrow();
   expect(await readFile(source)).toEqual(bytes);
+});
+
+import { JournalRepository } from '../src/server/journal-repository.js';
+import {
+  journalFixture,
+  createInput,
+  rawTables,
+} from './helpers/journal-fixture.js';
+it('backs up active journal, replay and private deletion sidecar then reopens schema4', async () => {
+  const f = journalFixture();
+  try {
+    const j = new JournalRepository(f.db, f.now);
+    j.create(f.project.id, createInput(f.taskId), 'synthetic-session');
+    f.command({ type: 'task.create', parentId: null, title: 'Surviving' });
+    const task = f.plan
+      .getTree(f.project.id, 'synthetic-session')
+      .tasks.find((t) => t.title === 'Surviving')!;
+    j.create(
+      f.project.id,
+      createInput(task.id, 1, 'Synthetic active'),
+      'synthetic-session',
+    );
+    f.command({ type: 'task.delete', taskId: f.taskId });
+    const tables = [
+      'journal_entries',
+      'journal_state',
+      'journal_operations',
+      'undo_journal_entries',
+      'undo_journal_manifest',
+      'undo_snapshots',
+      'scheduling_migration_archive',
+    ];
+    const expected = rawTables(f.db, tables);
+    const dest = join(await fixture(), 'snapshot.sqlite');
+    await backupDatabase(f.path, dest);
+    const readonly = new Database(dest, { readonly: true });
+    try {
+      expect(rawTables(readonly, tables)).toEqual(expected);
+      expect(
+        readonly
+          .prepare('SELECT taskId,body,workDate FROM journal_entries')
+          .all(),
+      ).toEqual([
+        { taskId: task.id, body: 'Synthetic active', workDate: '2024-02-29' },
+      ]);
+      expect(
+        readonly
+          .prepare('SELECT taskId,body,workDate FROM undo_journal_entries')
+          .all(),
+      ).toEqual([
+        {
+          taskId: f.taskId,
+          body: '  Первая строка\nВторая строка  ',
+          workDate: '2024-02-29',
+        },
+      ]);
+      expect(readonly.prepare('SELECT * FROM journal_state').all()).toEqual([
+        { projectId: f.project.id, revision: 3 },
+      ]);
+      expect(
+        readonly.prepare('SELECT COUNT(*) AS n FROM journal_operations').get(),
+      ).toEqual({ n: 2 });
+      expect(readonly.pragma('integrity_check', { simple: true })).toBe('ok');
+      expect(readonly.pragma('foreign_key_check')).toEqual([]);
+    } finally {
+      readonly.close();
+    }
+    const reopened = openDatabase(dest);
+    try {
+      expect(rawTables(reopened, tables)).toEqual(expected);
+      expect(
+        new JournalRepository(reopened, f.now).getTaskPage(
+          f.project.id,
+          task.id,
+          {},
+        ).entries[0]!.body,
+      ).toBe('Synthetic active');
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    f.close();
+  }
 });

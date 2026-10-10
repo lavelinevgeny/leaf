@@ -1048,7 +1048,7 @@ it('rolls back start-resize source, revision, outcome and undo on transaction fa
   const tree = create(fresh(), 'B', '2026-10-05', '2026-10-09'),
     before = rows();
   db.exec(
-    "CREATE TRIGGER synthetic_resize_fail BEFORE INSERT ON tasks BEGIN SELECT RAISE(ABORT,'synthetic resize save failure'); END",
+    "CREATE TRIGGER synthetic_resize_fail BEFORE UPDATE ON tasks BEGIN SELECT RAISE(ABORT,'synthetic resize save failure'); END",
   );
   expect(() =>
     step(tree, {

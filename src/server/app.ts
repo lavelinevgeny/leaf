@@ -17,6 +17,14 @@ import {
 import { Auth, SESSION_SECONDS } from './auth.js';
 import { openDatabase } from './database.js';
 import { Repository } from './repository.js';
+import { JournalRepository } from './journal-repository.js';
+import {
+  journalCreateSchema,
+  journalUpdateSchema,
+  journalDeleteSchema,
+  journalProjectQuerySchema,
+  journalTaskQuerySchema,
+} from '../shared/journal-contracts.js';
 
 export interface BuildAppOptions {
   databasePath: string;
@@ -29,6 +37,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     auth: Auth;
     repository: Repository;
+    journalRepository: JournalRepository;
   }
 }
 export type LeafApp = FastifyInstance;
@@ -62,6 +71,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
   });
   app.decorate('auth', new Auth(db, options.now, options.demoMode));
   app.decorate('repository', new Repository(db, options.now));
+  app.decorate('journalRepository', new JournalRepository(db, options.now));
   app.addHook('onClose', () => {
     db.close();
   });
@@ -239,6 +249,69 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       const input = commandEnvelopeSchema.parse(request.body);
       demoLimits?.admitMutation(request.body);
       return app.repository.applyCommand(id, input, session);
+    });
+    const taskJournalParams = z.strictObject({
+      id: uuidSchema,
+      taskId: uuidSchema,
+    });
+    const entryJournalParams = z.strictObject({
+      id: uuidSchema,
+      entryId: uuidSchema,
+    });
+    app.get('/api/projects/:id/journal', (request) => {
+      requireSession(request);
+      requireContractVersion(request);
+      const { id } = projectParamsSchema.parse(request.params);
+      return app.journalRepository.getProjectPage(
+        id,
+        journalProjectQuerySchema.parse(request.query),
+      );
+    });
+    app.get('/api/projects/:id/tasks/:taskId/journal', (request) => {
+      requireSession(request);
+      requireContractVersion(request);
+      const { id, taskId } = taskJournalParams.parse(request.params);
+      return app.journalRepository.getTaskPage(
+        id,
+        taskId,
+        journalTaskQuerySchema.parse(request.query),
+      );
+    });
+    app.get('/api/projects/:id/journal/:entryId', (request) => {
+      requireSession(request);
+      requireContractVersion(request);
+      const { id, entryId } = entryJournalParams.parse(request.params);
+      z.strictObject({}).parse(request.query);
+      return app.journalRepository.getEntry(id, entryId);
+    });
+    app.post('/api/projects/:id/journal', (request, reply) => {
+      const session = requireSession(request);
+      requireContractVersion(request);
+      const { id } = projectParamsSchema.parse(request.params);
+      z.strictObject({}).parse(request.query);
+      const input = journalCreateSchema.parse(request.body);
+      demoLimits?.admitMutation(request.body);
+      return reply
+        .code(201)
+        .send(app.journalRepository.create(id, input, session));
+    });
+    app.patch('/api/projects/:id/journal/:entryId', (request) => {
+      const session = requireSession(request);
+      requireContractVersion(request);
+      const { id, entryId } = entryJournalParams.parse(request.params);
+      z.strictObject({}).parse(request.query);
+      const input = journalUpdateSchema.parse(request.body);
+      demoLimits?.admitMutation(request.body);
+      return app.journalRepository.update(id, entryId, input, session);
+    });
+    app.delete('/api/projects/:id/journal/:entryId', (request) => {
+      const session = requireSession(request);
+      requireContractVersion(request);
+      const { id, entryId } = entryJournalParams.parse(request.params);
+      z.strictObject({}).parse(request.query);
+      const input = journalDeleteSchema.parse(request.body);
+      demoLimits?.admitMutation(request.body);
+      return app.journalRepository.delete(id, entryId, input, session);
     });
     if (options.staticRoot) {
       await app.register(staticPlugin, {

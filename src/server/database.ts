@@ -35,7 +35,7 @@ export function openDatabase(
     if (
       !isFreshDatabase &&
       (versions.length < 2 ||
-        versions.length > 3 ||
+        versions.length > 4 ||
         versions.some((row, index) => row.version !== index + 1))
     )
       throw new Error('Unsupported database schema');
@@ -68,6 +68,7 @@ export function openDatabase(
           );
         },
       },
+      { version: 4, file: '004-task-journal.sql' },
     ];
     if (isFreshDatabase)
       db.exec('CREATE TABLE migrations (version INTEGER PRIMARY KEY) STRICT');
