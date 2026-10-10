@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AuthSession,
   Command,
@@ -59,6 +65,10 @@ interface PanelVisit {
   tab: PanelTab;
   focusId?: string;
 }
+interface UndoFocus {
+  trigger: HTMLButtonElement;
+  projectId: string;
+}
 function asError(error: unknown) {
   return error instanceof ApiError
     ? error
@@ -105,6 +115,11 @@ export function App() {
   immediateHostRef.current = immediateHost;
   const [restoreImmediate, setRestoreImmediate] =
     useState<typeof immediateHost>(null);
+  const undoFocus = useRef<UndoFocus | null>(null);
+  const [restoreUndo, setRestoreUndo] = useState<{
+    request: UndoFocus;
+    snapshot: ProjectTree;
+  } | null>(null);
   const [quickEditing, setQuickEditing] = useState(false);
   const quickOrigin = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -814,23 +829,48 @@ export function App() {
         );
     }
   }
+  useLayoutEffect(() => {
+    if (!restoreUndo) return;
+    const { request, snapshot } = restoreUndo;
+    if (
+      undoFocus.current !== request ||
+      tree?.project.id !== request.projectId ||
+      !request.trigger.isConnected
+    ) {
+      setRestoreUndo(null);
+      if (undoFocus.current === request) undoFocus.current = null;
+      return;
+    }
+    // Wait for the acknowledged tree and enabled controls to reach the DOM.
+    if (tree !== snapshot || busy || loading || pending) return;
+    undoFocus.current = null;
+    setRestoreUndo(null);
+    if (
+      document.activeElement !== document.body &&
+      document.activeElement !== request.trigger
+    )
+      return;
+    if (!request.trigger.disabled) request.trigger.focus();
+    else {
+      const row = document.querySelector<HTMLElement>(
+        '[role="tree"][aria-label="Задачи"] [role="treeitem"][tabindex="0"]',
+      );
+      if (row) row.focus();
+      else document.getElementById('quick-task')?.focus();
+    }
+  }, [restoreUndo, tree, busy, loading, pending]);
   async function undo() {
     if (!canNavigate() || !treeRef.current?.canUndo) return;
     const trigger = document.activeElement;
-    await command({ type: 'undo' });
-    if (trigger instanceof HTMLButtonElement)
-      requestAnimationFrame(() => {
-        if (!trigger.isConnected || document.activeElement !== document.body)
-          return;
-        if (!trigger.disabled) trigger.focus();
-        else {
-          const row = document.querySelector<HTMLElement>(
-            '[role="tree"][aria-label="Задачи"] [role="treeitem"][tabindex="0"]',
-          );
-          if (row) row.focus();
-          else document.getElementById('quick-task')?.focus();
-        }
-      });
+    const request =
+      trigger instanceof HTMLButtonElement
+        ? { trigger, projectId: treeRef.current.project.id }
+        : null;
+    undoFocus.current = request;
+    const next = await commandTree({ type: 'undo' });
+    if (next && request && undoFocus.current === request)
+      setRestoreUndo({ request, snapshot: next });
+    else if (undoFocus.current === request) undoFocus.current = null;
   }
   async function planTask(task: Task, kind: PlanGestureKind, target: string) {
     if (!canNavigate() || !treeRef.current) return;
@@ -1213,6 +1253,11 @@ export function App() {
     <div
       className="app-shell"
       onFocusCapture={(event) => {
+        if (
+          undoFocus.current &&
+          (event.target as Element) !== undoFocus.current.trigger
+        )
+          undoFocus.current = null;
         const restore = restoreStartHandle.current;
         if (
           restore &&

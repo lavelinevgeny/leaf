@@ -772,11 +772,12 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
   expect(restored.schedule).toEqual(p10.schedule);
 });
 
-for (const focusDuringResponse of [false, true])
+for (const focusDuringResponse of ['none', 'control', 'blur'] as const)
   test(
     'one-step undo ' +
-      (focusDuringResponse
-        ? 'preserves another control focus'
+      (focusDuringResponse !== 'none'
+        ? 'preserves another control focus' +
+          (focusDuringResponse === 'blur' ? ' after blur' : '')
         : 'falls back to quick input when originating undo becomes disabled'),
     async ({ page, runtime }) => {
       const login = await page.request.post(
@@ -839,9 +840,11 @@ for (const focusDuringResponse of [false, true])
           name: 'Сегодня',
           exact: true,
         });
-        if (focusDuringResponse) {
+        if (focusDuringResponse !== 'none') {
           await other.focus();
           await expect(other).toBeFocused();
+          if (focusDuringResponse === 'blur')
+            await other.evaluate((element) => (element as HTMLElement).blur());
         }
         const response = page.waitForResponse(
           (r) =>
@@ -857,7 +860,12 @@ for (const focusDuringResponse of [false, true])
         expect(current.canUndo).toBe(false);
         expect(current.tasks).toEqual([]);
         await expect(undo).toBeDisabled();
-        if (focusDuringResponse) await expect(other).toBeFocused();
+        if (focusDuringResponse === 'control')
+          await expect(other).toBeFocused();
+        else if (focusDuringResponse === 'blur')
+          expect(
+            await page.evaluate(() => document.activeElement === document.body),
+          ).toBe(true);
         else
           await expect(
             page.getByLabel('Новая задача', { exact: true }),

@@ -218,6 +218,151 @@ async function open() {
 }
 
 describe('client HTTP interactions', () => {
+  it.each(['before commit', 'suspended'] as const)(
+    'restores one-step undo focus after DOM commit with animation frames %s',
+    async (frames) => {
+      tree = { ...tree, tasks: [task(1, 'Работа A')], canUndo: true };
+      await open();
+      // Frames can precede React's commit or be suspended in a hidden tab.
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(
+        (callback) => {
+          if (frames === 'before commit') callback(0);
+          return 1;
+        },
+      );
+      let respond!: (response: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const undo = screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Отменить последнее изменение',
+      });
+      undo.focus();
+      fireEvent.click(undo);
+      await waitFor(() => expect(undo).toBeDisabled());
+      // Browsers blur a focused button when it becomes disabled; jsdom does not.
+      undo.disabled = false;
+      undo.blur();
+      undo.disabled = true;
+      expect(document.activeElement).toBe(document.body);
+      await act(async () => {
+        respond(
+          await json({
+            ...tree,
+            project: { ...project, revision: 1 },
+            tasks: [],
+            canUndo: false,
+          }),
+        );
+      });
+      expect(screen.getByText('В проекте пока нет задач.')).toBeVisible();
+      expect(undo).toBeDisabled();
+      expect(screen.getByLabelText('Новая задача')).toHaveFocus();
+    },
+  );
+
+  it.each([false, true])(
+    'preserves focus taken by another control while undo is pending (blur=%s)',
+    async (blur) => {
+      tree = { ...tree, tasks: [task(1, 'Работа A')], canUndo: true };
+      await open();
+      let respond!: (response: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const undo = screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Отменить последнее изменение',
+      });
+      undo.focus();
+      fireEvent.click(undo);
+      await waitFor(() => expect(undo).toBeDisabled());
+      undo.disabled = false;
+      undo.blur();
+      undo.disabled = true;
+      const search = screen.getByRole('searchbox');
+      act(() => {
+        search.focus();
+        if (blur) search.blur();
+      });
+      await act(async () => {
+        respond(
+          await json({
+            ...tree,
+            project: { ...project, revision: 1 },
+            tasks: [],
+            canUndo: false,
+          }),
+        );
+      });
+      await screen.findByText('В проекте пока нет задач.');
+      expect(document.activeElement).toBe(blur ? document.body : search);
+    },
+  );
+
+  it.each(['enabled undo', 'remaining row', 'rejection'] as const)(
+    'uses the acknowledged undo result for focus: %s',
+    async (outcome) => {
+      tree = {
+        ...tree,
+        tasks: [task(1, 'Работа A'), task(2, 'Работа B')],
+        canUndo: true,
+      };
+      await open();
+      let respond!: (response: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const undo = screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Отменить последнее изменение',
+      });
+      undo.focus();
+      fireEvent.click(undo);
+      await waitFor(() => expect(undo).toBeDisabled());
+      undo.disabled = false;
+      undo.blur();
+      undo.disabled = true;
+      await act(async () => {
+        respond(
+          await (outcome === 'rejection'
+            ? json(
+                { code: 'BAD_COMMAND', message: 'Синтетический отказ.' },
+                400,
+              )
+            : json({
+                ...tree,
+                project: { ...project, revision: 1 },
+                tasks: [task(2, 'Работа B')],
+                canUndo: outcome === 'enabled undo',
+              })),
+        );
+      });
+      if (outcome === 'enabled undo') {
+        expect(undo).toBeEnabled();
+        expect(undo).toHaveFocus();
+      } else if (outcome === 'remaining row') {
+        expect(undo).toBeDisabled();
+        expect(
+          screen.getByRole('treeitem', { name: /Работа B,/ }),
+        ).toHaveFocus();
+      } else {
+        expect(screen.getByRole('alert')).toBeVisible();
+        expect(
+          screen.getByRole('treeitem', { name: /Работа A,/ }),
+        ).toBeVisible();
+        expect(screen.getByLabelText('Новая задача')).not.toHaveFocus();
+      }
+    },
+  );
+
   it('keeps schedule explanations out of workspace and opens the existing panel from a row conflict', async () => {
     tree.tasks = [
       task(1, 'Работа A'),
