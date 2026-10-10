@@ -34,15 +34,28 @@ const tree = {
 };
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   fetchMock = vi.fn((url: string) =>
     Promise.resolve(
       new Response(
         JSON.stringify(
-          url === '/api/auth/session'
-            ? { authenticated: true, setupRequired: false }
-            : url === '/api/projects'
-              ? [project, other]
-              : tree,
+          /\/journal(?:\?|$)/.test(url)
+            ? {
+                journalContractVersion: 1,
+                projectId: url.includes(other.id) ? other.id : project.id,
+                taskId: url.includes('/tasks/')
+                  ? url.split('/tasks/')[1]!.split('/')[0]
+                  : null,
+                projectRevision: 0,
+                journalRevision: 0,
+                entries: [],
+                nextCursor: null,
+              }
+            : url === '/api/auth/session'
+              ? { authenticated: true, setupRequired: false }
+              : url === '/api/projects'
+                ? [project, other]
+                : tree,
         ),
       ),
     ),

@@ -42,7 +42,18 @@ export type GanttReveal = {
   sequence: number;
   focusStart?: boolean;
 };
+export type TimelineViewState = {
+  scale: Scale;
+  start: string;
+  width: number;
+  filteredCollapse: { key: string; ids: string[] };
+  scrollTop: number;
+  scrollLeft: number;
+};
 interface Props {
+  onJournal?: ((task: Task, trigger: HTMLElement) => void) | undefined;
+  onViewState?: (state: TimelineViewState) => void;
+  restoreViewState?: TimelineViewState | undefined;
   tree: ProjectTree;
   selectedId: string | null;
   collapsed: ReadonlySet<string>;
@@ -67,6 +78,9 @@ interface Props {
 }
 export function TaskTimeline({
   tree,
+  onJournal,
+  onViewState,
+  restoreViewState,
   selectedId,
   collapsed,
   onToggle,
@@ -93,6 +107,7 @@ export function TaskTimeline({
     ids: new Set<string>(),
   });
   useEffect(() => {
+    if (restoreViewState?.filteredCollapse.key === filterKey) return;
     setFilteredCollapse({ key: filterKey, ids: new Set<string>() });
   }, [filterKey]);
   const filteredIds =
@@ -145,6 +160,39 @@ export function TaskTimeline({
   const horizontal = useRef<HTMLDivElement>(null);
   const vertical = useRef<HTMLDivElement>(null);
   const horizontalOffset = useRef(0);
+  const viewCallback = useRef(onViewState);
+  viewCallback.current = onViewState;
+  function captureView() {
+    viewCallback.current?.({
+      scale,
+      start,
+      width,
+      filteredCollapse: {
+        key: filteredCollapse.key,
+        ids: [...filteredCollapse.ids],
+      },
+      scrollTop: vertical.current?.scrollTop ?? 0,
+      scrollLeft: horizontal.current?.scrollLeft ?? horizontalOffset.current,
+    });
+  }
+  useLayoutEffect(() => {
+    if (!restoreViewState) return;
+    setScale(restoreViewState.scale);
+    setStart(restoreViewState.start);
+    setWidth(restoreViewState.width);
+    setFilteredCollapse({
+      key: restoreViewState.filteredCollapse.key,
+      ids: new Set(restoreViewState.filteredCollapse.ids),
+    });
+    horizontalOffset.current = restoreViewState.scrollLeft;
+    if (vertical.current)
+      vertical.current.scrollTop = restoreViewState.scrollTop;
+    if (horizontal.current)
+      horizontal.current.scrollLeft = restoreViewState.scrollLeft;
+  }, [restoreViewState]);
+  useLayoutEffect(() => {
+    captureView();
+  }, [scale, start, width, filteredCollapse]);
   useLayoutEffect(() => {
     if (show && horizontal.current)
       horizontal.current.scrollLeft = horizontalOffset.current;
@@ -305,7 +353,12 @@ export function TaskTimeline({
           </div>
         )}
       </div>
-      <div className="plan-scroll" ref={vertical} data-plan-scroll>
+      <div
+        className="plan-scroll"
+        ref={vertical}
+        data-plan-scroll
+        onScroll={captureView}
+      >
         <div className={`timeline-columns${show ? '' : ' list-view'}`}>
           <div className="timeline-tree">
             <div className="timeline-heading">
@@ -314,7 +367,7 @@ export function TaskTimeline({
                 {strings.start} / {strings.finish}
               </span>
             </div>
-            <TaskTree {...treeProps} />
+            <TaskTree {...treeProps} onJournal={onJournal} />
             {projection.active &&
               tree.tasks.length > 0 &&
               projection.matchIds.size === 0 && (
@@ -375,6 +428,7 @@ export function TaskTimeline({
             hidden={!show}
             ref={horizontal}
             onScroll={(event) => {
+              captureView();
               if (show)
                 horizontalOffset.current = event.currentTarget.scrollLeft;
             }}

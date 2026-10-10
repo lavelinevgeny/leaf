@@ -1,0 +1,489 @@
+// @vitest-environment jsdom
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { api, ApiError } from '../../src/client/api.js';
+import { useJournal } from '../../src/client/use-journal.js';
+import {
+  journal5,
+  page5,
+  read6,
+  journalContext,
+  deferred,
+} from './journal-fixtures.js';
+import type { JournalDraftKey } from '../../src/client/journal-state.js';
+import type { JournalMutation } from '../../src/shared/journal-contracts.js';
+beforeEach(() => {
+  vi.spyOn(api, 'journalProject').mockResolvedValue(page5);
+  vi.spyOn(api, 'journalTask').mockResolvedValue({
+    ...page5,
+    taskId: journal5.taskId,
+  });
+  vi.spyOn(api, 'journalEntry').mockResolvedValue(read6);
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+async function setup() {
+  const view = renderHook(() => useJournal(journalContext()));
+  await waitFor(() =>
+    expect(view.result.current.projectFeed?.phase).toBe('ready'),
+  );
+  return view;
+}
+it('pins editor and delete baselines through focus refresh and reopening, adopts only explicit current response', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+    view.result.current.askDelete(journal5, 5);
+  });
+  if (!key) throw Error('key');
+  const editKey = key;
+  act(() =>
+    view.result.current.changeDraft(editKey, {
+      body: 'Own draft',
+      workDate: '2024-03-01',
+    }),
+  );
+  vi.mocked(api.journalProject).mockResolvedValue({
+    ...page5,
+    journalRevision: 6,
+    entries: [read6.entry],
+  });
+  await act(async () => view.result.current.refresh());
+  act(() => {
+    view.result.current.openEdit(read6.entry, 6);
+    view.result.current.askDelete(read6.entry, 6);
+  });
+  expect(view.result.current.getDraft(editKey)).toMatchObject({
+    body: 'Own draft',
+    workDate: '2024-03-01',
+    baselineJournalRevision: 5,
+    baselineEntry: journal5,
+  });
+  expect(view.result.current.deleteConfirmation?.baselineJournalRevision).toBe(
+    5,
+  );
+  const update = vi
+    .spyOn(api, 'journalUpdate')
+    .mockRejectedValue(
+      new ApiError('JOURNAL_REVISION_CONFLICT', 'conflict', 409),
+    );
+  await act(async () =>
+    expect(await view.result.current.submit(editKey)).toBe(false),
+  );
+  expect(update.mock.calls[0]?.[2]).toMatchObject({
+    expectedJournalRevision: 5,
+    body: 'Own draft',
+  });
+  await act(async () => view.result.current.showCurrent());
+  expect(view.result.current.getDraft(editKey)?.baselineJournalRevision).toBe(
+    5,
+  );
+  act(() => view.result.current.acceptCurrent(editKey, 'keep-own'));
+  expect(view.result.current.getDraft(editKey)).toMatchObject({
+    body: 'Own draft',
+    workDate: '2024-03-01',
+    baselineJournalRevision: 6,
+  });
+  update.mockResolvedValue({
+    journalContractVersion: 1,
+    kind: 'saved',
+    projectId: journal5.projectId,
+    journalRevision: 7,
+    entry: { ...journal5, body: 'Own draft' },
+  });
+  vi.mocked(api.journalProject).mockResolvedValue({
+    ...page5,
+    journalRevision: 7,
+  });
+  await act(async () => view.result.current.submit(editKey));
+  expect(update.mock.calls[1]?.[2].operationId).not.toBe(
+    update.mock.calls[0]?.[2].operationId,
+  );
+  expect(update.mock.calls[1]?.[2].expectedJournalRevision).toBe(6);
+});
+it('delete sends pinned5 after refresh6; cancel then a new confirmation can pin6', async () => {
+  const view = await setup();
+  act(() => view.result.current.askDelete(journal5, 5));
+  vi.mocked(api.journalProject).mockResolvedValue({
+    ...page5,
+    journalRevision: 6,
+  });
+  await act(async () => view.result.current.refresh());
+  const remove = vi
+    .spyOn(api, 'journalDelete')
+    .mockRejectedValue(
+      new ApiError('JOURNAL_REVISION_CONFLICT', 'conflict', 409),
+    );
+  await act(async () => view.result.current.confirmDelete());
+  expect(remove.mock.calls[0]?.[2].expectedJournalRevision).toBe(5);
+  act(() => {
+    view.result.current.cancelDelete();
+    view.result.current.askDelete(journal5, 6);
+  });
+  expect(view.result.current.deleteConfirmation?.baselineJournalRevision).toBe(
+    6,
+  );
+});
+it('locks exact uncertain envelope and clears only its matching draft after frozen older acknowledgement', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openCreate(
+      journal5.projectId,
+      journal5.taskId,
+      '2026-10-09',
+    );
+  });
+  if (!key) throw Error('key');
+  const createKey = key;
+  act(() =>
+    view.result.current.changeDraft(createKey, { body: 'Exact own text' }),
+  );
+  let other: JournalDraftKey | null = null;
+  act(() => {
+    other = view.result.current.openCreate(
+      journal5.projectId,
+      null,
+      '2026-10-09',
+    );
+  });
+  if (!other) throw Error('other');
+  const otherKey = other;
+  act(() => view.result.current.changeDraft(otherKey, { body: 'Other draft' }));
+  const write = vi
+    .spyOn(api, 'journalCreate')
+    .mockRejectedValueOnce(new ApiError('NETWORK_ERROR', 'offline', null, true))
+    .mockResolvedValueOnce({
+      journalContractVersion: 1,
+      projectId: journal5.projectId,
+      journalRevision: 6,
+      kind: 'saved',
+      entry: journal5,
+    });
+  await act(async () => view.result.current.submit(createKey));
+  const envelope = structuredClone(view.result.current.pending);
+  act(() =>
+    view.result.current.changeDraft(createKey, { body: 'must not change' }),
+  );
+  expect(view.result.current.getDraft(createKey)?.body).toBe('Exact own text');
+  expect(view.result.current.pending).toEqual(envelope);
+  vi.mocked(api.journalProject).mockResolvedValue({
+    ...page5,
+    journalRevision: 9,
+    entries: [],
+  });
+  await act(async () => view.result.current.refresh());
+  await act(async () => view.result.current.retry());
+  expect(write.mock.calls[1]).toEqual(write.mock.calls[0]);
+  expect(view.result.current.getDraft(createKey)).toBeUndefined();
+  expect(view.result.current.getDraft(otherKey)?.body).toBe('Other draft');
+  expect(view.result.current.projectFeed?.page?.journalRevision).toBe(9);
+  expect(view.result.current.projectFeed?.page?.entries).toEqual([]);
+});
+it.each(['', '   ', 'x'.repeat(10001), '\ud800'])(
+  'rejects invalid body before UUID/write: %s',
+  async (body) => {
+    const view = await setup();
+    const uuid = vi.spyOn(crypto, 'randomUUID');
+    const write = vi.spyOn(api, 'journalCreate');
+    let key: JournalDraftKey | null = null;
+    act(() => {
+      key = view.result.current.openCreate(
+        journal5.projectId,
+        journal5.taskId,
+        '2026-10-09',
+      );
+    });
+    if (!key) throw Error('key');
+    const k = key;
+    act(() => view.result.current.changeDraft(k, { body }));
+    await act(async () => view.result.current.submit(k));
+    expect(write).not.toHaveBeenCalled();
+    expect(uuid).not.toHaveBeenCalled();
+  },
+);
+it('entry task is immutable; removed conflict remains copyable and cannot recreate', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+  });
+  if (!key) throw Error('key');
+  const k = key;
+  act(() =>
+    view.result.current.changeDraft(k, {
+      taskId: '44444444-4444-4444-8444-444444444444',
+      body: 'Copy this synthetic text',
+    }),
+  );
+  expect(view.result.current.getDraft(k)?.taskId).toBe(journal5.taskId);
+  vi.spyOn(api, 'journalUpdate').mockRejectedValue(
+    new ApiError('NOT_FOUND', 'missing', 404),
+  );
+  await act(async () => view.result.current.submit(k));
+  expect(view.result.current.conflictRemoved).toBe(true);
+  await act(async () =>
+    expect(await view.result.current.submit(k)).toBe(false),
+  );
+  expect(view.result.current.getDraft(k)?.body).toBe(
+    'Copy this synthetic text',
+  );
+});
+it('does not resurrect any state after a late mutation following private reset', async () => {
+  const view = await setup();
+  const late = deferred<JournalMutation>();
+  vi.spyOn(api, 'journalUpdate').mockReturnValue(late.promise);
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+  });
+  if (!key) throw Error('key');
+  let completion: Promise<boolean>;
+  act(() => {
+    completion = view.result.current.submit(key!);
+  });
+  act(() => view.result.current.clearPrivateState());
+  await act(async () => {
+    late.resolve({
+      journalContractVersion: 1,
+      kind: 'saved',
+      projectId: journal5.projectId,
+      journalRevision: 6,
+      entry: journal5,
+    });
+    await completion;
+  });
+  expect(view.result.current.drafts.size).toBe(0);
+  expect(view.result.current.pending).toBeNull();
+  expect(view.result.current.projectFeed).toBeNull();
+});
+it('planning busy or uncertainty blocks competing writes while a dirty plan alone permits journal save', async () => {
+  const ctx = journalContext();
+  const view = renderHook(
+    ({ busy, uncertain, dirty }) =>
+      useJournal({
+        ...ctx,
+        planningBusy: busy,
+        planningUncertain: uncertain,
+        planningDirty: dirty,
+      }),
+    { initialProps: { busy: false, uncertain: false, dirty: true } },
+  );
+  await waitFor(() =>
+    expect(view.result.current.projectFeed?.phase).toBe('ready'),
+  );
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openCreate(
+      journal5.projectId,
+      journal5.taskId,
+      '2026-10-09',
+    );
+  });
+  act(() =>
+    view.result.current.changeDraft(key!, { body: 'independent note' }),
+  );
+  const write = vi.spyOn(api, 'journalCreate').mockResolvedValue({
+    journalContractVersion: 1,
+    kind: 'saved',
+    projectId: journal5.projectId,
+    journalRevision: 5,
+    entry: journal5,
+  });
+  view.rerender({ busy: true, uncertain: false, dirty: true });
+  await act(async () =>
+    expect(await view.result.current.submit(key!)).toBe(false),
+  );
+  view.rerender({ busy: false, uncertain: true, dirty: true });
+  await act(async () =>
+    expect(await view.result.current.submit(key!)).toBe(false),
+  );
+  expect(write).not.toHaveBeenCalled();
+  view.rerender({ busy: false, uncertain: false, dirty: true });
+  await act(async () =>
+    expect(await view.result.current.submit(key!)).toBe(true),
+  );
+  expect(write).toHaveBeenCalledOnce();
+});
+it('an A conflict never blocks or appears in an independent project B delete', async () => {
+  const ctx = journalContext();
+  const view = renderHook(({ context }) => useJournal(context), {
+    initialProps: { context: ctx },
+  });
+  await waitFor(() =>
+    expect(view.result.current.projectFeed?.phase).toBe('ready'),
+  );
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+  });
+  vi.spyOn(api, 'journalUpdate').mockRejectedValue(
+    new ApiError('JOURNAL_REVISION_CONFLICT', 'conflict', 409),
+  );
+  await act(async () => view.result.current.submit(key!));
+  const otherId = '44444444-4444-4444-8444-444444444444',
+    otherEntry = { ...journal5, projectId: otherId },
+    otherTree = {
+      ...ctx.planningTree,
+      project: { ...ctx.planningTree.project, id: otherId },
+      tasks: ctx.planningTree.tasks.map((task) => ({
+        ...task,
+        projectId: otherId,
+      })),
+    };
+  vi.mocked(api.journalProject).mockResolvedValue({
+    ...page5,
+    projectId: otherId,
+    entries: [otherEntry],
+  });
+  view.rerender({
+    context: journalContext({ projectId: otherId, planningTree: otherTree }),
+  });
+  await waitFor(() =>
+    expect(view.result.current.projectFeed?.phase).toBe('ready'),
+  );
+  expect(view.result.current.activeConflictKey).toBeNull();
+  expect(view.result.current.mutationError).toBeNull();
+  const remove = vi.spyOn(api, 'journalDelete').mockResolvedValue({
+    journalContractVersion: 1,
+    kind: 'deleted',
+    projectId: otherId,
+    journalRevision: 5,
+    deletedEntryId: otherEntry.id,
+  });
+  act(() => view.result.current.askDelete(otherEntry, 5));
+  await act(async () =>
+    expect(await view.result.current.confirmDelete()).toBe(true),
+  );
+  expect(remove).toHaveBeenCalledOnce();
+  expect(view.result.current.getDraft(key!)?.baselineJournalRevision).toBe(5);
+});
+import type { JournalContext } from '../../src/client/use-journal.js';
+it.each(['filter', 'inactive'] as const)(
+  'round1 %s transition plus rejected write retains accessible exact retry',
+  async (transition) => {
+    const view = renderHook(
+      ({ context }: { context: JournalContext }) => useJournal(context),
+      { initialProps: { context: journalContext() as JournalContext } },
+    );
+    await waitFor(() =>
+      expect(view.result.current.projectFeed?.phase).toBe('ready'),
+    );
+    let key: JournalDraftKey | null = null;
+    act(() => {
+      key = view.result.current.openEdit(journal5, 5);
+    });
+    act(() =>
+      view.result.current.changeDraft(key!, {
+        body: 'Exact cross-identity draft',
+      }),
+    );
+    const late = deferred<JournalMutation>();
+    const write = vi
+      .spyOn(api, 'journalUpdate')
+      .mockReturnValueOnce(late.promise)
+      .mockResolvedValueOnce({
+        journalContractVersion: 1,
+        kind: 'saved',
+        projectId: journal5.projectId,
+        journalRevision: 5,
+        entry: journal5,
+      });
+    let completion: Promise<boolean> | undefined;
+    act(() => {
+      completion = view.result.current.submit(key!);
+    });
+    const pending = view.result.current.pending;
+    view.rerender({
+      context:
+        transition === 'filter'
+          ? journalContext({ projectQuery: { q: 'changed' } })
+          : {
+              status: 'inactive',
+              reason: 'project-loading',
+              onAuthRequired: vi.fn(),
+            },
+    });
+    await act(async () => {
+      late.reject(new ApiError('NETWORK_ERROR', 'offline', null, true));
+      await completion;
+    });
+    expect(view.result.current.pending).toBe(pending);
+    expect(view.result.current.writing).toBe(false);
+    expect(view.result.current.uncertain).toBe(true);
+    expect(view.result.current.mutationError).toMatch(/неизвестен/);
+    if (transition === 'inactive') {
+      await act(async () =>
+        expect(await view.result.current.retry()).toBe(false),
+      );
+      view.rerender({ context: journalContext() });
+      await waitFor(() =>
+        expect(view.result.current.projectFeed?.phase).toBe('ready'),
+      );
+    }
+    await act(async () => expect(await view.result.current.retry()).toBe(true));
+    expect(write.mock.calls[1]).toEqual(write.mock.calls[0]);
+    expect(view.result.current.getDraft(key!)).toBeUndefined();
+  },
+);
+it('round1 filter change plus late success clears only the sent draft, refreshes current query and cancels old completion focus', async () => {
+  const view = renderHook(
+    ({ q }) => useJournal(journalContext({ projectQuery: { q } })),
+    { initialProps: { q: '' } },
+  );
+  await waitFor(() =>
+    expect(view.result.current.projectFeed?.phase).toBe('ready'),
+  );
+  let key: JournalDraftKey | null = null,
+    other: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+    other = view.result.current.openCreate(
+      journal5.projectId,
+      null,
+      '2026-10-10',
+    );
+  });
+  act(() => {
+    view.result.current.changeDraft(key!, { body: 'Sent text' });
+    view.result.current.changeDraft(other!, { body: 'Other text' });
+  });
+  const late = deferred<JournalMutation>();
+  vi.spyOn(api, 'journalUpdate').mockReturnValueOnce(late.promise);
+  let completion: Promise<boolean> | undefined;
+  act(() => {
+    completion = view.result.current.submit(key!);
+  });
+  vi.mocked(api.journalProject).mockResolvedValue({
+    ...page5,
+    journalRevision: 6,
+    entries: [],
+  });
+  view.rerender({ q: 'new-filter' });
+  await waitFor(() =>
+    expect(view.result.current.projectFeed?.phase).toBe('no-match'),
+  );
+  let result: boolean | undefined;
+  await act(async () => {
+    late.resolve({
+      journalContractVersion: 1,
+      kind: 'saved',
+      projectId: journal5.projectId,
+      journalRevision: 6,
+      entry: { ...journal5, body: 'Sent text' },
+    });
+    result = await completion;
+  });
+  expect(result).toBe(false);
+  expect(view.result.current.pending).toBeNull();
+  expect(view.result.current.uncertain).toBe(false);
+  expect(view.result.current.getDraft(key!)).toBeUndefined();
+  expect(view.result.current.getDraft(other!)?.body).toBe('Other text');
+  expect(view.result.current.projectFeed?.scope.query).toEqual({
+    q: 'new-filter',
+  });
+  expect(view.result.current.projectFeed?.page?.entries).toEqual([]);
+});

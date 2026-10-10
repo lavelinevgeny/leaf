@@ -1,0 +1,223 @@
+.project-view-tabs {
+  display: flex;
+  gap: 1rem;
+  min-height: 38px;
+  align-items: stretch;
+}
+.project-view-tabs button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+}
+.project-view-tabs [aria-selected='true'] {
+  border-bottom-color: var(--accent, #32805c);
+}
+.project-journal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.journal-controls {
+  display: flex;
+  gap: 0.6rem;
+  align-items: end;
+  min-height: 64px;
+  padding: 0.5rem 1rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border, #e7e9ed);
+}
+.journal-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+.journal-controls .calendar-field {
+  width: 150px;
+}
+.journal-feed {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 0 1rem 1rem;
+}
+.journal-hint {
+  color: var(--muted, #667085);
+  font-size: 0.78rem;
+  padding: 0 0.5rem;
+}
+.journal-entry {
+  max-width: 850px;
+  margin: 0 auto;
+}
+.journal-entry h3 {
+  font-size: 0.86rem;
+  margin: 1rem 0 0.5rem;
+}
+.journal-entry article {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border, #e7e9ed);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  background: white;
+}
+.journal-entry header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.journal-task-link {
+  text-align: start;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #32805c);
+}
+.journal-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.5rem 0;
+}
+.journal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.journal-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.journal-editor textarea {
+  resize: vertical;
+  width: 100%;
+  min-height: 110px;
+}
+.journal-editor-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.journal-dialog {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--border, #e7e9ed);
+  border-radius: 12px;
+  padding: 1.2rem;
+}
+.journal-dialog::backdrop {
+  background: rgb(30 40 50 / 18%);
+}
+.journal-picker-results {
+  max-height: 200px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.journal-picker-results [aria-selected='true'] {
+  background: var(--surface-hover, #edf6f0);
+}
+.journal-picker-results button {
+  text-align: start;
+}
+.task-journal .journal-feed {
+  padding: 0.5rem 0;
+}
+.journal-conflict {
+  border-inline-start: 3px solid #ad7d37;
+  padding: 0.5rem;
+}
+.task-row-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.task-row-menu > button {
+  opacity: 0;
+  width: 26px;
+  padding: 0;
+}
+.task-row:hover .task-row-menu > button,
+.task-row:focus-within .task-row-menu > button {
+  opacity: 1;
+}
+.task-row-menu [role='menu'] {
+  position: absolute;
+  z-index: 12;
+  right: 0;
+  top: 100%;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border: 1px solid var(--border, #e7e9ed);
+  box-shadow: 0 4px 14px #0002;
+  border-radius: 6px;
+}
+.task-row-menu [role='menuitem'] {
+  text-align: start;
+  white-space: nowrap;
+}
+@media (hover: none) {
+  .task-row-menu > button {
+    opacity: 1;
+  }
+}
+.journal-header-search {
+  margin: 0;
+  font-size: 0;
+}
+.journal-header-search input {
+  font-size: 14px;
+  margin: 0;
+  height: 38px;
+  width: 240px;
+}
+.journal-controls {
+  height: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  padding: 4px 0;
+  align-items: center;
+  border: 0;
+}
+.journal-controls button {
+  padding: 5px 10px;
+}
+.journal-period {
+  position: relative;
+}
+.journal-period-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 15;
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  padding: 12px;
+  background: white;
+  border: 1px solid var(--leaf-border);
+  box-shadow: 0 4px 14px #0002;
+  border-radius: 8px;
+}
+.journal-period-popover label {
+  margin: 0;
+}
+.journal-feed {
+  position: relative;
+}
+.journal-loading {
+  position: absolute;
+  top: 0;
+  right: 1rem;
+  z-index: 1;
+  background: var(--leaf-surface-muted);
+  font-size: 12px;
+}
+.journal-notice {
+  min-height: 21px;
+  margin: 0 0 4px;
+}

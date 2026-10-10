@@ -816,3 +816,18 @@ h2 {
   border: 1px solid var(--leaf-border);
   border-radius: 6px;
 }
+
+/* Both project views share the same header geometry. */
+.workspace-heading {
+  min-height: 38px;
+}
+.panel-tabs {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.panel-tabs button {
+  flex-shrink: 0;
+}
+[hidden] {
+  display: none !important;
+}
