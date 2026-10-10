@@ -1,5 +1,15 @@
 # Статус разработки
 
+## Журнал задач — итоговое принятие и проверки, 2026-10-10
+
+Финальные исправления приняты локальным коммитом `0cebbe2`. Независимый scoped re-review итоговых исправлений всей ветки: SPEC PASS, QUALITY PASS, BRANCH PASS; I1/I2/M1 закрыты, остаточных Critical/Important/Minor замечаний нет. Сервер, клиент и browser acceptance журнала реализованы и приняты; D21 остаётся рабочим решением. Исторические результаты ниже сохранены и относятся к указанным там кандидатам.
+
+PASS на финальном application source: полный `verify` — typecheck/lint, 1087/1087 tests в 64 файлах, production build; полный `test:e2e` — 216/216, включая 44 Journal executions в 1440×900 и 1280×800, без skips/retries. После этих проверок application source не менялся. В owner checkout на `0cebbe2` PASS: production build, `check:package`, staged guard/Gitleaks с неизменённым пустым index и history guard/Gitleaks. Известный owner-workspace `preflight` FAIL сохраняется: ignored private archive и generated temporary inputs проверяются несмотря на ignore; категории UNREVIEWED_ASSET/BINARY, PERSONAL_HOME_PATH, LOCAL_AGENT_FILE. Guard не ослаблен, исходные owner files сохранены.
+
+Для точного committed tree `0cebbe2` в отдельном clean ordinary local clone PASS: production build, `check:package` и полный `preflight`, включая doctor, harness 56/56 без skips и реальный Gitleaks; kit — 67 Markdown files, 353 local links, 3 approved PNG, 10 CPM и 4 calendar examples. Это проверка committed package, а не разрешение публикации dirty owner workspace и не полная гарантия отсутствия PII.
+
+NOT RUN: Docker/container smoke — CLI недоступен. Исторический единичный demo startup-readiness failure не воспроизведён; причинная связь с исправлением response-stream cleanup не доказана. Push, публикация, deployment и production migration не выполнялись. Следующий шаг — независимое review этой итоговой записи и локальный documentation commit; после них запрошенная работа по журналу завершена. Следующие продуктовые задачи — оставшиеся S4–S6; первый релиз пока не завершён.
+
 ## Журнал задач — исправления финального review, 2026-10-10
 
 Whole-branch review выявил два Important и один Minor. I1: принятие текущей конфликтной записи заменяло собственный изменённый непустой draft без подтверждения. `useJournal.acceptCurrent` теперь требует native confirm до замены body/date/baseline; отказ сохраняет весь draft и conflict без UUID или записи. Согласие принимает текущую версию, последующее сохранение остаётся отдельным действием с новым operationId. Keep-own, removed-copy и delete flows сохранены.
