@@ -1285,8 +1285,14 @@ export function App() {
       timeline: timelineView.current,
       scroll: {
         ...feedPosition.current,
-        top: feed?.scrollTop ?? previous.scroll.top,
-        left: feed?.scrollLeft ?? previous.scroll.left,
+        top:
+          feed && !feed.closest('[hidden]')
+            ? feed.scrollTop
+            : feedPosition.current.top,
+        left:
+          feed && !feed.closest('[hidden]')
+            ? feed.scrollLeft
+            : feedPosition.current.left,
       },
       origin: journalOrigin.current,
     });
@@ -1351,7 +1357,7 @@ export function App() {
     setShowGantt(saved.showGantt);
     setJournalQuery(saved.query);
     setRestoreTimeline(saved.timeline ? { state: saved.timeline } : undefined);
-    setRestoreFeed(saved.scroll);
+    setRestoreFeed({ ...saved.scroll });
     journalOrigin.current = saved.origin;
     ++journalFocus.current;
   }
@@ -1909,6 +1915,7 @@ export function App() {
                 className="project-journal-container"
               >
                 <ProjectJournal
+                  visible={projectView === 'journal'}
                   disabled={busy || !!pending || conflict}
                   controller={journal}
                   projectId={tree.project.id}

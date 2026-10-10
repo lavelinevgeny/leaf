@@ -472,3 +472,95 @@ test('dirty planning refuses Back without history displacement; project defaults
     (await readTree(page, runtime.origin, tree.project.id)).project.revision,
   ).toBe(tree.project.revision);
 });
+
+test('125-entry hidden focus refresh restores deep journal anchor through tabs, history and later manual scroll', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, summaryId } = await seedJournal(page, runtime);
+  for (let revision = 0; revision < 125; revision++)
+    await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      summaryId,
+      revision,
+      `Синтетическая запись ${revision}\nСтрока журнала`,
+      '2026-10-10',
+    );
+  await openProjectJournal(page, runtime.origin);
+  const feed = projectFeed(page).locator('[data-journal-scroll]');
+  const cards = feed.locator('[data-journal-entry-id]');
+  for (const count of [100, 125]) {
+    await projectFeed(page)
+      .getByRole('button', { name: 'Показать ещё' })
+      .click();
+    await expect(cards).toHaveCount(count);
+  }
+  await cards.nth(105).evaluate((node) => {
+    const scroll = node.closest<HTMLElement>('[data-journal-scroll]')!;
+    scroll.scrollTop +=
+      node.getBoundingClientRect().top -
+      scroll.getBoundingClientRect().top +
+      17;
+  });
+  const before = await journalGeometry(page);
+  expect(before.id).toBe(
+    await cards.nth(105).getAttribute('data-journal-entry-id'),
+  );
+  expect(await feed.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  const tabs = page.getByRole('tablist', { name: 'Представление проекта' });
+  const restored = async (
+    saved: Awaited<ReturnType<typeof journalGeometry>>,
+  ) => {
+    await expect
+      .poll(async () => (await journalGeometry(page)).id)
+      .toBe(saved.id);
+    const actual = await journalGeometry(page);
+    expect(Math.abs(actual.offset - saved.offset)).toBeLessThan(0.1);
+    expect({ ...actual, offset: 0 }).toEqual({ ...saved, offset: 0 });
+  };
+  await tabs.getByRole('tab', { name: 'Задачи', exact: true }).click();
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url() ===
+        `${runtime.origin}/api/projects/${tree.project.id}/journal`,
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect((await refreshed).status()).toBe(200);
+  await expect(cards).toHaveCount(50);
+  expect(
+    await feed.evaluate((node) => node.getBoundingClientRect().height),
+  ).toBe(0);
+  await tabs.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await expect(cards).toHaveCount(125);
+  await restored(before);
+  await page.goBack();
+  await expect(page.locator('#project-view-tasks')).toBeVisible();
+  await page.goBack();
+  await expect(projectFeed(page)).toBeVisible();
+  await restored(before);
+  await cards.nth(75).evaluate((node) => {
+    const scroll = node.closest<HTMLElement>('[data-journal-scroll]')!;
+    scroll.scrollTop +=
+      node.getBoundingClientRect().top -
+      scroll.getBoundingClientRect().top +
+      23;
+  });
+  const manual = await journalGeometry(page);
+  expect(manual.id).toBe(
+    await cards.nth(75).getAttribute('data-journal-entry-id'),
+  );
+  expect(manual.id).not.toBe(before.id);
+  for (let iteration = 0; iteration < 2; iteration++) {
+    await tabs.getByRole('tab', { name: 'Задачи', exact: true }).click();
+    await tabs.getByRole('tab', { name: 'Журнал', exact: true }).click();
+    await restored(manual);
+  }
+  await page.goBack();
+  await expect(page.locator('#project-view-tasks')).toBeVisible();
+  await page.goForward();
+  await expect(projectFeed(page)).toBeVisible();
+  await restored(manual);
+});

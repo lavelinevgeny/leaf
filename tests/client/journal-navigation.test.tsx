@@ -784,3 +784,88 @@ it('keyboard wrap from journal to details keeps focus on the tab instead of auto
     'true',
   );
 });
+
+it('hidden focus refresh retains a deep visible anchor, paginates on return and respects later scroll/history', async () => {
+  const server = mockJournalApp();
+  const entries = Array.from({ length: 125 }, (_, index) => ({
+    ...journal5,
+    id: `33333333-3333-4333-8333-${String(125 - index).padStart(12, '0')}`,
+    body: `Synthetic note ${index}`,
+  }));
+  server.entries = entries;
+  vi.mocked(api.journalProject).mockImplementation(async (id, query) => {
+    const start = Number(query.cursor ?? 0);
+    return {
+      journalContractVersion: 1,
+      projectId: id,
+      taskId: null,
+      projectRevision: 0,
+      journalRevision: 125,
+      entries: entries.slice(start, start + 50),
+      nextCursor: start + 50 < entries.length ? String(start + 50) : null,
+    };
+  });
+  // Native hidden elements have zero rectangles, even though they remain mounted.
+  const nativeRect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      if (this.closest('[hidden]')) return new DOMRect();
+      const feed = this.closest<HTMLElement>('[data-journal-feed]');
+      if (feed) {
+        if (this === feed) return new DOMRect(100, 200, 600, 400);
+        if (this.dataset.journalEntry) {
+          const index = entries.findIndex(
+            (entry) => entry.id === this.dataset.journalEntry,
+          );
+          return new DOMRect(100, 200 + index * 100 - feed.scrollTop, 600, 100);
+        }
+      }
+      return nativeRect.call(this);
+    },
+  );
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  await userEvent.click(document.getElementById('project-tab-journal')!);
+  const feed = document.querySelector<HTMLElement>(
+    '[data-journal-feed="project"]',
+  )!;
+  await screen.findByText('Synthetic note 0');
+  for (let count = 100; count <= 125; count += 25) {
+    await userEvent.click(screen.getByRole('button', { name: 'Показать ещё' }));
+    await waitFor(() =>
+      expect(feed.querySelectorAll('[data-journal-entry]')).toHaveLength(count),
+    );
+  }
+  feed.scrollTop = 10025;
+  fireEvent.scroll(feed);
+  await userEvent.click(document.getElementById('project-tab-tasks')!);
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  await waitFor(() =>
+    expect(feed.querySelectorAll('[data-journal-entry]')).toHaveLength(50),
+  );
+  expect(feed.getBoundingClientRect().height).toBe(0);
+  // Browser clamps the native scroll after the hidden refresh shrinks content.
+  feed.scrollTop = 4500;
+  fireEvent.scroll(feed);
+  await userEvent.click(document.getElementById('project-tab-journal')!);
+  await waitFor(() =>
+    expect(feed.querySelectorAll('[data-journal-entry]')).toHaveLength(125),
+  );
+  expect(feed.scrollTop).toBe(10025);
+  expect(
+    feed
+      .querySelector(`[data-journal-entry="${entries[100]!.id}"]`)!
+      .getBoundingClientRect().top,
+  ).toBe(175);
+  await travel('back');
+  await travel('forward');
+  expect(feed.scrollTop).toBe(10025);
+  feed.scrollTop = 7525;
+  fireEvent.scroll(feed);
+  await userEvent.click(document.getElementById('project-tab-tasks')!);
+  await userEvent.click(document.getElementById('project-tab-journal')!);
+  expect(feed.scrollTop).toBe(7525);
+  await travel('back');
+  await travel('forward');
+  expect(feed.scrollTop).toBe(7525);
+});

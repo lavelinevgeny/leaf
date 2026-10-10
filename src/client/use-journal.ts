@@ -710,6 +710,15 @@ export function useJournal(context: JournalContext): JournalController {
       return;
     }
     if (!read || state.current.removed) return;
+    if (
+      mode === 'replace' &&
+      old?.dirty &&
+      old.body.length > 0 &&
+      !window.confirm(
+        'Заменить черновик текущей записью? Несохранённый текст и дата будут потеряны.',
+      )
+    )
+      return;
     if (old) {
       const next = openEditDraft(undefined, read.entry, read.journalRevision);
       state.current.drafts.set(

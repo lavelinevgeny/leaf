@@ -624,3 +624,120 @@ test('deleted task keeps own RAM draft unavailable; separate project create draf
     'Только первый проект',
   ]);
 });
+
+test('native conflict replacement protects own body/date until confirmation and saves only by a new explicit submit', async ({
+  page,
+  browser,
+  runtime,
+}) => {
+  const { tree, summaryId } = await seedJournal(page, runtime);
+  const added = await createJournalEntry(
+    page,
+    runtime.origin,
+    tree.project.id,
+    summaryId,
+    0,
+    'Исходная запись',
+    '2026-10-10',
+  );
+  if (added.kind !== 'saved') throw new Error('Missing entry');
+  await openProjectJournal(page, runtime.origin);
+  const editor = await editEntry(page, added.entry.id);
+  await editor
+    .getByLabel('Текст записи')
+    .fill('Собственный несохранённый текст');
+  await editor.getByLabel('Дата записи', { exact: true }).fill('2026-10-12');
+  const context = await browser.newContext();
+  try {
+    const remote = await context.newPage();
+    expect(
+      (
+        await remote.request.post(`${runtime.origin}/api/auth/login`, {
+          headers: { Origin: runtime.origin },
+          data: { password: runtime.password },
+        })
+      ).status(),
+    ).toBe(200);
+    await mutateJournal(
+      remote,
+      runtime.origin,
+      tree.project.id,
+      added.entry.id,
+      1,
+      { body: 'Текущая чужая запись', workDate: '2026-10-11' },
+    );
+    const writes: { operationId: string; expectedJournalRevision: number }[] =
+      [];
+    page.on('request', (request) => {
+      if (
+        request.method() === 'PATCH' &&
+        request.url().endsWith(`/journal/${added.entry.id}`)
+      )
+        writes.push(request.postDataJSON());
+    });
+    await editor
+      .getByRole('button', { name: 'Сохранить запись', exact: true })
+      .click();
+    await editor
+      .getByRole('button', { name: 'Показать текущую запись' })
+      .click();
+    await expect(
+      editor.getByText('Текущая чужая запись', { exact: true }),
+    ).toBeVisible();
+    const replace = editor.getByRole('button', {
+      name: 'Заменить черновик текущей записью',
+    });
+    let confirmations = 0;
+    page.on('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      confirmations++;
+      if (confirmations <= 2) await dialog.dismiss();
+      else await dialog.accept();
+    });
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await replace.click();
+      expect(confirmations).toBe(attempt);
+      await expect(editor.getByLabel('Текст записи')).toHaveValue(
+        'Собственный несохранённый текст',
+      );
+      await expect(
+        editor.getByLabel('Дата записи', { exact: true }),
+      ).toHaveValue('12.10.2026');
+      await expect(replace).toBeVisible();
+      expect(writes).toHaveLength(1);
+      expect(writes[0]!.expectedJournalRevision).toBe(1);
+    }
+    await replace.click();
+    expect(confirmations).toBe(3);
+    await expect(editor.getByLabel('Текст записи')).toHaveValue(
+      'Текущая чужая запись',
+    );
+    await expect(editor.getByLabel('Дата записи', { exact: true })).toHaveValue(
+      '11.10.2026',
+    );
+    await expect(replace).toHaveCount(0);
+    expect(writes).toHaveLength(1);
+    expect(
+      (await readJournalPage(remote, runtime.origin, tree.project.id))
+        .journalRevision,
+    ).toBe(2);
+    await editor.getByLabel('Текст записи').fill('После явного принятия');
+    await editor
+      .getByRole('button', { name: 'Сохранить запись', exact: true })
+      .click();
+    await expect(
+      entryCard(page, added.entry.id).getByText('После явного принятия', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(writes).toHaveLength(2);
+    expect(writes[1]!.expectedJournalRevision).toBe(2);
+    expect(writes[1]!.operationId).not.toBe(writes[0]!.operationId);
+    expect(
+      (await readJournalPage(remote, runtime.origin, tree.project.id))
+        .journalRevision,
+    ).toBe(3);
+  } finally {
+    await context.close();
+  }
+});

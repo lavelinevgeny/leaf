@@ -13,11 +13,13 @@ export function JournalFeed({
   state,
   controller,
   disabled = false,
+  visible = true,
   onOpenTask,
   showTaskTitles,
   restorePosition,
   onPosition,
 }: {
+  visible?: boolean;
   restorePosition?: JournalPosition | undefined;
   onPosition?: ((position: JournalPosition) => void) | undefined;
   state: JournalFeedState;
@@ -48,77 +50,10 @@ export function JournalFeed({
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [menu]);
-  const anchor = useRef<{
-    id: string;
-    date: string;
-    offset: number;
-    left: number;
-    top: number;
-  } | null>(null);
+  // Hidden DOM has zero rectangles and may clamp scroll while a refreshed page
+  // replaces loaded rows. Keep the last actual visible position independently.
+  const lastVisible = useRef<JournalPosition | null>(null);
   const restoration = useRef<JournalPosition | null>(null);
-  useEffect(() => {
-    const cancel = () => {
-      restoration.current = null;
-      anchor.current = null;
-    };
-    document.addEventListener('pointerdown', cancel);
-    document.addEventListener('focusin', cancel);
-    root.current?.addEventListener('wheel', cancel);
-    const node = root.current;
-    return () => {
-      document.removeEventListener('pointerdown', cancel);
-      document.removeEventListener('focusin', cancel);
-      node?.removeEventListener('wheel', cancel);
-    };
-  }, []);
-  useLayoutEffect(() => {
-    restoration.current = restorePosition ?? null;
-  }, [restorePosition]);
-  useLayoutEffect(() => {
-    const saved = restoration.current,
-      node = root.current;
-    if (
-      !saved ||
-      !node ||
-      !['ready', 'empty', 'no-match'].includes(state.phase)
-    )
-      return;
-    const entry = saved.id
-      ? node.querySelector<HTMLElement>(`[data-journal-entry="${saved.id}"]`)
-      : null;
-    if (entry) {
-      node.scrollTop +=
-        entry.getBoundingClientRect().top -
-        node.getBoundingClientRect().top -
-        saved.offset;
-      node.scrollLeft = saved.left;
-      restoration.current = null;
-    } else if (saved.id && state.page?.nextCursor) {
-      void controller.loadMore(state.scope.taskId ? 'task' : 'project');
-    } else {
-      const group = saved.date
-        ? node.querySelector<HTMLElement>(`[data-journal-date="${saved.date}"]`)
-        : null;
-      node.scrollTop = group ? group.offsetTop : saved.id ? 0 : saved.top;
-      node.scrollLeft = saved.left;
-      restoration.current = null;
-    }
-  }, [state, restorePosition]);
-  function capturePosition() {
-    const node = root.current;
-    if (!node || restoration.current) return;
-    const top = node.getBoundingClientRect().top;
-    const entry = [
-      ...node.querySelectorAll<HTMLElement>('[data-journal-entry]'),
-    ].find((item) => item.getBoundingClientRect().bottom > top);
-    onPosition?.({
-      id: entry?.dataset.journalEntry ?? null,
-      date: entry?.dataset.workDate ?? null,
-      offset: entry ? entry.getBoundingClientRect().top - top : 0,
-      top: node.scrollTop,
-      left: node.scrollLeft,
-    });
-  }
   const previous = useRef(state);
   const scope = state.scope.taskId ? 'task' : 'project';
   const blocked = disabled || controller.writing || !!controller.pending;
@@ -127,62 +62,99 @@ export function JournalFeed({
     state.metadata &&
     state.page.projectRevision === state.metadata.revision &&
     !['stale', 'metadata-error', 'error', 'loading'].includes(state.phase);
+  function readPosition(): JournalPosition | null {
+    const node = root.current;
+    if (!node || node.closest('[hidden]')) return null;
+    const top = node.getBoundingClientRect().top;
+    const entry = [
+      ...node.querySelectorAll<HTMLElement>('[data-journal-entry]'),
+    ].find((item) => item.getBoundingClientRect().bottom > top);
+    return {
+      id: entry?.dataset.journalEntry ?? null,
+      date: entry?.dataset.workDate ?? null,
+      offset: entry ? entry.getBoundingClientRect().top - top : 0,
+      top: node.scrollTop,
+      left: node.scrollLeft,
+    };
+  }
+  function capturePosition() {
+    if (restoration.current || !coherent) return;
+    const position = readPosition();
+    if (!position) return;
+    lastVisible.current = position;
+    onPosition?.(position);
+  }
+  useEffect(() => {
+    const cancel = () => {
+      // Navigation back to this tab must not cancel its pending restoration.
+      if (root.current?.closest('[hidden]')) return;
+      restoration.current = null;
+    };
+    document.addEventListener('pointerdown', cancel);
+    document.addEventListener('focusin', cancel);
+    const node = root.current;
+    node?.addEventListener('wheel', cancel);
+    const keyboard = (event: KeyboardEvent) => {
+      if (
+        ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(
+          event.key,
+        )
+      )
+        cancel();
+    };
+    node?.addEventListener('keydown', keyboard);
+    return () => {
+      document.removeEventListener('pointerdown', cancel);
+      document.removeEventListener('focusin', cancel);
+      node?.removeEventListener('wheel', cancel);
+      node?.removeEventListener('keydown', keyboard);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    // Each explicit history event supplies a new object; consumed requests are
+    // not replayed by later renders or ordinary tab switches.
+    restoration.current = restorePosition ?? null;
+  }, [restorePosition]);
   useLayoutEffect(() => {
     if (
-      !anchor.current &&
       !restoration.current &&
       (state.phase === 'loading' || state.phase === 'loading-more') &&
       previous.current.phase !== 'loading' &&
       previous.current.phase !== 'loading-more'
-    ) {
-      const node = root.current;
-      if (node) {
-        const top = node.getBoundingClientRect().top;
-        const entry = [
-          ...node.querySelectorAll<HTMLElement>('[data-journal-entry]'),
-        ].find((item) => item.getBoundingClientRect().bottom > top);
-        anchor.current = entry
-          ? {
-              id: entry.dataset.journalEntry!,
-              date: entry.dataset.workDate!,
-              offset: entry.getBoundingClientRect().top - top,
-              left: node.scrollLeft,
-              top: node.scrollTop,
-            }
-          : null;
-      }
-    }
-    if (
-      state.phase === 'ready' &&
-      previous.current.page !== state.page &&
-      anchor.current &&
-      root.current
-    ) {
-      const saved = anchor.current;
-      const node = root.current;
-      const entry = node.querySelector<HTMLElement>(
-        `[data-journal-entry="${saved.id}"]`,
-      );
+    )
+      restoration.current = readPosition() ?? lastVisible.current;
+    previous.current = state;
+    const node = root.current;
+    if (!visible || !node || node.closest('[hidden]')) return;
+    if (!coherent || !['ready', 'empty', 'no-match'].includes(state.phase))
+      return;
+    const saved = restoration.current;
+    if (saved) {
+      const entry = saved.id
+        ? node.querySelector<HTMLElement>(`[data-journal-entry="${saved.id}"]`)
+        : null;
       if (entry) {
         node.scrollTop +=
           entry.getBoundingClientRect().top -
           node.getBoundingClientRect().top -
           saved.offset;
         node.scrollLeft = saved.left;
-        anchor.current = null;
-      } else if (state.page?.nextCursor) {
+      } else if (saved.id && state.page?.nextCursor) {
         void controller.loadMore(scope);
+        return;
       } else {
-        const group = node.querySelector<HTMLElement>(
-          `[data-journal-date="${saved.date}"]`,
-        );
-        node.scrollTop = group ? group.offsetTop : 0;
+        const group = saved.date
+          ? node.querySelector<HTMLElement>(
+              `[data-journal-date="${saved.date}"]`,
+            )
+          : null;
+        node.scrollTop = group ? group.offsetTop : saved.id ? 0 : saved.top;
         node.scrollLeft = saved.left;
-        anchor.current = null;
       }
+      restoration.current = null;
     }
-    previous.current = state;
-  }, [state]);
+    capturePosition();
+  }, [state, visible, restorePosition]);
   const entries = state.page?.entries ?? [];
   const draft = editing ? controller.getDraft(editing) : undefined;
   const confirmation = controller.deleteConfirmation;

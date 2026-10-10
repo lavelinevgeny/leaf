@@ -1,7 +1,16 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { api, ApiError } from '../../src/client/api.js';
+import userEvent from '@testing-library/user-event';
+import { JournalConflict } from '../../src/client/JournalEditor.js';
 import { useJournal } from '../../src/client/use-journal.js';
 import {
   journal5,
@@ -635,5 +644,73 @@ it('unknown update followed by definite404 preserves only the removed copyable d
   expect(write).toHaveBeenCalledTimes(2);
   expect(view.result.current.getDraft(key!)?.body).toBe(
     'Copy removed own text',
+  );
+});
+
+it('rendered conflict replacement confirms before discarding own body/date or adopting baseline', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+    view.result.current.changeDraft(key!, {
+      body: 'Own nonempty revision5 draft',
+      workDate: '2024-03-15',
+    });
+  });
+  const write = vi
+    .spyOn(api, 'journalUpdate')
+    .mockRejectedValue(
+      new ApiError('JOURNAL_REVISION_CONFLICT', 'conflict', 409),
+    );
+  await act(async () => view.result.current.submit(key!));
+  await act(async () => view.result.current.showCurrent());
+  const own = structuredClone(view.result.current.getDraft(key!));
+  const current = view.result.current.conflictCurrent;
+  const uuid = vi.spyOn(crypto, 'randomUUID');
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  const ui = render(
+    <JournalConflict controller={view.result.current} draftKey={key!} />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Заменить черновик текущей записью' }),
+  );
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(view.result.current.getDraft(key!)).toEqual(own);
+  expect(view.result.current.conflictCurrent).toBe(current);
+  expect(view.result.current.activeConflictKey).toBe(key);
+  expect(write).toHaveBeenCalledOnce();
+  expect(uuid).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  ui.rerender(
+    <JournalConflict controller={view.result.current} draftKey={key!} />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Заменить черновик текущей записью' }),
+  );
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(view.result.current.getDraft(key!)).toMatchObject({
+    body: read6.entry.body,
+    workDate: read6.entry.workDate,
+    baselineEntry: read6.entry,
+    baselineJournalRevision: 6,
+    dirty: false,
+  });
+  expect(view.result.current.activeConflictKey).toBeNull();
+  expect(write).toHaveBeenCalledOnce();
+  expect(uuid).not.toHaveBeenCalled();
+  act(() =>
+    view.result.current.changeDraft(key!, { body: 'Explicit follow-up' }),
+  );
+  write.mockResolvedValue({
+    journalContractVersion: 1,
+    kind: 'saved',
+    projectId: journal5.projectId,
+    journalRevision: 7,
+    entry: { ...read6.entry, body: 'Explicit follow-up' },
+  });
+  await act(async () => view.result.current.submit(key!));
+  expect(write.mock.calls[1]?.[2].expectedJournalRevision).toBe(6);
+  expect(write.mock.calls[1]?.[2].operationId).not.toBe(
+    write.mock.calls[0]?.[2].operationId,
   );
 });

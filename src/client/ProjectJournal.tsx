@@ -15,6 +15,7 @@ import { CalendarDateInput } from './CalendarDateInput.js';
 export function ProjectJournal({
   controller,
   disabled = false,
+  visible = true,
   projectId,
   today,
   query,
@@ -25,6 +26,7 @@ export function ProjectJournal({
 }: {
   restorePosition?: JournalPosition | undefined;
   onPosition?: ((position: JournalPosition) => void) | undefined;
+  visible?: boolean;
   controller: JournalController;
   disabled?: boolean;
   projectId: string;
@@ -226,6 +228,7 @@ export function ProjectJournal({
           controller={controller}
           onOpenTask={onOpenTask}
           showTaskTitles
+          visible={visible}
           restorePosition={restorePosition}
           onPosition={onPosition}
         />
