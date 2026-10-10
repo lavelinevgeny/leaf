@@ -1,5 +1,15 @@
 # Статус разработки
 
+## Журнал задач — Task 3 принят, checkout gates, 2026-10-10
+
+Оба независимых review round 2 завершены: SPEC PASS и QUALITY PASS. Принятый Task3 commit `3e9f2c2` интегрирован в `feat/task-journal-complete`; два исходных локальных owner diff сохранены, не staged и не committed. Общий review всей ветки ещё pending; следующие разделы сохраняют исторические результаты кандидатов.
+
+В owner checkout PASS: production build, `check:package`, `security:staged` с неизменённым index и `security:history` по всем reachable refs с реальным Gitleaks. `preflight` — FAIL на workspace guard: ignored private proposal archive и generated scratch (agent worktrees/probes/logs/assets) проверяются несмотря на ignore; категории — UNREVIEWED_ASSET/BINARY, PERSONAL_HOME_PATH, LOCAL_AGENT_FILE. Guard не ослаблен, owner files сохранены. Этот workspace не получил разрешения на публикацию.
+
+В clean ordinary local clone только точного committed tree PASS: hooks setup, production build, package и полный preflight, включая doctor. Проверены 307 workspace/tracked entries; kit — 67 Markdown/352 local links/3 approved PNG/10 CPM/4 calendar cases; harness — 56 tests без skips. Реальный Gitleaks: workspace/staged — 0 findings; history — 1108 file versions/109 metadata objects, PASS. Это проверка committed package, не dirty owner workspace и не полная гарантия отсутствия PII.
+
+Application evidence остаётся PASS: verify — typecheck/lint/build, 1085 tests в 64 файлах; full E2E — 212/212, включая 40 Journal executions в 1440×900 и 1280×800, без skips/retries. Docker smoke NOT RUN: CLI недоступен. Исторический единичный demo startup failure не воспроизведён; связь с исправленным stream cleanup не доказана. S4–S6 и первый релиз не завершены; push, публикация, deployment и production migration не выполнялись.
+
 ## Журнал задач — Task 3, review round 2, 2026-10-10
 
 Два scoped reviews нашли один введённый Important: persistent history snapshot повторно применялся при обычном Journal→Tasks и стирал ручные изменения после Back. Независимые rendered App и Timeline regressions наблюдали RED 2/2 — months откатывался в weeks. Исправлен только restore lifecycle: каждое настоящее history restore создаёт отдельный TimelineRestoreRequest вокруг сохранённого snapshot, hidden request ждёт visibility, visible request потребляется один раз, App очищает только совпавший acknowledged request. Новый request с той же snapshot identity снова применяется; permanent cache по snapshot identity не используется.
