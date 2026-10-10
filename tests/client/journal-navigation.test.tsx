@@ -12,6 +12,10 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { App } from '../../src/client/App.js';
+import {
+  TaskTimeline,
+  type TimelineViewState,
+} from '../../src/client/TaskTimeline.js';
 import { api, ApiError } from '../../src/client/api.js';
 import { strings } from '../../src/client/strings.js';
 import {
@@ -106,6 +110,52 @@ it('initial URL waits for authentication and never selects a foreign task', asyn
     'true',
   );
   expect(document.getElementById('panel-journal')).toBeNull();
+});
+it('unknown valid project URL uses only authorized list and reports unavailable before safe default', async () => {
+  const server = mockJournalApp();
+  const unknown = '44444444-4444-4444-8444-444444444444';
+  window.history.replaceState(null, '', `?project=${unknown}&view=journal`);
+  vi.mocked(api.tree).mockImplementation(async (id) => {
+    if (id !== projectId) throw new ApiError('NOT_FOUND', 'Unavailable', 404);
+    return structuredClone(server.tree);
+  });
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  expect(api.tree).not.toHaveBeenCalledWith(unknown);
+  expect(await screen.findByText(/Проект из ссылки недоступен/)).toBeVisible();
+  expect(document.getElementById('project-tab-tasks')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await waitFor(() =>
+    expect(new URLSearchParams(window.location.search).get('project')).toBe(
+      projectId,
+    ),
+  );
+});
+it('known URL project selects the requested second authorized project', async () => {
+  const server = mockJournalApp();
+  const known = {
+    ...server.tree.project,
+    id: '44444444-4444-4444-8444-444444444444',
+    title: 'Второй доступный проект',
+  };
+  server.projects.push(known);
+  window.history.replaceState(null, '', `?project=${known.id}&view=journal`);
+  render(<App />);
+  await screen.findByRole('heading', { name: known.title });
+  expect(api.tree).toHaveBeenCalledWith(known.id);
+  expect(api.tree).not.toHaveBeenCalledWith(projectId);
+  expect(screen.queryByText(/Проект из ссылки недоступен/)).toBeNull();
+  await waitFor(() =>
+    expect(document.getElementById('project-tab-journal')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    ),
+  );
+  expect(new URLSearchParams(window.location.search).get('project')).toBe(
+    known.id,
+  );
 });
 it('mounted task timeline, scale and quick draft survive tabs; history contains no draft/query', async () => {
   mockJournalApp();
@@ -426,6 +476,206 @@ it('later manual focus cancels asynchronous journal textarea focus', async () =>
   act(() => callbacks.forEach((callback) => callback(0)));
   expect(search).toHaveFocus();
 });
+it('same history snapshot waits for visible Timeline before restoring native scroll offsets', () => {
+  const server = mockJournalApp();
+  const capture = vi.fn();
+  const snapshot: TimelineViewState = {
+    scale: 'weeks',
+    start: '2026-12-31',
+    width: 420,
+    filteredCollapse: {
+      key: JSON.stringify({ query: '', statuses: [] }),
+      ids: [],
+    },
+    scrollTop: 350,
+    scrollLeft: 180,
+  };
+  const request = { state: snapshot };
+  const view = (
+    active: boolean,
+    restoreRequest?: { state: TimelineViewState },
+  ) => (
+    <div hidden={!active}>
+      <TaskTimeline
+        tree={server.tree}
+        selectedId={null}
+        collapsed={new Set()}
+        onToggle={vi.fn()}
+        onSelect={vi.fn()}
+        onAction={vi.fn()}
+        onPlan={vi.fn()}
+        disabled={false}
+        show={true}
+        reveal={null}
+        active={active}
+        onViewState={capture}
+        restoreRequest={restoreRequest}
+      />
+    </div>
+  );
+  const mounted = render(view(true));
+  const vertical = document.querySelector<HTMLElement>('[data-plan-scroll]')!;
+  const horizontal = document.querySelector<HTMLElement>('.timeline-time')!;
+  for (const [node, property] of [
+    [vertical, 'scrollTop'],
+    [horizontal, 'scrollLeft'],
+  ] as const) {
+    let offset = 0;
+    Object.defineProperty(node, property, {
+      configurable: true,
+      get: () => (node.closest('[hidden]') ? 0 : offset),
+      set: (value: number) => {
+        offset = node.closest('[hidden]') ? 0 : value;
+      },
+    });
+  }
+  capture.mockClear();
+  mounted.rerender(view(false, request));
+  fireEvent.scroll(vertical);
+  fireEvent.scroll(horizontal);
+  expect(capture).not.toHaveBeenCalled();
+  mounted.rerender(view(true, request));
+  expect(vertical.scrollTop).toBe(350);
+  expect(horizontal.scrollLeft).toBe(180);
+  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  expect(document.querySelector('.gantt-month')?.textContent).toBe('2026-12');
+});
+it('manual scale, period and both axes after Back survive ordinary tabs and repeated history requests', async () => {
+  mockJournalApp();
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  const scale = () => screen.getByLabelText('Масштаб Ганта');
+  const period = () =>
+    [...document.querySelectorAll('.gantt-month, .gantt-day')].map((label) => [
+      label.textContent,
+      label.getAttribute('x'),
+    ]);
+  const offsets = () => ({
+    top: document.querySelector<HTMLElement>('[data-plan-scroll]')!.scrollTop,
+    left: document.querySelector<HTMLElement>('.timeline-time')!.scrollLeft,
+  });
+  const scroll = (top: number, left: number) => {
+    const vertical = document.querySelector<HTMLElement>('[data-plan-scroll]')!;
+    const horizontal = document.querySelector<HTMLElement>('.timeline-time')!;
+    vertical.scrollTop = top;
+    horizontal.scrollLeft = left;
+    fireEvent.scroll(vertical);
+    fireEvent.scroll(horizontal);
+  };
+  fireEvent.change(scale(), { target: { value: 'weeks' } });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Следующий период' }),
+  );
+  scroll(350, 180);
+  const restoredPeriod = period();
+  await userEvent.click(document.getElementById('project-tab-journal')!);
+  await screen.findByText('Original synthetic text');
+  await travel('back');
+  await waitFor(() => expect(scale()).toHaveValue('weeks'));
+  expect(period()).toEqual(restoredPeriod);
+  expect(offsets()).toEqual({ top: 350, left: 180 });
+
+  fireEvent.change(scale(), { target: { value: 'months' } });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Следующий период' }),
+  );
+  scroll(475, 230);
+  const manualPeriod = period();
+  expect(manualPeriod).not.toEqual(restoredPeriod);
+  const manualState = () => {
+    expect(scale()).toHaveValue('months');
+    expect(period()).toEqual(manualPeriod);
+    expect(offsets()).toEqual({ top: 475, left: 230 });
+  };
+  manualState();
+  for (let index = 0; index < 2; index++) {
+    await userEvent.click(document.getElementById('project-tab-journal')!);
+    await screen.findByText('Original synthetic text');
+    await userEvent.click(document.getElementById('project-tab-tasks')!);
+    manualState();
+  }
+  await travel('back');
+  await screen.findByText('Original synthetic text');
+  await travel('back');
+  await waitFor(manualState);
+  await travel('forward');
+  await screen.findByText('Original synthetic text');
+  await travel('forward');
+  await waitFor(manualState);
+  expect(api.command).not.toHaveBeenCalled();
+});
+it('consumes each visible restore once and accepts a new request with the same snapshot identity', async () => {
+  const server = mockJournalApp();
+  const snapshot: TimelineViewState = {
+    scale: 'weeks',
+    start: '2026-12-31',
+    width: 420,
+    filteredCollapse: {
+      key: JSON.stringify({ query: '', statuses: [] }),
+      ids: [],
+    },
+    scrollTop: 350,
+    scrollLeft: 180,
+  };
+  const first = { state: snapshot };
+  const view = (active: boolean, request: { state: TimelineViewState }) => (
+    <div hidden={!active}>
+      <TaskTimeline
+        tree={server.tree}
+        selectedId={null}
+        collapsed={new Set()}
+        onToggle={vi.fn()}
+        onSelect={vi.fn()}
+        onAction={vi.fn()}
+        onPlan={vi.fn()}
+        disabled={false}
+        show={true}
+        reveal={null}
+        active={active}
+        restoreRequest={request}
+      />
+    </div>
+  );
+  const mounted = render(view(true, first));
+  const vertical = document.querySelector<HTMLElement>('[data-plan-scroll]')!;
+  const horizontal = document.querySelector<HTMLElement>('.timeline-time')!;
+  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  fireEvent.change(screen.getByLabelText('Масштаб Ганта'), {
+    target: { value: 'months' },
+  });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Следующий период' }),
+  );
+  const manualPeriod = document.querySelector('.gantt-month')?.textContent;
+  vertical.scrollTop = 475;
+  horizontal.scrollLeft = 230;
+  fireEvent.scroll(vertical);
+  fireEvent.scroll(horizontal);
+  mounted.rerender(view(false, first));
+  mounted.rerender(view(true, first));
+  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('months');
+  expect(document.querySelector('.gantt-month')?.textContent).toBe(
+    manualPeriod,
+  );
+  expect(vertical.scrollTop).toBe(475);
+  expect(horizontal.scrollLeft).toBe(230);
+  const nextRequest = { state: snapshot };
+  expect(nextRequest.state).toBe(first.state);
+  mounted.rerender(view(true, nextRequest));
+  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  expect(vertical.scrollTop).toBe(350);
+  expect(horizontal.scrollLeft).toBe(180);
+  fireEvent.change(screen.getByLabelText('Масштаб Ганта'), {
+    target: { value: 'days' },
+  });
+  const hiddenRequest = { state: snapshot };
+  mounted.rerender(view(false, hiddenRequest));
+  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('days');
+  mounted.rerender(view(true, hiddenRequest));
+  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  expect(vertical.scrollTop).toBe(350);
+  expect(horizontal.scrollLeft).toBe(180);
+});
 it('Back across projects restores Gantt scale, width, both scroll axes and filtered collapse from the visit snapshot', async () => {
   const server = mockJournalApp();
   server.tree.tasks.push(task(2, { parentId: journal5.taskId }));
@@ -496,5 +746,41 @@ it('unknown initial project stays unavailable and permits a safe explicit return
   );
   expect(new URLSearchParams(window.location.search).get('project')).toBe(
     projectId,
+  );
+});
+
+it('row menu journal focus waits for mounted editor even when a frame runs before passive effects', async () => {
+  mockJournalApp();
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    callback(0);
+    return 0;
+  });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Действия задачи: Работа 1' }),
+  );
+  await userEvent.click(
+    screen.getByRole('menuitem', { name: 'Добавить запись' }),
+  );
+  const editor = await screen.findByLabelText('Текст записи');
+  await waitFor(() => expect(editor).toHaveFocus());
+  expect(api.command).not.toHaveBeenCalled();
+});
+
+it('keyboard wrap from journal to details keeps focus on the tab instead of autofocus title', async () => {
+  mockJournalApp();
+  render(<App />);
+  await projectJournal();
+  await userEvent.click(screen.getByRole('button', { name: 'Работа 1' }));
+  const tab = document.getElementById('tab-journal')!;
+  tab.focus();
+  await userEvent.keyboard('{ArrowRight}');
+  await waitFor(() =>
+    expect(document.getElementById('tab-details')).toHaveFocus(),
+  );
+  expect(document.getElementById('tab-details')).toHaveAttribute(
+    'aria-selected',
+    'true',
   );
 });

@@ -80,7 +80,7 @@ export async function syntheticDemoRuntime() {
     const origin = `http://127.0.0.1:${port}`;
     async function start() {
       const current = spawn(process.execPath, ['dist/server/server/main.js'], {
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'ignore'],
         env: {
           PATH: process.env.PATH,
           TMPDIR: directory,
@@ -92,6 +92,24 @@ export async function syntheticDemoRuntime() {
       });
       child = current;
       childClosedObserved = false;
+      const readyMarker = 'leaf server is ready.\n';
+      let readyMarkerObserved = false;
+      let markerOffset = 0;
+      const observeReadyMarker = (chunk: Buffer) => {
+        for (const character of chunk.toString('utf8')) {
+          markerOffset =
+            character === readyMarker[markerOffset]
+              ? markerOffset + 1
+              : character === readyMarker[0]
+                ? 1
+                : 0;
+          if (markerOffset === readyMarker.length) {
+            readyMarkerObserved = true;
+            markerOffset = 0;
+          }
+        }
+      };
+      current.stdout.on('data', observeReadyMarker);
       let failed = false;
       childClosed = new Promise((resolve) => {
         current.once('error', () => {
@@ -102,24 +120,41 @@ export async function syntheticDemoRuntime() {
           resolve(code);
         });
       });
-      for (let attempt = 0; attempt < 100; attempt++) {
-        if (failed || current.exitCode !== null || current.signalCode !== null)
-          throw new Error('Test server exited');
-        try {
+      let lastStatus: number | null = null;
+      let lastTransportError = 'none';
+      try {
+        for (let attempt = 0; attempt < 100; attempt++) {
           if (
-            (
-              await fetch(`${origin}/readyz`, {
-                signal: AbortSignal.timeout(200),
-              })
-            ).ok
+            failed ||
+            current.exitCode !== null ||
+            current.signalCode !== null
           )
-            return;
-        } catch {
-          // Wait for the real process, never replace it with an HTTP mock.
+            throw new Error('Test server exited');
+          try {
+            const response = await fetch(`${origin}/readyz`, {
+              signal: AbortSignal.timeout(200),
+            });
+            lastStatus = response.status;
+            lastTransportError = 'none';
+            await response.body?.cancel();
+            if (response.ok) return;
+          } catch (error) {
+            lastTransportError =
+              error instanceof Error &&
+              ['AbortError', 'TimeoutError', 'TypeError'].includes(error.name)
+                ? error.name
+                : 'Error';
+            // Wait for the real process, never replace it with an HTTP mock.
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        throw new Error(
+          `Test server did not become ready (marker=${readyMarkerObserved}, status=${lastStatus ?? 'none'}, transport=${lastTransportError}, attempts=100)`,
+        );
+      } finally {
+        current.stdout.off('data', observeReadyMarker);
+        current.stdout.resume();
       }
-      throw new Error('Test server did not become ready');
     }
     await start();
     return {

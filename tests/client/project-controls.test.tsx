@@ -92,8 +92,13 @@ it('loads the inactive project before opening its menu and renames only that pro
   render(<App />);
   await screen.findByRole('heading', { name: project.title });
   let finishLoad!: (response: Response) => void;
-  fetchMock.mockImplementationOnce(
-    () => new Promise<Response>((resolve) => (finishLoad = resolve)),
+  const normalRead = fetchMock.getMockImplementation()! as (
+    url: string,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation((url: string) =>
+    url === `/api/projects/${other.id}/tree`
+      ? new Promise<Response>((resolve) => (finishLoad = resolve))
+      : normalRead(url),
   );
   const opener = otherOpener();
   opener.focus();
@@ -109,6 +114,7 @@ it('loads the inactive project before opening its menu and renames only that pro
   }))
     expect(button).toBeDisabled();
   finishLoad(new Response(JSON.stringify({ ...tree, project: other })));
+  fetchMock.mockImplementation(normalRead);
   await screen.findByRole('heading', { name: other.title });
   expect(
     screen.getByRole('button', { name: 'Настройки проекта' }),

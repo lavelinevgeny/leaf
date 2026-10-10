@@ -387,7 +387,7 @@ it('freezes exact target retry after later writes and rolls back response-schema
   expect(state()).toEqual(before);
   spy.mockRestore();
   db.exec(
-    "CREATE TRIGGER synthetic_fail BEFORE INSERT ON tasks BEGIN SELECT RAISE(ABORT,'synthetic save failure'); END",
+    "CREATE TRIGGER synthetic_fail BEFORE UPDATE ON tasks BEGIN SELECT RAISE(ABORT,'synthetic save failure'); END",
   );
   expect(() =>
     step(tree, {

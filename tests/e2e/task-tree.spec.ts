@@ -4,12 +4,16 @@ import { syntheticRuntime } from '../../scripts/e2e-server.js';
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });
@@ -128,9 +132,7 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await row(page, 'Задача A').press('Delete');
   await expect(row(page, 'Задача A')).toHaveCount(0);
   await expect(row(page, 'Внук A')).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'Отменить последнее изменение' })
-    .click();
+  await page.getByRole('button', { name: 'Отменить изменение плана' }).click();
   await expect(row(page, 'Внук A')).toHaveAttribute('aria-level', '3');
   await page.reload();
   await expect(row(page, 'Внук A')).toBeVisible();

@@ -91,7 +91,7 @@ test('inline child draft, schedule presets, keyboard, conditional bars and atomi
       page.locator(`[data-gantt-bar="${child.id}"]`).locator('..'),
     ).not.toHaveClass(/conditional/);
     await page
-      .getByRole('button', { name: 'Отменить последнее изменение' })
+      .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
     await expect(
       page.getByRole('treeitem', { name: /^Новая подзадача,/ }),
@@ -120,6 +120,10 @@ test('inline child draft, schedule presets, keyboard, conditional bars and atomi
       ),
     ).toBe(true);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });

@@ -697,3 +697,48 @@ it('round1 filter superseded successful modal save releases its scroll lock with
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
   );
 });
+
+it.each([false, true])(
+  'successful modal save waits for its enabled trigger and respects later focus=%s',
+  async (laterFocus) => {
+    const server = mockJournalApp();
+    render(<App />);
+    await openProjectJournal();
+    const add = screen.getByRole('button', { name: 'Добавить запись' });
+    await userEvent.click(add);
+    const dialog = screen.getByRole('dialog', { name: 'Новая запись журнала' });
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Выбрать задачу' }),
+    );
+    fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'Enter' });
+    fireEvent.change(within(dialog).getByLabelText('Текст записи'), {
+      target: { value: 'Delayed refresh note' },
+    });
+    let resolve!: (value: typeof page5) => void;
+    const refresh = new Promise<typeof page5>((yes) => {
+      resolve = yes;
+    });
+    vi.mocked(api.journalProject).mockImplementationOnce(() => refresh);
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Сохранить запись' }),
+    );
+    await waitFor(() => expect(add).toBeDisabled());
+    // A frame may run before React commits the disabled→enabled trigger render.
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 0;
+    });
+    document.body.focus();
+    const search = screen.getByLabelText('Поиск записей');
+    if (laterFocus) search.focus();
+    await act(async () => {
+      resolve({
+        ...page5,
+        journalRevision: server.revision,
+        entries: server.entries,
+      });
+    });
+    await waitFor(() => expect(add).toBeEnabled());
+    await waitFor(() => expect(laterFocus ? search : add).toHaveFocus());
+  },
+);

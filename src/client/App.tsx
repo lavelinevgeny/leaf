@@ -11,7 +11,10 @@ import {
 } from './workspace-navigation.js';
 import type { JournalPosition } from './journal-state.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
-import type { TimelineViewState } from './TaskTimeline.js';
+import type {
+  TimelineRestoreRequest,
+  TimelineViewState,
+} from './TaskTimeline.js';
 import './styles/journal.css';
 import {
   useCallback,
@@ -112,9 +115,12 @@ export function App() {
   );
   const journalOrigin = useRef<HTMLElement | null>(null);
   const journalFocus = useRef(0);
+  const journalFocusRequest = useRef<{ taskId: string; token: number } | null>(
+    null,
+  );
   const timelineView = useRef<TimelineViewState | undefined>(undefined);
   const [restoreTimeline, setRestoreTimeline] = useState<
-    TimelineViewState | undefined
+    TimelineRestoreRequest | undefined
   >(undefined);
   type SessionVisit = {
     visit: WorkspaceVisit;
@@ -348,13 +354,10 @@ export function App() {
     setPanelTab('journal');
     setPanelHistory([]);
     journal.openCreate(task.projectId, task.id, projectToday);
-    const token = ++journalFocus.current;
-    requestAnimationFrame(() => {
-      if (token === journalFocus.current)
-        document
-          .querySelector<HTMLTextAreaElement>('#panel-journal textarea')
-          ?.focus();
-    });
+    journalFocusRequest.current = {
+      taskId: task.id,
+      token: ++journalFocus.current,
+    };
   }
   function changeProjectView(view: ProjectView) {
     if (journalLocked) return;
@@ -541,6 +544,10 @@ export function App() {
       const items = await api.projects();
       setProjects(items);
       setCreateUncertain(false);
+      const unavailableVisit =
+        initialVisit.current &&
+        !items.some((item) => item.id === initialVisit.current?.projectId);
+      if (unavailableVisit) initialVisit.current = null;
       if (initialVisit.current)
         await loadProject(initialVisit.current.projectId);
       else if (items[0])
@@ -550,6 +557,8 @@ export function App() {
             ? currentProject.current
             : items[0].id,
         );
+      if (unavailableVisit)
+        setNotice('Проект из ссылки недоступен. Показаны доступные проекты.');
     } catch (failure) {
       setError(asError(failure));
     } finally {
@@ -1341,7 +1350,7 @@ export function App() {
     setTaskFilter(saved.filter);
     setShowGantt(saved.showGantt);
     setJournalQuery(saved.query);
-    setRestoreTimeline(saved.timeline);
+    setRestoreTimeline(saved.timeline ? { state: saved.timeline } : undefined);
     setRestoreFeed(saved.scroll);
     journalOrigin.current = saved.origin;
     ++journalFocus.current;
@@ -1873,7 +1882,13 @@ export function App() {
                     timelineView.current = value;
                     lastCapture.current();
                   }}
-                  restoreViewState={restoreTimeline}
+                  active={projectView === 'tasks'}
+                  restoreRequest={restoreTimeline}
+                  onRestoreApplied={(request) => {
+                    setRestoreTimeline((pending) =>
+                      pending === request ? undefined : pending,
+                    );
+                  }}
                   onPredecessors={openPredecessors}
                   onPlan={(task, kind, target) =>
                     void planTask(task, kind, target)
@@ -1978,6 +1993,20 @@ export function App() {
               controller={journal}
               task={selectedTask}
               today={projectToday}
+              onEditorReady={(editor) => {
+                const request = journalFocusRequest.current;
+                if (!request || request.taskId !== selectedTask.id) return;
+                journalFocusRequest.current = null;
+                requestAnimationFrame(() => {
+                  if (
+                    request.token === journalFocus.current &&
+                    editor.isConnected &&
+                    !editor.disabled &&
+                    !editor.closest('[hidden]')
+                  )
+                    editor.focus();
+                });
+              }}
             />
           }
           onDependency={(value) =>

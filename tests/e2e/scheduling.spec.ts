@@ -44,7 +44,7 @@ test('preserves duration-only work and dependencies on explicit child conversion
     expect(changed.dependencies[0]!.successorId).toBe(own.id);
     await page.keyboard.press('Escape');
     await page
-      .getByRole('button', { name: 'Отменить последнее изменение' })
+      .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
     await expect(
       page.getByRole('treeitem', { name: /Новый ребёнок,/ }),
@@ -54,7 +54,11 @@ test('preserves duration-only work and dependencies on explicit child conversion
     expect(restored.tasks).toEqual(tree.tasks);
     expect(restored.dependencies).toEqual(tree.dependencies);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 test('unversioned real request cannot mutate an existing project and retry remains exact after lost committed response', async ({
@@ -108,6 +112,10 @@ test('unversioned real request cannot mutate an existing project and retry remai
       (await readTree(page, runtime.origin, tree.project.id)).project.revision,
     ).toBe(tree.project.revision + 1);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });

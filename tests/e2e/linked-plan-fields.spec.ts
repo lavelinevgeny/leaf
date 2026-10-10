@@ -99,7 +99,7 @@ test('linked edits stay local until one atomic save, then undo and restart resto
     expect(mutations).toBe(1);
     await page.keyboard.press('Escape');
     await page
-      .getByRole('button', { name: 'Отменить последнее изменение' })
+      .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
     await expect(
       page.getByRole('button', { name: /Работа A, 2026-10-05 – 2026-10-06/ }),
@@ -110,7 +110,11 @@ test('linked edits stay local until one atomic save, then undo and restart resto
     expect(restored.tasks).toEqual(before.tasks);
     expect(restored.schedule).toEqual(before.schedule);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -164,7 +168,11 @@ test('duration-only stays undated, finish anchors the start, and clearing remain
       durationDays: null,
     });
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -220,6 +228,10 @@ test('invalid edits block save until discard; native calendar and all-days use t
       { inputStart: '2026-10-05', inputFinish: '2026-10-10', durationDays: 6 },
     );
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });

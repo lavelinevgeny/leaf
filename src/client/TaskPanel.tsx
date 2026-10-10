@@ -91,6 +91,7 @@ export function TaskPanel({
   journalTitle,
   onJournal,
 }: Props) {
+  const keyboardTabChange = useRef(false);
   const [draft, setDraft] = useState<Draft>(() => draftOf(task));
   const [baseline, setBaseline] = useState<Draft>(() => draftOf(task));
   const [plan, setPlan] = useState<SourceFields>(() => sourceOf(task));
@@ -274,7 +275,10 @@ export function TaskPanel({
               aria-controls={`panel-${value}`}
               aria-selected={tab === value}
               tabIndex={tab === value ? 0 : -1}
-              onClick={() => onTab(value)}
+              onClick={() => {
+                keyboardTabChange.current = false;
+                onTab(value);
+              }}
               onKeyDown={(event) => {
                 if (
                   ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
@@ -296,6 +300,7 @@ export function TaskPanel({
                               (event.key === 'ArrowRight' ? 1 : 3)) %
                             4
                     ]!;
+                  keyboardTabChange.current = true;
                   onTab(next);
                   document.getElementById(`tab-${next}`)?.focus();
                 }
@@ -325,7 +330,7 @@ export function TaskPanel({
                 <label>
                   {strings.title}
                   <input
-                    autoFocus
+                    autoFocus={!keyboardTabChange.current}
                     value={draft.title}
                     maxLength={300}
                     onChange={(event) => update('title', event.target.value)}

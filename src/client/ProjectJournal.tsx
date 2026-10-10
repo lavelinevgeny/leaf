@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Task } from '../shared/contracts.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
 import { journalProjectQuerySchema } from '../shared/journal-contracts.js';
@@ -45,6 +45,41 @@ export function ProjectJournal({
   const [invalid, setInvalid] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null),
     trigger = useRef<HTMLButtonElement>(null);
+  const focusReturn = useRef<Element | null>(null);
+  useEffect(() => {
+    const cancel = () => {
+      focusReturn.current = null;
+    };
+    const moved = (event: FocusEvent) => {
+      if (event.target !== trigger.current) cancel();
+    };
+    document.addEventListener('pointerdown', cancel);
+    document.addEventListener('keydown', cancel);
+    document.addEventListener('focusin', moved);
+    return () => {
+      document.removeEventListener('pointerdown', cancel);
+      document.removeEventListener('keydown', cancel);
+      document.removeEventListener('focusin', moved);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const owned = focusReturn.current,
+      button = trigger.current;
+    if (!owned || !button || key) return;
+    if (
+      !button.isConnected ||
+      button.closest('[hidden]') ||
+      (document.activeElement !== owned &&
+        document.activeElement !== document.body &&
+        document.activeElement !== button)
+    ) {
+      focusReturn.current = null;
+      return;
+    }
+    if (button.disabled) return;
+    focusReturn.current = null;
+    button.focus();
+  });
   const feed = controller.projectFeed;
   const metadata = feed?.metadata;
   const draft = key ? controller.getDraft(key) : undefined;
@@ -70,16 +105,14 @@ export function ProjectJournal({
     closeAfterSave();
   }
   function closeAfterSave() {
+    const active = document.activeElement;
+    focusReturn.current =
+      active === document.body ||
+      active === trigger.current ||
+      (active && dialog.current?.contains(active))
+        ? active
+        : null;
     setKey(null);
-    const owned = document.activeElement;
-    requestAnimationFrame(() => {
-      if (
-        document.activeElement !== owned &&
-        document.activeElement !== document.body
-      )
-        return;
-      if (!trigger.current?.closest('[hidden]')) trigger.current?.focus();
-    });
   }
   function apply() {
     const parsed = journalProjectQuerySchema.safeParse({

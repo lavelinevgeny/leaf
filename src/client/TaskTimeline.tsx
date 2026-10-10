@@ -50,10 +50,13 @@ export type TimelineViewState = {
   scrollTop: number;
   scrollLeft: number;
 };
+export type TimelineRestoreRequest = { state: TimelineViewState };
 interface Props {
+  active?: boolean;
   onJournal?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onViewState?: (state: TimelineViewState) => void;
-  restoreViewState?: TimelineViewState | undefined;
+  restoreRequest?: TimelineRestoreRequest | undefined;
+  onRestoreApplied?: (request: TimelineRestoreRequest) => void;
   tree: ProjectTree;
   selectedId: string | null;
   collapsed: ReadonlySet<string>;
@@ -77,10 +80,12 @@ interface Props {
   };
 }
 export function TaskTimeline({
+  active = true,
   tree,
   onJournal,
   onViewState,
-  restoreViewState,
+  restoreRequest,
+  onRestoreApplied,
   selectedId,
   collapsed,
   onToggle,
@@ -107,7 +112,7 @@ export function TaskTimeline({
     ids: new Set<string>(),
   });
   useEffect(() => {
-    if (restoreViewState?.filteredCollapse.key === filterKey) return;
+    if (restoreRequest?.state.filteredCollapse.key === filterKey) return;
     setFilteredCollapse({ key: filterKey, ids: new Set<string>() });
   }, [filterKey]);
   const filteredIds =
@@ -160,9 +165,11 @@ export function TaskTimeline({
   const horizontal = useRef<HTMLDivElement>(null);
   const vertical = useRef<HTMLDivElement>(null);
   const horizontalOffset = useRef(0);
+  const consumedRestore = useRef<TimelineRestoreRequest | undefined>(undefined);
   const viewCallback = useRef(onViewState);
   viewCallback.current = onViewState;
   function captureView() {
+    if (!active) return;
     viewCallback.current?.({
       scale,
       start,
@@ -176,7 +183,14 @@ export function TaskTimeline({
     });
   }
   useLayoutEffect(() => {
-    if (!restoreViewState) return;
+    if (
+      !active ||
+      !restoreRequest ||
+      consumedRestore.current === restoreRequest
+    )
+      return;
+    consumedRestore.current = restoreRequest;
+    const restoreViewState = restoreRequest.state;
     setScale(restoreViewState.scale);
     setStart(restoreViewState.start);
     setWidth(restoreViewState.width);
@@ -189,18 +203,20 @@ export function TaskTimeline({
       vertical.current.scrollTop = restoreViewState.scrollTop;
     if (horizontal.current)
       horizontal.current.scrollLeft = restoreViewState.scrollLeft;
-  }, [restoreViewState]);
+    onRestoreApplied?.(restoreRequest);
+  }, [restoreRequest, active, onRestoreApplied]);
   useLayoutEffect(() => {
     captureView();
-  }, [scale, start, width, filteredCollapse]);
+  }, [active, scale, start, width, filteredCollapse]);
   useLayoutEffect(() => {
+    if (!active) return;
     if (show && horizontal.current)
       horizontal.current.scrollLeft = horizontalOffset.current;
     else {
       setTodayHovered(false);
       setTodayFocused(false);
     }
-  }, [show]);
+  }, [show, active]);
   const resize = useRef<{ x: number; width: number } | null>(null);
   const draftDate = draft?.active
     ? draftInterval(tree, draft.task, today)?.start
@@ -429,7 +445,7 @@ export function TaskTimeline({
             ref={horizontal}
             onScroll={(event) => {
               captureView();
-              if (show)
+              if (show && active)
                 horizontalOffset.current = event.currentTarget.scrollLeft;
             }}
             tabIndex={0}

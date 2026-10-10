@@ -83,7 +83,11 @@ test('unchanged S3 shows the upgrade refusal without uncertain mutation', async 
     expect(inspect()).toEqual(before); // revision + ops + undo + tasks unchanged
   } finally {
     try {
-      await runtime.close();
+      try {
+        await page.context().close();
+      } finally {
+        await runtime.close();
+      }
     } finally {
       await pinned.close();
     }

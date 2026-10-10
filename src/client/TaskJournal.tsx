@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Task } from '../shared/contracts.js';
 import type { JournalController, JournalDraftKey } from './journal-state.js';
 import { createDraftKey } from './journal-state.js';
@@ -9,11 +9,13 @@ export function TaskJournal({
   disabled = false,
   task,
   today,
+  onEditorReady,
 }: {
   controller: JournalController;
   disabled?: boolean;
   task: Task;
   today: string;
+  onEditorReady?: ((editor: HTMLTextAreaElement) => void) | undefined;
 }) {
   const [key, setKey] = useState<JournalDraftKey | null>(null);
   useEffect(() => {
@@ -24,8 +26,15 @@ export function TaskJournal({
       );
   }, [task.id, controller.active]);
   const draft = key ? controller.getDraft(key) : undefined;
+  const root = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const editor = root.current?.querySelector<HTMLTextAreaElement>(
+      '[data-journal-editor] textarea',
+    );
+    if (editor && !editor.disabled) onEditorReady?.(editor);
+  });
   return (
-    <div className="task-journal">
+    <div className="task-journal" ref={root}>
       <p className="journal-hint">{journalUndoCopy}</p>
       {draft ? (
         <JournalEditor

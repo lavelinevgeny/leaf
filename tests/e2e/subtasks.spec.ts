@@ -9,12 +9,16 @@ import {
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });

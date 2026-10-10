@@ -229,6 +229,7 @@ export function JournalFeed({
       onScroll={capturePosition}
       className="journal-feed"
       data-journal-feed={scope}
+      data-journal-scroll
       tabIndex={-1}
     >
       {['loading', 'loading-more'].includes(state.phase) && (
@@ -309,6 +310,7 @@ export function JournalFeed({
           <section
             key={entry.id}
             data-journal-entry={entry.id}
+            data-journal-entry-id={entry.id}
             data-work-date={entry.workDate}
             className="journal-entry"
           >

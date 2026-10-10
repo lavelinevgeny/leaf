@@ -487,3 +487,153 @@ it('round1 filter change plus late success clears only the sent draft, refreshes
   });
   expect(view.result.current.projectFeed?.page?.entries).toEqual([]);
 });
+
+it.each(['POST', 'PATCH', 'DELETE'] as const)(
+  'unknown %s outcome survives admission429 until the frozen exact acknowledgement',
+  async (method) => {
+    const view = await setup();
+    let key: JournalDraftKey | null = null;
+    act(() => {
+      if (method === 'POST') {
+        key = view.result.current.openCreate(
+          journal5.projectId,
+          journal5.taskId,
+          '2026-10-09',
+        );
+        view.result.current.changeDraft(key!, { body: 'Exact unknown body' });
+      } else if (method === 'PATCH') {
+        key = view.result.current.openEdit(journal5, 5);
+        view.result.current.changeDraft(key!, { body: 'Exact unknown body' });
+      } else view.result.current.askDelete(journal5, 5);
+    });
+    const write = vi
+      .spyOn(
+        api,
+        method === 'POST'
+          ? 'journalCreate'
+          : method === 'PATCH'
+            ? 'journalUpdate'
+            : 'journalDelete',
+      )
+      .mockRejectedValueOnce(
+        new ApiError('NETWORK_ERROR', 'offline', null, true),
+      )
+      .mockRejectedValueOnce(new ApiError('DEMO_RATE_LIMIT', 'limited', 429));
+    await act(async () => {
+      if (method === 'DELETE') await view.result.current.confirmDelete();
+      else await view.result.current.submit(key!);
+    });
+    const original = structuredClone(view.result.current.pending);
+    expect(original).not.toBeNull();
+    await act(async () =>
+      expect(await view.result.current.retry()).toBe(false),
+    );
+    expect(view.result.current.pending).toEqual(original);
+    expect(view.result.current.uncertain).toBe(true);
+    if (key) {
+      act(() =>
+        view.result.current.changeDraft(key!, { body: 'Must stay locked' }),
+      );
+      expect(view.result.current.getDraft(key)?.body).toBe(
+        'Exact unknown body',
+      );
+    }
+    write.mockResolvedValueOnce(
+      method === 'DELETE'
+        ? {
+            journalContractVersion: 1,
+            kind: 'deleted',
+            projectId: journal5.projectId,
+            journalRevision: 6,
+            deletedEntryId: journal5.id,
+          }
+        : {
+            journalContractVersion: 1,
+            kind: 'saved',
+            projectId: journal5.projectId,
+            journalRevision: 6,
+            entry: journal5,
+          },
+    );
+    vi.mocked(api.journalProject).mockResolvedValue({
+      ...page5,
+      journalRevision: 9,
+      entries: [],
+    });
+    await act(async () => expect(await view.result.current.retry()).toBe(true));
+    expect(write.mock.calls).toHaveLength(3);
+    expect(write.mock.calls[1]).toEqual(write.mock.calls[0]);
+    expect(write.mock.calls[2]).toEqual(write.mock.calls[0]);
+    expect(view.result.current.pending).toBeNull();
+    expect(view.result.current.uncertain).toBe(false);
+    expect(view.result.current.projectFeed?.page?.entries).toEqual([]);
+  },
+);
+
+it('unknown update followed by definite409 unlocks explicit comparison and rebase', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+    view.result.current.changeDraft(key!, { body: 'Own unresolved text' });
+  });
+  const write = vi
+    .spyOn(api, 'journalUpdate')
+    .mockRejectedValueOnce(new ApiError('NETWORK_ERROR', 'offline', null, true))
+    .mockRejectedValueOnce(
+      new ApiError('JOURNAL_REVISION_CONFLICT', 'conflict', 409),
+    );
+  await act(async () => view.result.current.submit(key!));
+  await act(async () => view.result.current.retry());
+  expect(write.mock.calls[1]).toEqual(write.mock.calls[0]);
+  expect(view.result.current.pending).toBeNull();
+  expect(view.result.current.uncertain).toBe(false);
+  expect(view.result.current.getDraft(key!)?.baselineJournalRevision).toBe(5);
+  await act(async () => view.result.current.showCurrent());
+  act(() => view.result.current.acceptCurrent(key!, 'keep-own'));
+  expect(view.result.current.getDraft(key!)).toMatchObject({
+    body: 'Own unresolved text',
+    baselineJournalRevision: 6,
+  });
+  write.mockResolvedValueOnce({
+    journalContractVersion: 1,
+    kind: 'saved',
+    projectId: journal5.projectId,
+    journalRevision: 7,
+    entry: { ...journal5, body: 'Own unresolved text' },
+  });
+  await act(async () =>
+    expect(await view.result.current.submit(key!)).toBe(true),
+  );
+  expect(write.mock.calls[2]?.[2].expectedJournalRevision).toBe(6);
+  expect(write.mock.calls[2]?.[2].operationId).not.toBe(
+    write.mock.calls[0]?.[2].operationId,
+  );
+});
+
+it('unknown update followed by definite404 preserves only the removed copyable draft', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+    view.result.current.changeDraft(key!, { body: 'Copy removed own text' });
+  });
+  const write = vi
+    .spyOn(api, 'journalUpdate')
+    .mockRejectedValueOnce(new ApiError('NETWORK_ERROR', 'offline', null, true))
+    .mockRejectedValueOnce(new ApiError('NOT_FOUND', 'missing', 404));
+  await act(async () => view.result.current.submit(key!));
+  await act(async () => view.result.current.retry());
+  expect(write.mock.calls[1]).toEqual(write.mock.calls[0]);
+  expect(view.result.current.pending).toBeNull();
+  expect(view.result.current.uncertain).toBe(false);
+  expect(view.result.current.conflictRemoved).toBe(true);
+  act(() => view.result.current.acceptCurrent(key!, 'keep-own'));
+  await act(async () =>
+    expect(await view.result.current.submit(key!)).toBe(false),
+  );
+  expect(write).toHaveBeenCalledTimes(2);
+  expect(view.result.current.getDraft(key!)?.body).toBe(
+    'Copy removed own text',
+  );
+});

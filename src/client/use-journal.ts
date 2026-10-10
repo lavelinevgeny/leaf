@@ -456,6 +456,8 @@ export function useJournal(context: JournalContext): JournalController {
       return false;
     const epoch = generation.current,
       privacy = privateGeneration.current;
+    const unresolvedBeforeRetry =
+      state.current.uncertain && state.current.pending === job;
     Object.freeze(job.input);
     if (job.method !== 'DELETE') Object.freeze(job.sentDraft);
     Object.freeze(job);
@@ -523,7 +525,9 @@ export function useJournal(context: JournalContext): JournalController {
       if (privacy !== privateGeneration.current || auth(error, privacy))
         return false;
       const failed = error instanceof ApiError ? error : null;
-      state.current.uncertain = failed?.uncertain ?? true;
+      state.current.uncertain =
+        (unresolvedBeforeRetry && failed?.status === 429) ||
+        (failed?.uncertain ?? true);
       state.current.error = state.current.uncertain
         ? 'Результат сохранения неизвестен. Повторите сохранение.'
         : failed?.status === 409

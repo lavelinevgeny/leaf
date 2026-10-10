@@ -12,12 +12,16 @@ import type { ProjectTree } from '../../src/shared/contracts.js';
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });
@@ -257,7 +261,7 @@ test('Details relation-only save adopts canonical weekday dates, clean baseline 
   });
   await page.keyboard.press('Escape');
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(page.locator('[data-gantt-edge]')).toHaveCount(0);
   const restored = await readTree(page, runtime.origin, tree.project.id);
@@ -320,7 +324,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   ).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(page.locator('.gantt-edge')).toHaveCount(0);
   const restored = await readTree(page, runtime.origin, tree.project.id);
@@ -559,7 +563,7 @@ test('saved FS from a completed task to an undated subtask stays visible after r
     current,
   );
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(edge).toHaveCount(0);
   const restored = await readTree(page, runtime.origin, tree.project.id);
@@ -1156,7 +1160,7 @@ test('parent critical branch changes in one edit and exact undo survives restart
     path: `/tmp/leaf-fs-${info.project.name}-critical.png`,
   });
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(page.locator('.gantt-work.critical')).toHaveCount(4);
   await expect(page.locator('.gantt-edge.critical')).toHaveCount(2);
