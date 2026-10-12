@@ -572,7 +572,7 @@ test('deleted task keeps own RAM draft unavailable; separate project create draf
   await row
     .getByRole('button', { name: 'Действия задачи: Уровень 5', exact: true })
     .press('Enter');
-  await row.getByRole('menuitem', { name: 'Добавить запись' }).click();
+  await page.getByRole('menuitem', { name: 'Добавить запись' }).click();
   const panel = page.getByRole('complementary', {
     name: 'Задача',
     exact: true,

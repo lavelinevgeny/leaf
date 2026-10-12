@@ -507,7 +507,7 @@ test('row journal menu has an independent pointer hit target beside quick child 
     expect(geometry.overlap).toBe(false);
     expect(geometry.hitMenu).toBe(true);
     await menu.click();
-    await expect(row.getByRole('menu')).toBeVisible();
+    await expect(page.getByRole('menu')).toBeVisible();
     await page.keyboard.press('Escape');
   }
 });

@@ -53,7 +53,8 @@ export type TimelineViewState = {
 export type TimelineRestoreRequest = { state: TimelineViewState };
 interface Props {
   active?: boolean;
-  onJournal?: ((task: Task, trigger: HTMLElement) => void) | undefined;
+  onJournal?:
+    ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
   onViewState?: (state: TimelineViewState) => void;
   restoreRequest?: TimelineRestoreRequest | undefined;
   onRestoreApplied?: (request: TimelineRestoreRequest) => void;
@@ -61,8 +62,8 @@ interface Props {
   selectedId: string | null;
   collapsed: ReadonlySet<string>;
   onToggle: (id: string) => void;
-  onSelect: (task: Task) => void;
-  onAction: (action: TreeAction, task: Task) => void;
+  onSelect: (task: Task) => boolean | void;
+  onAction: (action: TreeAction, task: Task) => boolean | void;
   onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onPlan: (task: Task, kind: PlanGestureKind, target: string) => void;
   disabled: boolean;
