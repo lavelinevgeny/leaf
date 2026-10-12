@@ -253,6 +253,6 @@
   font-size: 12px;
 }
 .journal-notice {
-  min-height: 21px;
-  margin: 0 0 4px;
+  margin: 0;
+  font-size: 12px;
 }

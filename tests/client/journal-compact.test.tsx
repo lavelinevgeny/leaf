@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { App } from '../../src/client/App.js';
 import { api } from '../../src/client/api.js';
+import { periodLabel } from '../../src/client/ProjectJournal.js';
 import { task } from './fixtures.js';
 import {
   deferred,
@@ -263,4 +264,123 @@ it('J14 a refresh that dismisses an entry menu still restores the prepend anchor
   await screen.findByText('Prepended note');
   expect(top()).toBe(150);
   expect(feed.scrollTop).toBe(350);
+});
+
+it('formats the applied period', () => {
+  expect(periodLabel({})).toBe('Все даты');
+  expect(periodLabel({ from: '2026-10-01' })).toBe('с 01.10.2026');
+  expect(periodLabel({ to: '2026-10-10' })).toBe('по 10.10.2026');
+  expect(periodLabel({ from: '2026-10-01', to: '2026-10-10' })).toBe(
+    '01.10.2026 – 10.10.2026',
+  );
+});
+
+it('U06 shows reset only for an applied period, labels the applied range and reset clears it', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  expect(screen.queryByRole('button', { name: 'Сбросить' })).toBeNull();
+  const add = screen.getByRole('button', { name: 'Добавить запись' });
+  expect(add.firstChild).toBeInstanceOf(HTMLSpanElement);
+  expect(add.firstChild).toHaveAttribute('aria-hidden', 'true');
+  expect(add.firstChild?.textContent?.trim()).toBe('+');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  );
+  fireEvent.change(screen.getByLabelText('С даты'), {
+    target: { value: '2026-10-01' },
+  });
+  expect(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Сбросить' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Применить' }));
+  await screen.findByRole('button', { name: 'Период: с 01.10.2026' });
+  await userEvent.click(screen.getByRole('button', { name: 'Сбросить' }));
+  expect(screen.queryByRole('button', { name: 'Сбросить' })).toBeNull();
+  expect(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  ).toHaveFocus();
+});
+
+it('U06 shows reset for an applied search query', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  fireEvent.change(screen.getByLabelText('Поиск записей'), {
+    target: { value: 'Original' },
+  });
+  await screen.findByRole('button', { name: 'Сбросить' });
+  await userEvent.click(screen.getByRole('button', { name: 'Сбросить' }));
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: 'Сбросить' })).toBeNull(),
+  );
+  expect(screen.getByLabelText('Поиск записей')).toHaveValue('');
+  expect(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  ).toHaveFocus();
+});
+
+it('U06 does not show reset for a whitespace-only search', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  fireEvent.change(screen.getByLabelText('Поиск записей'), {
+    target: { value: '   ' },
+  });
+  expect(screen.getByLabelText('Поиск записей')).toHaveValue('   ');
+  expect(screen.queryByRole('button', { name: 'Сбросить' })).toBeNull();
+});
+
+it('U06 closing the period popover without applying clears the period error', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  const period = screen.getByRole('button', { name: 'Период: Все даты' });
+  for (const dismiss of ['escape', 'toggle'] as const) {
+    await userEvent.click(period);
+    fireEvent.change(screen.getByLabelText('С даты'), {
+      target: { value: '2026-10-10' },
+    });
+    fireEvent.change(screen.getByLabelText('По дату'), {
+      target: { value: '2026-10-01' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Применить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Проверьте период',
+    );
+    if (dismiss === 'escape') {
+      fireEvent.keyDown(screen.getByLabelText('По дату'), { key: 'Escape' });
+    } else {
+      await userEvent.click(period);
+    }
+    expect(screen.queryByRole('group', { name: 'Период журнала' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(period).toHaveFocus();
+  }
+});
+
+it('U06 reset closes an open period popover and keeps focus on the period button', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  );
+  fireEvent.change(screen.getByLabelText('С даты'), {
+    target: { value: '2026-10-01' },
+  });
+  await userEvent.click(screen.getByRole('button', { name: 'Применить' }));
+  const period = await screen.findByRole('button', {
+    name: 'Период: с 01.10.2026',
+  });
+  await userEvent.click(period);
+  expect(
+    screen.getByRole('group', { name: 'Период журнала' }),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Сбросить' }));
+  expect(screen.queryByRole('group', { name: 'Период журнала' })).toBeNull();
+  expect(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  ).toHaveFocus();
 });

@@ -215,3 +215,21 @@ test('U11/U12 entry trigger is at least 28px; its menu fits 375px and 200% zoom 
     await page.keyboard.press('Escape');
   }
 });
+
+test('U07 feed dates align with the first toolbar action', async ({
+  page,
+  runtime,
+}) => {
+  await seedEntries(page, runtime);
+  await openProjectJournal(page, runtime.origin);
+  const align = await projectFeed(page).evaluate((node) => {
+    const add = node
+      .querySelector('[data-journal-add]')!
+      .getBoundingClientRect();
+    const date = node
+      .querySelector('[data-journal-date]')!
+      .getBoundingClientRect();
+    return { add: Math.round(add.x), date: Math.round(date.x) };
+  });
+  expect(Math.abs(align.add - align.date)).toBeLessThanOrEqual(1);
+});

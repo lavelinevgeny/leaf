@@ -168,7 +168,7 @@ test('125 records, inclusive dates, Russian/title/literal search, boundary pagin
   ).toBeVisible();
   await page.getByLabel('Поиск записей', { exact: true }).fill('');
   await projectFeed(page)
-    .getByRole('button', { name: 'Период', exact: true })
+    .getByRole('button', { name: 'Период: Все даты', exact: true })
     .click();
   await page.getByLabel('С даты', { exact: true }).fill('2026-10-10');
   await page.getByLabel('По дату', { exact: true }).fill('2026-10-10');

@@ -134,7 +134,9 @@ it('modal Escape preserves its draft, restores trigger and inline body styles; p
   await userEvent.click(add);
   expect(screen.getByLabelText('Текст записи')).toHaveValue('Modal draft');
   fireEvent.keyDown(screen.getByLabelText('Текст записи'), { key: 'Escape' });
-  await userEvent.click(screen.getByRole('button', { name: 'Период' }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  );
   fireEvent.change(screen.getByLabelText('С даты'), {
     target: { value: '2024-03-10' },
   });

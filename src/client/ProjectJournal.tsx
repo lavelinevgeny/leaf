@@ -12,6 +12,15 @@ import { JournalFeed, journalUndoCopy } from './JournalFeed.js';
 import { JournalEditor } from './JournalEditor.js';
 import { JournalTaskPicker } from './JournalTaskPicker.js';
 import { CalendarDateInput } from './CalendarDateInput.js';
+
+const displayDate = (value: string) => value.split('-').reverse().join('.');
+export function periodLabel(query: JournalProjectQuery) {
+  if (query.from && query.to)
+    return `${displayDate(query.from)} – ${displayDate(query.to)}`;
+  if (query.from) return `с ${displayDate(query.from)}`;
+  if (query.to) return `по ${displayDate(query.to)}`;
+  return 'Все даты';
+}
 export function ProjectJournal({
   controller,
   disabled = false,
@@ -116,6 +125,11 @@ export function ProjectJournal({
         : null;
     setKey(null);
   }
+  function closePeriod() {
+    setPeriodOpen(false);
+    setInvalid(false);
+    periodTrigger.current?.focus();
+  }
   function apply() {
     const parsed = journalProjectQuerySchema.safeParse({
       ...(filters.q ? { q: filters.q } : {}),
@@ -142,14 +156,30 @@ export function ProjectJournal({
           apply();
         }}
       >
+        <button
+          type="button"
+          className="primary"
+          ref={trigger}
+          data-journal-add
+          disabled={
+            !coherent ||
+            !metadata?.tasks.length ||
+            controller.writing ||
+            !!controller.pending
+          }
+          onClick={() => setKey(controller.openCreate(projectId, null, today))}
+        >
+          <span aria-hidden="true">+ </span>Добавить запись
+        </button>
         <div className="journal-period">
           <button
             ref={periodTrigger}
             type="button"
             aria-expanded={periodOpen}
-            onClick={() => setPeriodOpen(!periodOpen)}
+            aria-label={`Период: ${periodLabel(query)}`}
+            onClick={() => (periodOpen ? closePeriod() : setPeriodOpen(true))}
           >
-            Период{query.from || query.to ? ' •' : ''}
+            {periodLabel(query)}
           </button>
           {periodOpen && (
             <div
@@ -160,8 +190,7 @@ export function ProjectJournal({
                 if (event.key === 'Escape') {
                   event.preventDefault();
                   event.stopPropagation();
-                  setPeriodOpen(false);
-                  periodTrigger.current?.focus();
+                  closePeriod();
                 }
               }}
             >
@@ -183,31 +212,18 @@ export function ProjectJournal({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setFilters({});
-            setInvalid(false);
-            onQuery({});
-          }}
-        >
-          Сбросить
-        </button>
-        <button
-          type="button"
-          className="primary"
-          ref={trigger}
-          data-journal-add
-          disabled={
-            !coherent ||
-            !metadata?.tasks.length ||
-            controller.writing ||
-            !!controller.pending
-          }
-          onClick={() => setKey(controller.openCreate(projectId, null, today))}
-        >
-          Добавить запись
-        </button>
+        {(query.q?.trim() || query.from || query.to) && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilters({});
+              onQuery({});
+              closePeriod();
+            }}
+          >
+            Сбросить
+          </button>
+        )}
       </form>
       {invalid && (
         <p role="alert" id="journal-period-error">
