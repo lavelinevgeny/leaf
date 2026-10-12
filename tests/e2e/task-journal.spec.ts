@@ -85,9 +85,7 @@ test('real task create, project edit/date/delete, plain text, independent plan a
   await entryCard(page, id)
     .getByRole('button', { name: /Действия записи/ })
     .click();
-  await entryCard(page, id)
-    .getByRole('menuitem', { name: 'Удалить запись' })
-    .click();
+  await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
   await entryCard(page, id)
     .getByRole('button', { name: 'Отмена удаления' })
     .click();
@@ -97,9 +95,7 @@ test('real task create, project edit/date/delete, plain text, independent plan a
   await entryCard(page, id)
     .getByRole('button', { name: /Действия записи/ })
     .click();
-  await entryCard(page, id)
-    .getByRole('menuitem', { name: 'Удалить запись' })
-    .click();
+  await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
   await entryCard(page, id)
     .getByRole('button', { name: 'Подтвердить удаление записи' })
     .click();

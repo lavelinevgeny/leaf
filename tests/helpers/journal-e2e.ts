@@ -146,7 +146,10 @@ export async function openProjectJournal(page: Page, origin: string) {
 export async function editEntry(page: Page, id: string) {
   const card = entryCard(page, id);
   await card.getByRole('button', { name: /Действия записи/ }).click();
-  await card.getByRole('menuitem', { name: 'Редактировать запись' }).click();
+  await card
+    .page()
+    .getByRole('menuitem', { name: 'Редактировать запись' })
+    .click();
   return card.locator('[data-journal-editor]');
 }
 export async function chooseTask(dialog: Locator, path: string) {

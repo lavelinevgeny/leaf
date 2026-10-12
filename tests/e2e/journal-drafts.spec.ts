@@ -143,7 +143,7 @@ test('delete confirmation5 remains pinned after background6; fresh confirmation 
   await openProjectJournal(page, runtime.origin);
   const card = entryCard(page, entryId);
   await card.getByRole('button', { name: /Действия записи/ }).click();
-  await card.getByRole('menuitem', { name: 'Удалить запись' }).click();
+  await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
   const context = await browser.newContext();
   try {
     const remote = await context.newPage();
@@ -181,7 +181,7 @@ test('delete confirmation5 remains pinned after background6; fresh confirmation 
     ).toBe(true);
     await card.getByRole('button', { name: 'Отмена удаления' }).click();
     await card.getByRole('button', { name: /Действия записи/ }).click();
-    await card.getByRole('menuitem', { name: 'Удалить запись' }).click();
+    await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
     await card
       .getByRole('button', { name: 'Подтвердить удаление записи' })
       .click();
@@ -258,9 +258,7 @@ for (const method of ['POST', 'PATCH', 'DELETE'] as const) {
       await entryCard(page, entryId)
         .getByRole('button', { name: /Действия записи/ })
         .click();
-      await entryCard(page, entryId)
-        .getByRole('menuitem', { name: 'Удалить запись' })
-        .click();
+      await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
       await entryCard(page, entryId)
         .getByRole('button', { name: 'Подтвердить удаление записи' })
         .click();

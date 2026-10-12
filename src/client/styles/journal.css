@@ -41,7 +41,7 @@
   overflow: auto;
   min-height: 0;
   flex: 1;
-  padding: 0 1rem 1rem;
+  padding: 0 0 var(--leaf-space-4);
 }
 .journal-hint {
   color: var(--muted, #667085);
@@ -49,35 +49,83 @@
   padding: 0 0.5rem;
 }
 .journal-entry {
-  max-width: 850px;
-  margin: 0 auto;
+  max-width: 960px;
+  margin: 0;
 }
 .journal-entry h3 {
-  font-size: 0.86rem;
-  margin: 1rem 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: var(--leaf-space-3);
+  margin: var(--leaf-space-4) 0 var(--leaf-space-1);
+  color: var(--leaf-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  /* Integer line boxes: prepend anchor restoration (J14) needs whole-pixel
+     entry heights, because scrollTop snaps to device pixels. */
+  line-height: 16px;
+  letter-spacing: 0.04em;
+}
+.journal-entry h3::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--leaf-border);
 }
 .journal-entry article {
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border, #e7e9ed);
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
-  background: white;
+  position: relative;
+  padding: 10px 40px 10px 20px;
+  border-bottom: 1px solid var(--leaf-border);
 }
-.journal-entry header {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
+.journal-entry article::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  left: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--leaf-accent);
 }
 .journal-task-link {
-  text-align: start;
+  display: block;
+  padding: 0;
   border: 0;
   background: transparent;
-  color: var(--accent, #32805c);
+  color: var(--leaf-accent);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: start;
 }
 .journal-body {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 20px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  margin: 0.5rem 0;
+}
+.journal-entry-menu {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+}
+.journal-entry-menu > button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+.journal-entry article:hover .journal-entry-menu > button,
+.journal-entry article:focus-within .journal-entry-menu > button,
+.journal-entry-menu > button[aria-expanded='true'] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .journal-entry-menu > button {
+    opacity: 1;
+  }
 }
 .journal-editor {
   display: flex;

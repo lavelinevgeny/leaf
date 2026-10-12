@@ -75,13 +75,19 @@ export function ActionMenu({
     );
   }
   // Closing paths that the user did not aim at the menu keep focus where it is,
-  // unless focus was inside the menu and would otherwise fall to <body>.
+  // unless focus was inside the menu and would otherwise fall to <body>: then
+  // it goes to the trigger or, when the trigger is disabled, to the nearest
+  // focusable owner container (tree row, journal feed).
   function dismiss() {
     const button = trigger.current;
     const hadFocus = !!menu.current?.contains(document.activeElement);
     change.current(false);
-    if (hadFocus && button?.isConnected && !button.disabled)
-      button.focus({ preventScroll: true });
+    if (!hadFocus || !button?.isConnected) return;
+    if (!button.disabled) button.focus({ preventScroll: true });
+    else
+      button.parentElement
+        ?.closest<HTMLElement>('[tabindex]')
+        ?.focus({ preventScroll: true });
   }
   const latest = useRef({ measure, dismiss });
   useEffect(() => {

@@ -39,16 +39,19 @@ function Harness({
   onRow,
   disabled = false,
   mounted = true,
+  rowTabIndex,
 }: {
   items: ActionMenuItem[];
   onRow?: () => void;
   disabled?: boolean;
   mounted?: boolean;
+  rowTabIndex?: number;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <div
       data-testid="row"
+      tabIndex={rowTabIndex}
       style={{ overflow: 'auto' }}
       onKeyDown={onRow}
       onClick={onRow}
@@ -323,6 +326,21 @@ it('closes without moving focus to a trigger that became disabled', async () => 
   expect(trigger()).toBeDisabled();
   expect(focusTrigger).not.toHaveBeenCalled();
   expect(trigger()).not.toHaveFocus();
+  // The plain row is not focusable, so there is no owner container to take it.
+  expect(document.body).toHaveFocus();
+});
+
+it('moves focus from the menu to the focusable owner row when the trigger becomes disabled', async () => {
+  const { rerender } = render(<Harness items={items()} rowTabIndex={-1} />);
+  await userEvent.click(trigger());
+  expect(screen.getByRole('menuitem', { name: 'Открыть' })).toHaveFocus();
+  const row = screen.getByTestId('row');
+  const focusRow = vi.spyOn(row, 'focus');
+  rerender(<Harness items={items()} rowTabIndex={-1} disabled />);
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  expect(trigger()).toBeDisabled();
+  expect(row).toHaveFocus();
+  expect(focusRow).toHaveBeenCalledWith({ preventScroll: true });
 });
 
 it('closes when focus leaves the menu for another control', async () => {
