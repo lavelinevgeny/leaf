@@ -58,3 +58,4 @@ Thumbs.db
 # Scanner reports may contain sensitive paths or values
 *gitleaks-report*
 *secret-scan-report*
+.tmp/

@@ -345,6 +345,20 @@ PASS: финальный `verify` — typecheck, lint, 646/646 unit/integration 
 
 Не запускались: Docker smoke, независимое агентское ревью, test:kit, sandbox probe и публикационные staged/history/preflight checks для этой правки. Index, commit, push, deployment и release не выполнялись; использованы только синтетические данные. Следующий шаг — проверка повседневного сценария владельцем и продолжение S4 (доска O03/статусы/undo); S5–S6 и первый релиз остаются незавершёнными.
 
+## Аудит публичной публикации и Render — 2026-10-08
+
+Проверены публичные исходники, privacy/scanner policy, установленная локальная обвязка, CI, Docker packaging и документация эксплуатации. Сверены актуальные рекомендации GitHub, Render и OpenSSF Best Practices. Финальный preflight проверил 225 index entries, 680 historical file versions и 74 metadata objects; shallow history отсутствует. Исходники и security policy аудитом не изменялись; эта запись — единственная правка аудита. Существующие изменения и index сохранены. Реальные базы, backups, exports, env и credential stores не читались; использована отдельная синтетика.
+
+PASS на Node 24.21.0/npm 11.19.0: полный `preflight` с 52/52 tests настоящего Gitleaks; workspace/index/history и Git metadata checks; `verify` (typecheck, lint, 641/641 tests, production build), `format:check`, `check:kit`, `check:package`; полный E2E 76/76 в двух viewports без retries/skips; отдельная synthetic OS sandbox probe. `npm audit` вернул 0 известных vulnerabilities, включая dev dependencies. Docker image build PASS; synthetic container smoke проверил UID 1000, read-only root, SQLite integrity, SPA/readyz, отказ API без входа, foreign-origin rejection и повторный startup с сохранением marker на новом томе. Временные контейнеры и тома удалены. Три утверждённых PNG просмотрены; содержат только IHDR/IDAT/IEND, без текстовых/EXIF chunks; favicon не содержит внешних ресурсов.
+
+Первый `doctor`/`preflight` на активном Node 24.19.0 отказал из-за точного version pin; повтор с уже установленным закреплённым runtime прошёл без ослабления checks. Первый disposable Docker restart probe отказал из-за повторного import в самом проверочном script; исправленный probe прошёл, приложение не менялось. Независимое подтверждение произвольного текущего agent runtime не подразумевается успешной отдельной sandbox probe.
+
+Вывод: покрываемых секретов или запрещённых файлов не обнаружено; публичная публикация исходников возможна после owner review и настройки GitHub protections. Автоматические checks не гарантируют отсутствие всех имён, телефонов, произвольного текста и скрытых данных. Локальные pre-commit/commit-msg/pre-push hooks установлены и fail closed, но обходимы; GitHub settings требуют отдельной настройки. Существующее разрешение публичного Git email действует только в approved identity fields. Незавершённые S4–S6 исключают объявление готового первого релиза.
+
+Рекомендации: определить software license; исправить `.env.example` (relative/in-checkout data path несовместим с loadConfig; LEAF_LOG_LEVEL не используется) и устаревшие starter-описания SECURITY/CONTRIBUTING/package; добавить Dependabot npm/Docker updates, dependency review и code scanning; документировать sensitive-path review и GitHub branch rules/private vulnerability reporting. Для Render предпочтителен один paid Docker Web Service с persistent disk вне `/app`, точным HTTPS origin, согласованными PORT/LEAF_PORT и `/readyz`; добавить проверяемый Blueprint с отключённым автодеплоем. Нужны проверка прав mounted disk и SSH/TTY bootstrap администратора (в образе отсутствует подготовленный `.ssh` directory), проверка HTTPS cookie/origin и login throttling за прокси, native SQLite backup вне основного диска и проверенная restore/upgrade процедура. С mounted disk Render не предоставляет горизонтальное масштабирование, zero-downtime redeploy или доступ к диску из build/pre-deploy/one-off jobs.
+
+Docker build/smoke выполнены на Linux ARM64. Render требует linux/amd64 для prebuilt image; целевую архитектуру необходимо отдельно проверить в Docker CI или тестовом размещении из Git. AMD64 container smoke в этом аудите не запускался. Также не запускались: размещение на Render, удалённые GitHub workflows/settings, scanner ОС-слоёв контейнера, полноценное recovery drill и ручной разбор всех Git identity names/messages. Нет настроенных remotes; commit/push/deployment/release аудитом не выполнялись. Следующий шаг: отдельная задача подготовки public repository и Render configuration; лицензия остаётся решением владельца.
+
 ## Подготовка коммита уточнения C20 — 2026-10-08
 
 В локальный коммит подготовлены 14 файлов согласованной компоновки: UI, связанные client/browser tests и документация. Код при подготовке коммита не менялся; результаты application checks приведены ниже.
@@ -1080,6 +1094,7 @@ PASS: полный verify (typecheck, lint, 774/774 tests в 42 files, productio
 
 Не запускались: полный test:e2e вне затронутых файлов, test:kit, Docker smoke, OS sandbox probe, history/preflight и deployment/release/push. Новых dependencies, SQL/DTO/migrations нет; использованы только синтетические fixtures. Done/invalid/unavailable ограничения и direct source conflict без нового входящего ребра сохраняются. S4–S6 и первый релиз остаются незавершёнными; следующий шаг — повседневная проверка владельцем и продолжение S4.
 
+
 ## Гант — скрытие значка связи после выбора, 2026-10-08
 
 Исправлен показ кнопки «После окончания»: на устройствах с наведением она появляется при hover строки или видимом клавиатурном фокусе. Выбор задачи и возвращённый после pointer-выбора фокус больше не удерживают значок. Возврат фокуса и показ на touch сохранены; FS-команды, даты и расчёты не менялись. Изменены planning.css и browser-регрессия fs-dependencies; прежние незакоммиченные записи сохранены.
@@ -1087,6 +1102,7 @@ PASS: полный verify (typecheck, lint, 774/774 tests в 42 files, productio
 Tests-first: новая actual-server регрессия воспроизвела opacity 1 после ухода курсора; после исправления прошла в 1440×900 и 1280×800. Проверены pointer selection, выбранная задача, keyboard open/Escape и сохранение стрелки зависимости. Профильный набор с существующим сценарием immediate FS прошёл 4/4 без skips/retries. PASS: verify (typecheck, lint, 774/774 unit/integration tests, production build), check:kit, security:workspace. Первичная format:check выявила форматирование нового теста; файл отформатирован, повторная format:check PASS.
 
 При подготовке локального коммита полный preflight PASS: doctor, 52/52 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. Staged diff проверен; отдельная прежняя запись аудита оставлена вне index. Не запускались полный E2E, Docker и deployment; push не выполнялся. Использованы только синтетические данные. Следующий шаг — проверка повседневного интерфейса владельцем и продолжение S4–S6.
+
 
 ## C26 — цвет критичности датированной части, 2026-10-08
 
@@ -1165,6 +1181,11 @@ PASS: итоговый `verify` (typecheck, lint, 899/899 unit/integration tests
 
 Docker daemon недоступен: image build, normal/demo container smoke, read-only root/tmpfs, healthcheck и restart/reset контейнера НЕ ПРОВЕРЕНЫ. Live Render, URL, GitHub Website, удалённый CI и публикация по этой задаче НЕ ВЫПОЛНЯЛИСЬ. Временная публичная демо-база общая и сбрасывается при restart; бесплатный сервис засыпает и имеет лимиты. S4–S6 и первый релиз не завершены. Следующий шаг — scoped review финальной фикстуры и документации, локальный коммит после одобрения, затем ручное подключение Render и реальные проверки контейнера/HTTPS после отдельного решения владельца.
 
+
+## Результат первой публичной публикации, 2026-10-09
+
+Репозиторий опубликован публично; PR с исправлениями CI и согласованными служебными metadata exceptions слит обычным merge после успешных обязательных app/kit checks. Main commit: `5311dfb01b42d29c5755d183fd24636253154280`. Анонимный mirror clone подтвердил опубликованный SHA; независимый Gitleaks scan всех публичных refs с полными merge diffs прошёл без findings/warnings. Локальная security:history после fetch main также прошла. GitHub secret scanning и dependency alerts на момент проверки пусты. Kit/security CI merge commit прошёл; повторный application CI ещё выполняется. Этот итоговый блок записан локально; прежние несвязанные локальные правки STATUS сохранены.
+
 ## Диагностика application CI, 2026-10-10
 
 Прочитаны шаги и лог Actions run 37958644311, job 113915518899 (checkout `90e7aa94a419df6ae8999481a111ad06e086e384`). FAILED: browser E2E — 169/170 PASS, сценарий `one-step undo falls back to quick input when originating undo becomes disabled` в 1440×900, `tests/e2e/explicit-cpm.spec.ts:864`: поле «Новая задача» не получило фокус за 5 секунд после отмены. В этом задании PASS: установка, verify, formatting/package boundary и установка Chromium. Workflow выполняет проверки приложения; шагов deployment в нём нет.
@@ -1180,3 +1201,5 @@ Tests-first: новые клиентские регрессии воспроиз
 Использованы только изолированные синтетические fixtures; прежние локальные правки STATUS сохранены. Docker, исходный удалённый CI checkout и live deployment не проверялись; commit/push и удалённый rerun не выполнялись. Следующий шаг — передать исправление на review и повторить CI после публикации владельцем.
 
 Подготовка push по поручению владельца: после fetch дерево `origin/main` (`90e7aa9`, исходный CI checkout) совпало с проверенной локальной базой `b691b85`; ветка `fix/undo-focus-after-commit` основана на этом main. Полный preflight PASS: 56/56 kit tests с настоящим Gitleaks, workspace/index/history и metadata guards/scans. В index включены четыре файла текущей задачи; прежние 21 строка несвязанных изменений STATUS сохранены вне index. Следующий шаг — отправка ветки и серверная проверка CI перед слиянием.
+
+Push выполнен по поручению владельца: коммит `f73ac74` отправлен в `origin/fix/undo-focus-after-commit`; удалённый SHA совпадает с локальным. Pre-commit/commit-msg/pre-push guards и Gitleaks PASS. GitHub запустил Application checks (run 38034229542) и Kit and repository safety (run 38034229528); на момент проверки оба in_progress, успех удалённого CI пока не подтверждён. Основная ветка не изменялась; PR/merge/deployment не выполнялись. Этот итог записан локально после push; прежние несвязанные изменения STATUS сохранены. Следующий шаг — дождаться CI и провести review перед слиянием.
