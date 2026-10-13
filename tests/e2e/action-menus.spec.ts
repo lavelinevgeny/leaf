@@ -257,3 +257,84 @@ test('U07 feed dates align with the first toolbar action', async ({
   });
   expect(Math.abs(align.add - align.date)).toBeLessThanOrEqual(1);
 });
+
+test('U10 rows have one action trigger and create children from the menu or Shift+Enter', async ({
+  page,
+  runtime,
+}) => {
+  const { tree } = await seedJournal(page, runtime);
+  const id = tree.tasks.find((t) => t.title === 'Без дат')!.id;
+  const childId = tree.tasks.find((t) => t.title === 'Уровень 1')!.id;
+  await page.goto(runtime.origin);
+  const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
+  await expect(row).toBeVisible();
+  const quickChild = page.getByRole('button', {
+    name: /^Добавить подзадачу:/,
+  });
+  // Every row action except the expand/collapse disclosure.
+  const rowButtons = (target: Locator) =>
+    target.evaluate((node) =>
+      [...node.querySelectorAll('button:not(.disclosure)')].map((button) =>
+        button.getAttribute('aria-label'),
+      ),
+    );
+  await page.getByRole('button', { name: 'Список', exact: true }).click();
+  await expect(quickChild).toHaveCount(0);
+  expect(await rowButtons(row)).toEqual(['Действия задачи: Без дат']);
+  await row
+    .getByRole('button', { name: 'Действия задачи: Без дат', exact: true })
+    .click();
+  await page.getByRole('menuitem', { name: 'Добавить подзадачу' }).click();
+  await expect(page.getByLabel('Новая задача', { exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await row.focus();
+  await page.keyboard.press('Shift+Enter');
+  await expect(page.getByLabel('Новая задача', { exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Гант', exact: true }).click();
+  await expect(quickChild).toHaveCount(0);
+  expect(await rowButtons(row)).toEqual(['Действия задачи: Без дат']);
+  await row.click();
+  await page.getByRole('tab', { name: 'Подзадачи', exact: true }).click();
+  const subtaskRow = page
+    .getByRole('tree', { name: 'Подзадачи', exact: true })
+    .locator(`[data-task-id="${childId}"]`);
+  await expect(subtaskRow).toBeVisible();
+  await expect(quickChild).toHaveCount(0);
+  expect(await rowButtons(subtaskRow)).toEqual(['Действия задачи: Уровень 1']);
+  await subtaskRow
+    .getByRole('button', { name: 'Действия задачи: Уровень 1', exact: true })
+    .click();
+  await expect(
+    page.getByRole('menuitem', { name: 'Добавить подзадачу', exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toBeHidden();
+});
+
+test('U10 date column heading aligns with row dates beside the action trigger', async ({
+  page,
+  runtime,
+}) => {
+  const { summaryId } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  const row = page.locator(`[role="treeitem"][data-task-id="${summaryId}"]`);
+  for (const view of ['Список', 'Гант']) {
+    await page.getByRole('button', { name: view, exact: true }).click();
+    await expect(row).toBeVisible();
+    const edges = await page.evaluate((id) => {
+      const heading = document.querySelector('.timeline-heading > span')!;
+      const date = document.querySelector(
+        `[role="treeitem"][data-task-id="${id}"] .task-date`,
+      )!;
+      return {
+        heading: heading.getBoundingClientRect().right,
+        date: date.getBoundingClientRect().right,
+      };
+    }, summaryId);
+    expect(
+      Math.abs(edges.heading - edges.date),
+      `${view}: heading ${edges.heading}, date ${edges.date}`,
+    ).toBeLessThanOrEqual(1);
+  }
+});

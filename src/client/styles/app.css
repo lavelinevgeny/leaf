@@ -347,7 +347,7 @@ h2 {
   min-height: var(--leaf-row-height);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--leaf-row-gap);
   padding-block: 6px;
   padding-inline-end: 12px;
   cursor: pointer;

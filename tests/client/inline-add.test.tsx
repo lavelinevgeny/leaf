@@ -24,7 +24,43 @@ import { treeRows } from '../../src/client/tree-view.js';
 import { optionalTreeFixture, optionalIds } from './fixtures.js';
 
 afterEach(cleanup);
-it('opens a child editor with Shift+Enter and a row action', () => {
+it('opens a child editor with Shift+Enter and the row action menu', async () => {
+  const tree = optionalTreeFixture();
+  const action = vi.fn();
+  const select = vi.fn();
+  render(
+    <TaskTree
+      tasks={tree.tasks}
+      collapsed={new Set()}
+      selectedId={null}
+      onToggle={vi.fn()}
+      onSelect={select}
+      onAction={action}
+    />,
+  );
+  fireEvent.keyDown(screen.getByRole('treeitem', { name: /^Работа A,/ }), {
+    key: 'Enter',
+    shiftKey: true,
+  });
+  expect(action).toHaveBeenLastCalledWith('child', tree.tasks[1]);
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Действия задачи: Работа C' }),
+  );
+  expect(
+    screen.queryByRole('menuitem', { name: 'Добавить запись' }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole('menuitem', { name: 'Добавить подзадачу' }),
+  );
+  expect(action).toHaveBeenLastCalledWith('child', tree.tasks[2]);
+  expect(select).not.toHaveBeenCalled();
+  expect(
+    within(screen.getByRole('treeitem', { name: /^Работа C,/ }))
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label')),
+  ).toEqual(['Действия задачи: Работа C']);
+});
+it('opens the row menu from the keyboard without a journal handler', async () => {
   const tree = optionalTreeFixture();
   const action = vi.fn();
   render(
@@ -37,14 +73,18 @@ it('opens a child editor with Shift+Enter and a row action', () => {
       onAction={action}
     />,
   );
-  fireEvent.keyDown(screen.getByRole('treeitem', { name: /^Работа A,/ }), {
-    key: 'Enter',
-    shiftKey: true,
+  const trigger = screen.getByRole('button', {
+    name: 'Действия задачи: Работа C',
   });
-  expect(action).toHaveBeenLastCalledWith('child', tree.tasks[1]);
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Добавить подзадачу: Работа C' }),
-  );
+  trigger.focus();
+  await userEvent.keyboard('{Enter}');
+  const menu = screen.getByRole('menu');
+  expect(
+    within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent),
+  ).toEqual(['Открыть задачу', 'Добавить подзадачу']);
+  await userEvent.keyboard('{End}{Enter}');
   expect(action).toHaveBeenLastCalledWith('child', tree.tasks[2]);
 });
 it('inserts the draft after the parent branch and uses group dates without changing the tree', () => {
@@ -257,7 +297,10 @@ it.each([false, true])(
     fireEvent.keyDown(row, { key: 'l', altKey: true });
     expect(onPredecessors).not.toHaveBeenCalled();
     await userEvent.click(
-      within(row).getByRole('button', { name: 'Добавить подзадачу: Работа C' }),
+      within(row).getByRole('button', { name: 'Действия задачи: Работа C' }),
+    );
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Добавить подзадачу' }),
     );
     expect(onAction).toHaveBeenLastCalledWith('child', tree.tasks[2]);
     fireEvent.keyDown(row, { key: 'Enter', shiftKey: true });

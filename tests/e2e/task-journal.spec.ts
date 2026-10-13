@@ -554,40 +554,43 @@ test('branch deletion and plan undo restore exact journal rows while surviving l
   await expect(entryCard(page, branch.entry.id)).toBeVisible();
 });
 
-test('row journal menu has an independent pointer hit target beside quick child action', async ({
+test('row action trigger has its own pointer hit target', async ({
   page,
   runtime,
 }) => {
   const { summaryId, deepId } = await seedJournal(page, runtime);
   await page.goto(runtime.origin);
-  for (const id of [summaryId, deepId]) {
-    const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
-    const menu = row.locator('.task-row-menu > button');
-    await menu.focus();
-    const geometry = await row.evaluate((node) => {
-      const menu = node.querySelector('.task-row-menu > button')!;
-      const a = menu.getBoundingClientRect();
-      const b = node.querySelector('.add-child')!.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        a.x + a.width / 2,
-        a.y + a.height / 2,
-      );
-      return {
-        overlap:
-          Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
-          Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top),
-        hitMenu: hit === menu || menu.contains(hit),
-        width: a.width,
-        height: a.height,
-      };
-    });
-    expect(geometry.width).toBeGreaterThan(0);
-    expect(geometry.height).toBeGreaterThan(0);
-    expect(geometry.overlap).toBe(false);
-    expect(geometry.hitMenu).toBe(true);
-    await menu.click();
-    await expect(page.getByRole('menu')).toBeVisible();
-    await page.keyboard.press('Escape');
+  for (const view of ['Список', 'Гант']) {
+    await page.getByRole('button', { name: view, exact: true }).click();
+    for (const id of [summaryId, deepId]) {
+      const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
+      const menu = row.locator('.task-row-menu > button');
+      await menu.focus();
+      const geometry = await row.evaluate((node) => {
+        const menu = node.querySelector('.task-row-menu > button')!;
+        const a = menu.getBoundingClientRect();
+        const date = node.querySelector('.task-date')!.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          a.x + a.width / 2,
+          a.y + a.height / 2,
+        );
+        return {
+          hitMenu: hit === menu || menu.contains(hit),
+          width: a.width,
+          height: a.height,
+          left: a.left,
+          dateRight: date.right,
+        };
+      });
+      expect(geometry.width).toBeGreaterThan(0);
+      expect(geometry.height).toBeGreaterThan(0);
+      expect(geometry.hitMenu).toBe(true);
+      // The trigger sits after the date column and never covers it.
+      expect(geometry.left).toBeGreaterThanOrEqual(geometry.dateRight);
+      await menu.click();
+      await expect(page.getByRole('menu')).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
   }
 });
 

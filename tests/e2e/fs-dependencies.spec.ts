@@ -332,7 +332,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   expect(restored.dependencies).toEqual(tree.dependencies);
 });
 
-test('tree rows expose child creation without a chain in list and Gantt views', async ({
+test('tree rows show the row action trigger without a chain in list, Gantt and subtask views', async ({
   page,
   runtime,
 }) => {
@@ -349,7 +349,7 @@ test('tree rows expose child creation without a chain in list and Gantt views', 
     ).toHaveCount(0);
     await expect(
       taskRow.getByRole('button', {
-        name: 'Добавить подзадачу: B',
+        name: 'Действия задачи: B',
         exact: true,
       }),
     ).toHaveCSS('opacity', '1');
@@ -376,7 +376,7 @@ test('tree rows expose child creation without a chain in list and Gantt views', 
   ).toHaveCount(0);
   await expect(
     subtaskRow.getByRole('button', {
-      name: 'Добавить подзадачу: B',
+      name: 'Действия задачи: B',
       exact: true,
     }),
   ).toHaveCSS('opacity', '1');

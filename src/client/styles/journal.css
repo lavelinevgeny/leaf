@@ -221,14 +221,14 @@
   padding: 0.5rem;
 }
 .task-row-menu {
-  margin-inline-end: 96px;
+  margin-inline-end: var(--leaf-space-2);
   position: relative;
   flex-shrink: 0;
 }
 .task-row-menu > button {
   opacity: 0;
-  width: 28px;
-  height: 28px;
+  width: var(--leaf-row-menu-size);
+  height: var(--leaf-row-menu-size);
   margin-block: -2px;
   padding: 0;
 }

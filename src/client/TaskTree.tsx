@@ -293,7 +293,7 @@ export function TaskTree({
             >
               {compactDateLabel(task, schedule) || strings.noDate}
             </span>
-            {onJournal && task.id !== draftTaskId && (
+            {task.id !== draftTaskId && (
               <ActionMenu
                 className="task-row-menu"
                 label={`Действия задачи: ${task.title}`}
@@ -305,11 +305,16 @@ export function TaskTree({
                     label: 'Открыть задачу',
                     onSelect: () => onSelect(task),
                   },
-                  {
-                    id: 'journal',
-                    label: 'Добавить запись',
-                    onSelect: (trigger) => onJournal(task, trigger),
-                  },
+                  ...(onJournal
+                    ? [
+                        {
+                          id: 'journal',
+                          label: 'Добавить запись',
+                          onSelect: (trigger: HTMLButtonElement) =>
+                            onJournal(task, trigger),
+                        },
+                      ]
+                    : []),
                   {
                     id: 'child',
                     label: strings.addChild,
@@ -320,19 +325,6 @@ export function TaskTree({
                 ]}
               />
             )}
-            <button
-              type="button"
-              className="add-child"
-              disabled={disabled}
-              aria-label={`${strings.addChild}: ${task.title}`}
-              title={`${strings.addChild} · Shift+Enter`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onAction('child', task);
-              }}
-            >
-              {strings.addChildShort}
-            </button>
           </div>
         );
       })}
