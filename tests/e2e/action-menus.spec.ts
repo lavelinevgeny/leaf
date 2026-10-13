@@ -256,6 +256,30 @@ test('U07 feed dates align with the first toolbar action', async ({
     return { add: Math.round(add.x), date: Math.round(date.x) };
   });
   expect(Math.abs(align.add - align.date)).toBeLessThanOrEqual(1);
+  // R3: no persistent undo hint row between the toolbar and the feed.
+  const gap = await projectFeed(page).evaluate((node) => {
+    const controls = node
+      .querySelector('.journal-controls')!
+      .getBoundingClientRect();
+    const date = node
+      .querySelector('[data-journal-date]')!
+      .getBoundingClientRect();
+    return Math.round(date.top - controls.bottom);
+  });
+  expect(gap).toBeLessThanOrEqual(24);
+  const hint = page.getByText('Записи редактируются и удаляются отдельно');
+  await expect(hint).toHaveCount(0);
+  // The task journal is mounted only for a selected task: open one from an entry.
+  await projectFeed(page).locator('.journal-task-link').first().click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await expect(
+    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await expect(panel.getByLabel('Текст записи')).toBeVisible();
+  await expect(hint).toHaveCount(0);
 });
 
 test('U10 rows have one action trigger and create children from the menu or Shift+Enter', async ({

@@ -3,7 +3,7 @@ import type { Task } from '../shared/contracts.js';
 import type { JournalController, JournalDraftKey } from './journal-state.js';
 import { createDraftKey } from './journal-state.js';
 import { JournalEditor } from './JournalEditor.js';
-import { JournalFeed, journalUndoCopy } from './JournalFeed.js';
+import { JournalFeed } from './JournalFeed.js';
 export function TaskJournal({
   controller,
   disabled = false,
@@ -56,7 +56,6 @@ export function TaskJournal({
   });
   return (
     <div className="task-journal" ref={root}>
-      <p className="journal-hint">{journalUndoCopy}</p>
       {draft ? (
         <JournalEditor
           draft={draft}

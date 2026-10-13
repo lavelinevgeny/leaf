@@ -46,7 +46,6 @@
 .journal-hint {
   color: var(--muted, #667085);
   font-size: 0.78rem;
-  padding: 0 0.5rem;
 }
 .journal-entry {
   max-width: 960px;

@@ -9,7 +9,7 @@ import type {
   JournalPosition,
 } from './journal-state.js';
 import { createDraftKey } from './journal-state.js';
-import { JournalFeed, journalUndoCopy } from './JournalFeed.js';
+import { JournalFeed } from './JournalFeed.js';
 import { JournalEditor } from './JournalEditor.js';
 import { JournalTaskPicker } from './JournalTaskPicker.js';
 import { CalendarDateInput } from './CalendarDateInput.js';
@@ -309,7 +309,6 @@ export function ProjectJournal({
           />
         </section>
       )}
-      <p className="journal-hint">{journalUndoCopy}</p>
       <p role="status" className="journal-notice">
         {controller.notice ?? ''}
       </p>

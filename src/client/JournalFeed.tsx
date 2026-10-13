@@ -8,8 +8,6 @@ import type {
 } from './journal-state.js';
 import { JournalEditor, JournalConflict } from './JournalEditor.js';
 import { ActionMenu } from './ActionMenu.js';
-export const journalUndoCopy =
-  'Записи редактируются и удаляются отдельно; отмена в шапке относится к плану';
 export function JournalFeed({
   state,
   controller,
