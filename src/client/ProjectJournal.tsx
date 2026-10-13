@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { Task } from '../shared/contracts.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
 import { journalProjectQuerySchema } from '../shared/journal-contracts.js';
 import type {
   JournalController,
   JournalDraftKey,
+  JournalMetadata,
   JournalPosition,
 } from './journal-state.js';
 import { createDraftKey } from './journal-state.js';
@@ -45,6 +46,7 @@ export function ProjectJournal({
   onOpenTask: (task: Task, trigger: HTMLElement) => void;
 }) {
   const [periodOpen, setPeriodOpen] = useState(false);
+  const composerHeading = useId();
   const periodTrigger = useRef<HTMLButtonElement>(null);
   const [key, setKey] = useState<JournalDraftKey | null>(() => {
     const pending = controller.pending;
@@ -54,7 +56,7 @@ export function ProjectJournal({
   });
   const [filters, setFilters] = useState(query);
   const [invalid, setInvalid] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null),
+  const composer = useRef<HTMLElement>(null),
     trigger = useRef<HTMLButtonElement>(null);
   const focusReturn = useRef<Element | null>(null);
   useEffect(() => {
@@ -93,24 +95,50 @@ export function ProjectJournal({
   });
   const feed = controller.projectFeed;
   const metadata = feed?.metadata;
-  const draft = key ? controller.getDraft(key) : undefined;
-  useEffect(() => setFilters(query), [query]);
+  // A new period, reset or Back/Forward reloads the feed without metadata.
+  // The open composer stays mounted on the last metadata of this project;
+  // `coherent` below keeps its picker and editor disabled until the reload
+  // returns, so the kept task list is only shown, never used for a write.
+  const [keptMetadata, setKeptMetadata] = useState<JournalMetadata | null>(
+    metadata ?? null,
+  );
   useEffect(() => {
-    if (!key || !dialog.current) return;
-    const node = dialog.current;
-    node.showModal?.();
-    if (!node.open) node.setAttribute('open', '');
-    const overflow = document.body.style.overflow,
-      padding = document.body.style.paddingRight;
-    const gap = window.innerWidth - document.documentElement.clientWidth;
-    document.body.style.overflow = 'hidden';
-    if (gap > 0) document.body.style.paddingRight = `${gap}px`;
-    return () => {
-      node.close?.();
-      document.body.style.overflow = overflow;
-      document.body.style.paddingRight = padding;
-    };
-  }, [key, !!draft, !!metadata]);
+    if (metadata) setKeptMetadata(metadata);
+  }, [metadata]);
+  const composerMetadata =
+    metadata ??
+    (keptMetadata?.projectId === projectId ? keptMetadata : undefined);
+  // A project switch keeps this component mounted: the composer never shows
+  // another project's draft, already in the render of the switch. The draft
+  // itself stays in RAM (D21).
+  const shownKey = key?.startsWith(`project:${projectId}:`) ? key : null;
+  const draft = shownKey ? controller.getDraft(shownKey) : undefined;
+  useEffect(() => setFilters(query), [query]);
+  // Initial focus is a one-shot request of an "Добавить запись" press (also a
+  // repeated one): the task picker while no task is chosen, otherwise the
+  // text field. `ready` covers metadata arriving after the click; a later
+  // metadata reload never moves focus on its own.
+  const [focusRequest, setFocusRequest] = useState(0);
+  const focusPending = useRef(false);
+  const ready = !!(shownKey && draft && composerMetadata);
+  const hasTask = !!draft?.taskId;
+  useEffect(() => {
+    const node = composer.current;
+    if (!focusPending.current || !ready || !node) return;
+    focusPending.current = false;
+    (hasTask
+      ? node.querySelector<HTMLElement>('[data-journal-body]')
+      : node.querySelector<HTMLElement>('[data-journal-picker-trigger]')
+    )?.focus();
+  }, [ready, focusRequest]);
+  // Returning to the previous project later shows the composer closed (5.7).
+  const shownProject = useRef(projectId);
+  useEffect(() => {
+    if (shownProject.current === projectId) return;
+    shownProject.current = projectId;
+    focusPending.current = false;
+    setKey(null);
+  }, [projectId]);
   function close() {
     if (controller.writing || controller.pending) return;
     closeAfterSave();
@@ -120,9 +148,10 @@ export function ProjectJournal({
     focusReturn.current =
       active === document.body ||
       active === trigger.current ||
-      (active && dialog.current?.contains(active))
+      (active && composer.current?.contains(active))
         ? active
         : null;
+    focusPending.current = false;
     setKey(null);
   }
   function closePeriod() {
@@ -167,7 +196,11 @@ export function ProjectJournal({
             controller.writing ||
             !!controller.pending
           }
-          onClick={() => setKey(controller.openCreate(projectId, null, today))}
+          onClick={() => {
+            focusPending.current = true;
+            setKey(controller.openCreate(projectId, null, today));
+            setFocusRequest((n) => n + 1);
+          }}
         >
           <span aria-hidden="true">+ </span>Добавить запись
         </button>
@@ -233,6 +266,49 @@ export function ProjectJournal({
       {metadata && !metadata.tasks.length && (
         <p>Сначала создайте задачу, чтобы добавить запись.</p>
       )}
+      {shownKey && draft && composerMetadata && (
+        <section
+          ref={composer}
+          className="journal-composer"
+          aria-labelledby={composerHeading}
+          onKeyDown={(event) => {
+            // Like the former <dialog>: composer keys never reach window
+            // shortcuts (Escape closing the task panel, Ctrl/Cmd+Z undo).
+            event.stopPropagation();
+            if (event.key !== 'Escape' || event.defaultPrevented) return;
+            event.preventDefault();
+            close();
+          }}
+        >
+          <h2 className="sr-only" id={composerHeading}>
+            Новая запись журнала
+          </h2>
+          <JournalEditor
+            draft={draft}
+            controller={controller}
+            disabled={disabled || !coherent}
+            placeholder="Что сделали или узнали?"
+            compactIdle
+            onSaved={closeAfterSave}
+            onCancel={() => close()}
+            taskPicker={
+              <JournalTaskPicker
+                metadata={composerMetadata}
+                value={draft.taskId}
+                onChange={(taskId) =>
+                  controller.changeDraft(draft.key, { taskId })
+                }
+                disabled={
+                  disabled ||
+                  !coherent ||
+                  controller.writing ||
+                  !!controller.pending
+                }
+              />
+            }
+          />
+        </section>
+      )}
       <p className="journal-hint">{journalUndoCopy}</p>
       <p role="status" className="journal-notice">
         {controller.notice ?? ''}
@@ -250,66 +326,6 @@ export function ProjectJournal({
         />
       ) : (
         <p role="status">Загрузка журнала…</p>
-      )}
-      {key && draft && metadata && (
-        <dialog
-          ref={dialog}
-          className="journal-dialog"
-          aria-label="Новая запись журнала"
-          aria-modal="true"
-          onCancel={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            close();
-          }}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              close();
-            }
-            if (event.key === 'Tab') {
-              const controls = [
-                ...event.currentTarget.querySelectorAll<HTMLElement>(
-                  'button:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]',
-                ),
-              ];
-              const first = controls[0],
-                last = controls.at(-1);
-              if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-              } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-              }
-            }
-          }}
-        >
-          <h2>Новая запись</h2>
-          <JournalEditor
-            draft={draft}
-            controller={controller}
-            disabled={disabled || !coherent}
-            onSaved={closeAfterSave}
-            onCancel={() => close()}
-            taskPicker={
-              <JournalTaskPicker
-                metadata={metadata}
-                value={draft.taskId}
-                onChange={(taskId) =>
-                  controller.changeDraft(draft.key, { taskId })
-                }
-                disabled={
-                  disabled ||
-                  !coherent ||
-                  controller.writing ||
-                  !!controller.pending
-                }
-              />
-            }
-          />
-        </dialog>
       )}
     </div>
   );

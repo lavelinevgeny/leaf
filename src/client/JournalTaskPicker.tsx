@@ -43,6 +43,7 @@ export function JournalTaskPicker({
       <button
         ref={trigger}
         type="button"
+        data-journal-picker-trigger
         disabled={disabled}
         aria-expanded={open}
         aria-controls={id}

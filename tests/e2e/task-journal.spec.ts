@@ -212,7 +212,7 @@ test('125 records, inclusive dates, Russian/title/literal search, boundary pagin
   await expect(projectFeed(page).getByText('Записей пока нет')).toBeVisible();
 });
 
-test('native modal on long scrolled feed preserves geometry, focus and successful prepend anchor', async ({
+test('inline composer on long scrolled feed preserves anchor geometry, focus and successful prepend anchor', async ({
   page,
   runtime,
 }) => {
@@ -240,22 +240,27 @@ test('native modal on long scrolled feed preserves geometry, focus and successfu
   ).toBeGreaterThan(0);
   const before = await journalGeometry(page);
   expect(before.id).toBeTruthy();
+  const pick = (g: Awaited<ReturnType<typeof journalGeometry>>) => ({
+    id: g.id,
+    offset: g.offset,
+    left: g.left,
+    cardX: g.cardX,
+    cardWidth: g.cardWidth,
+    controlsX: g.controlsX,
+    controlsY: g.controlsY,
+    controlsWidth: g.controlsWidth,
+    headerY: g.headerY,
+    headerHeight: g.headerHeight,
+  });
   const add = projectFeed(page).getByRole('button', {
     name: 'Добавить запись',
     exact: true,
   });
   for (const close of ['Escape', 'cancel']) {
     await add.click();
-    const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+    const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
     await expect(dialog).toBeVisible();
-    expect(await dialog.evaluate((n) => n.matches(':modal'))).toBe(true);
-    expect(await journalGeometry(page)).toEqual(before);
-    const last = dialog.getByRole('button', { name: 'Очистить черновик' });
-    await last.focus();
-    await page.keyboard.press('Tab');
-    expect(
-      await dialog.evaluate((n) => n.contains(document.activeElement)),
-    ).toBe(true);
+    expect(pick(await journalGeometry(page))).toEqual(pick(before));
     if (close === 'Escape') await page.keyboard.press('Escape');
     else await dialog.getByRole('button', { name: 'Закрыть редактор' }).click();
     await expect(dialog).toBeHidden();
@@ -263,8 +268,24 @@ test('native modal on long scrolled feed preserves geometry, focus and successfu
     expect(await journalGeometry(page)).toEqual(before);
   }
   await add.click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
-  await chooseTask(dialog, 'Этап P');
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
+  await expect(dialog).toBeVisible();
+  expect(pick(await journalGeometry(page))).toEqual(pick(before));
+  // With the task picker open the composer does not scroll inside itself:
+  // the text field and the date stay visible next to the results list.
+  await dialog
+    .getByRole('button', { name: 'Выбрать задачу', exact: true })
+    .click();
+  await expect(dialog.getByRole('listbox')).toBeVisible();
+  expect(
+    await dialog.evaluate((node) => node.scrollHeight - node.clientHeight),
+  ).toBeLessThanOrEqual(0);
+  await expect(dialog.getByLabel('Текст записи')).toBeInViewport({ ratio: 1 });
+  await expect(
+    dialog.getByLabel('Дата записи', { exact: true }),
+  ).toBeInViewport({ ratio: 1 });
+  await dialog.getByRole('combobox', { name: 'Поиск задачи' }).fill('Этап P');
+  await dialog.getByRole('option').last().click();
   await dialog.getByLabel('Дата записи', { exact: true }).fill('2026-10-12');
   await dialog.getByLabel('Текст записи').fill('Новая запись сверху');
   await dialog.getByRole('button', { name: 'Сохранить запись' }).click();
@@ -281,6 +302,68 @@ test('native modal on long scrolled feed preserves geometry, focus and successfu
     body: 'Новая запись сверху',
     workDate: '2026-10-12',
   });
+});
+
+test('open composer with task picker keeps the project feed on screen at 375x812 and 1280x800', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, summaryId } = await seedJournal(page, runtime);
+  for (let index = 0; index < 12; index++)
+    await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      summaryId,
+      index,
+      `Запись ${index}`,
+      '2026-10-09',
+    );
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await openProjectJournal(page, runtime.origin);
+    await projectFeed(page)
+      .getByRole('button', { name: 'Добавить запись', exact: true })
+      .click();
+    const composer = page.getByRole('region', {
+      name: 'Новая запись журнала',
+    });
+    await composer
+      .getByRole('button', { name: 'Выбрать задачу', exact: true })
+      .click();
+    await expect(composer.getByRole('listbox')).toBeVisible();
+    // Spec §5.7: the feed never collapses under the open composer and the
+    // journal pane itself does not overflow (no second outer scroll).
+    const geometry = await projectFeed(page).evaluate((node) => {
+      const journal = node.querySelector<HTMLElement>('.project-journal')!;
+      const feed = node.querySelector<HTMLElement>('[data-journal-scroll]')!;
+      return {
+        feedHeight: feed.clientHeight,
+        feedTop: feed.getBoundingClientRect().top,
+        innerHeight,
+        overflow: journal.scrollHeight - journal.clientHeight,
+      };
+    });
+    expect(
+      geometry.feedHeight,
+      JSON.stringify(viewport),
+    ).toBeGreaterThanOrEqual(96);
+    expect(geometry.feedTop + 96).toBeLessThanOrEqual(geometry.innerHeight);
+    expect(geometry.overflow).toBeLessThanOrEqual(1);
+    await expect(
+      composer.getByRole('combobox', { name: 'Поиск задачи' }),
+    ).toBeInViewport({ ratio: 1 });
+    // Desktop height fits both: the composer does not scroll inside itself.
+    if (viewport.width === 1280)
+      expect(
+        await composer.evaluate(
+          (node) => node.scrollHeight - node.clientHeight,
+        ),
+      ).toBeLessThanOrEqual(0);
+  }
 });
 
 test('nested row menu, keyboard tabs and picker include done/summary/undated duplicate paths without plan actions', async ({
@@ -362,7 +445,7 @@ test('nested row menu, keyboard tabs and picker include done/summary/undated dup
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
   await dialog
     .getByRole('button', { name: 'Выбрать задачу', exact: true })
     .click();
@@ -519,7 +602,7 @@ test('empty/loading/error/load-more retry and filtered success preserve long pla
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
   await chooseTask(dialog, 'Этап P');
   await dialog.getByLabel('Текст записи').fill('Сохранено вне поиска');
   await dialog.getByRole('button', { name: 'Сохранить запись' }).click();

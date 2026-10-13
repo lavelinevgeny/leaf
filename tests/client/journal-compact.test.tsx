@@ -553,3 +553,215 @@ it('U08 the edit editor always shows save and close', async () => {
     within(feed).getByRole('button', { name: 'Закрыть редактор' }),
   ).toBeInTheDocument();
 });
+
+it('U09 inline project composer requires a task and text, keeps its draft and returns focus', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  const add = screen.getByRole('button', { name: 'Добавить запись' });
+  await userEvent.click(add);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  const composer = screen.getByRole('region', {
+    name: 'Новая запись журнала',
+  });
+  const picker = within(composer).getByRole('button', {
+    name: 'Выбрать задачу',
+  });
+  expect(picker).toHaveFocus();
+  const body = within(composer).getByLabelText('Текст записи');
+  expect(body).toHaveAttribute('placeholder', 'Что сделали или узнали?');
+  // A repeated press without a chosen task focuses the picker again.
+  body.focus();
+  await userEvent.click(add);
+  expect(picker).toHaveFocus();
+  expect(
+    within(composer).queryByRole('button', { name: 'Сохранить запись' }),
+  ).toBeNull();
+  fireEvent.change(body, { target: { value: '   ' } });
+  expect(
+    within(composer).getByRole('button', { name: 'Сохранить запись' }),
+  ).toBeDisabled();
+  fireEvent.change(body, { target: { value: 'Черновик проекта' } });
+  expect(
+    within(composer).getByRole('button', { name: 'Сохранить запись' }),
+  ).toBeDisabled();
+  fireEvent.keyDown(body, { key: 'Escape' });
+  await waitFor(() => expect(add).toHaveFocus());
+  expect(
+    screen.queryByRole('region', { name: 'Новая запись журнала' }),
+  ).toBeNull();
+  await userEvent.click(add);
+  expect(screen.getByLabelText('Текст записи')).toHaveValue('Черновик проекта');
+});
+
+it('U09 composer keys do not reach window shortcuts: Escape keeps the task panel, Ctrl+Z does not undo', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  await userEvent.click(
+    screen.getAllByRole('button', { name: 'Работа 1' })[0]!,
+  );
+  const panel = await screen.findByRole('complementary', { name: 'Задача' });
+  const projectView = document.getElementById('project-view-journal')!;
+  await userEvent.click(
+    within(projectView).getByRole('button', { name: 'Добавить запись' }),
+  );
+  const composer = screen.getByRole('region', {
+    name: 'Новая запись журнала',
+  });
+  const onWindow = vi.fn();
+  window.addEventListener('keydown', onWindow);
+  const picker = within(composer).getByRole('button', {
+    name: 'Выбрать задачу',
+  });
+  fireEvent.keyDown(picker, { key: 'z', ctrlKey: true });
+  fireEvent.keyDown(picker, { key: 'Escape' });
+  window.removeEventListener('keydown', onWindow);
+  expect(onWindow).not.toHaveBeenCalled();
+  expect(api.command).not.toHaveBeenCalled();
+  expect(panel).toBeInTheDocument();
+  expect(
+    screen.queryByRole('region', { name: 'Новая запись журнала' }),
+  ).toBeNull();
+});
+
+it('U09 switching projects closes the inline composer; each project keeps its own draft', async () => {
+  const server = mockJournalApp();
+  const projectB = '44444444-4444-4444-8444-444444444444';
+  server.projects.push({
+    ...server.projects[0]!,
+    id: projectB,
+    title: 'Synthetic B',
+  });
+  // Project journal "Добавить запись" is disabled for a project without tasks.
+  server.tree.tasks.push(task(3, { projectId: projectB }));
+  render(<App />);
+  await openProjectJournal();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Добавить запись' }),
+  );
+  fireEvent.change(screen.getByLabelText('Текст записи'), {
+    target: { value: 'Черновик проекта A' },
+  });
+  await userEvent.click(screen.getByRole('button', { name: /Synthetic B/ }));
+  await screen.findByRole('heading', { name: 'Synthetic B' });
+  await userEvent.click(screen.getByRole('tab', { name: 'Журнал' }));
+  expect(
+    screen.queryByRole('region', { name: 'Новая запись журнала' }),
+  ).toBeNull();
+  const add = screen.getByRole('button', { name: 'Добавить запись' });
+  await waitFor(() => expect(add).toBeEnabled());
+  await userEvent.click(add);
+  expect(screen.getByLabelText('Текст записи')).toHaveValue('');
+  await userEvent.click(screen.getByRole('button', { name: /Демо-проект/ }));
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  await userEvent.click(screen.getByRole('tab', { name: 'Журнал' }));
+  const addA = screen.getByRole('button', { name: 'Добавить запись' });
+  await waitFor(() => expect(addA).toBeEnabled());
+  await userEvent.click(addA);
+  expect(screen.getByLabelText('Текст записи')).toHaveValue(
+    'Черновик проекта A',
+  );
+});
+
+it('U09 with a chosen task the composer focuses the text field, also on a repeated add press', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  const add = screen.getByRole('button', { name: 'Добавить запись' });
+  await userEvent.click(add);
+  const composer = screen.getByRole('region', {
+    name: 'Новая запись журнала',
+  });
+  await userEvent.click(
+    within(composer).getByRole('button', { name: 'Выбрать задачу' }),
+  );
+  fireEvent.keyDown(within(composer).getByRole('combobox'), { key: 'Enter' });
+  fireEvent.keyDown(
+    within(composer).getByRole('button', { name: 'Работа 1' }),
+    { key: 'Escape' },
+  );
+  await waitFor(() => expect(add).toHaveFocus());
+  await userEvent.click(add);
+  const body = screen.getByLabelText('Текст записи');
+  expect(body).toHaveFocus();
+  add.focus();
+  await userEvent.click(add);
+  expect(body).toHaveFocus();
+});
+
+it('U09 the composer and its text survive switching to «Задачи» and back', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Добавить запись' }),
+  );
+  fireEvent.change(screen.getByLabelText('Текст записи'), {
+    target: { value: 'Черновик между вкладками' },
+  });
+  await userEvent.click(screen.getByRole('tab', { name: 'Задачи' }));
+  await userEvent.click(screen.getByRole('tab', { name: 'Журнал' }));
+  const composer = screen.getByRole('region', {
+    name: 'Новая запись журнала',
+  });
+  expect(within(composer).getByLabelText('Текст записи')).toHaveValue(
+    'Черновик между вкладками',
+  );
+});
+
+it('U09 applying a period while the composer is open keeps the composer, its text and the period focus', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Добавить запись' }),
+  );
+  fireEvent.change(screen.getByLabelText('Текст записи'), {
+    target: { value: 'Черновик при смене периода' },
+  });
+  const held = deferred<JournalPage>();
+  const original = vi.mocked(api.journalProject).getMockImplementation()!;
+  vi.mocked(api.journalProject).mockImplementationOnce(() => held.promise);
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  );
+  fireEvent.change(screen.getByLabelText('С даты'), {
+    target: { value: '2024-03-01' },
+  });
+  await userEvent.click(screen.getByRole('button', { name: 'Применить' }));
+  const period = screen.getByRole('button', { name: 'Период: с 01.03.2024' });
+  expect(period).toHaveFocus();
+  await waitFor(() =>
+    expect(api.journalProject).toHaveBeenLastCalledWith(journal5.projectId, {
+      from: '2024-03-01',
+    }),
+  );
+  // While the new period loads, the composer stays mounted with its draft;
+  // the picker waits for coherent metadata.
+  const loading = screen.getByRole('region', {
+    name: 'Новая запись журнала',
+  });
+  expect(within(loading).getByLabelText('Текст записи')).toHaveValue(
+    'Черновик при смене периода',
+  );
+  expect(
+    within(loading).getByRole('button', { name: 'Выбрать задачу' }),
+  ).toBeDisabled();
+  expect(period).toHaveFocus();
+  await act(async () =>
+    held.resolve(await original(journal5.projectId, { from: '2024-03-01' })),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Добавить запись' }),
+    ).toBeEnabled(),
+  );
+  expect(period).toHaveFocus();
+  const composer = screen.getByRole('region', {
+    name: 'Новая запись журнала',
+  });
+  expect(within(composer).getByLabelText('Текст записи')).toHaveValue(
+    'Черновик при смене периода',
+  );
+});

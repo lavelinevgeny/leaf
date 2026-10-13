@@ -2111,7 +2111,7 @@ Expected: FAIL: открывается `dialog`, region не найден.
 
 6. Escape во вложенных popover: `JournalTaskPicker` уже вызывает `stopPropagation()` и `preventDefault()` на Escape (`JournalTaskPicker.tsx:55-59`), поэтому до composer он не дойдёт. Проверить календарь `CalendarDateInput`: если он обрабатывает Escape и не вызывает `preventDefault()`, добавить его. Это единственное допустимое изменение этих файлов в задаче.
 
-В `src/client/styles/journal.css` удалить `.journal-dialog` и `.journal-dialog::backdrop`, добавить:
+В `src/client/styles/journal.css` удалить `.journal-dialog` и `.journal-dialog::backdrop`, добавить (`max-height: 45vh` ниже при реализации заменено правилом §5.7 спецификации: flex, лента не меньше 6rem):
 
 ```css
 .journal-composer {

@@ -172,22 +172,36 @@
   gap: 0.4rem;
   flex-wrap: wrap;
 }
-.journal-dialog {
-  width: min(560px, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
+/* R2: inline project composer between the toolbar and the feed; no modal,
+   scroll lock or focus trap. The feed's scroll container is not scrolled by
+   opening it. The composer takes its content height (an open task picker has
+   capped results below) while the feed keeps at least 6rem; only when the
+   journal pane is too short for both does the composer shrink and scroll
+   inside itself. */
+.journal-composer {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-width: 960px;
   overflow: auto;
-  border: 1px solid var(--border, #e7e9ed);
-  border-radius: 12px;
-  padding: 1.2rem;
+  margin: var(--leaf-space-2) 0;
+  padding: var(--leaf-space-3) var(--leaf-space-4);
+  border: 1px solid var(--leaf-border);
+  border-radius: 10px;
+  background: var(--leaf-surface-muted);
 }
-.journal-dialog::backdrop {
-  background: rgb(30 40 50 / 18%);
+@media (max-width: 600px) {
+  .journal-composer {
+    padding: var(--leaf-space-2);
+  }
 }
 .journal-picker-results {
   max-height: 200px;
   overflow: auto;
   display: flex;
   flex-direction: column;
+}
+.journal-composer .journal-picker-results {
+  max-height: min(200px, 20vh);
 }
 .journal-picker-results [aria-selected='true'] {
   background: var(--surface-hover, #edf6f0);
@@ -197,6 +211,10 @@
 }
 .task-journal .journal-feed {
   padding: 0.5rem 0;
+}
+/* The project feed never collapses under an open composer (spec 5.7). */
+.project-journal .journal-feed {
+  min-height: 6rem;
 }
 .journal-conflict {
   border-inline-start: 3px solid #ad7d37;

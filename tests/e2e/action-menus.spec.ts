@@ -216,6 +216,30 @@ test('U11/U12 entry trigger is at least 28px; its menu fits 375px and 200% zoom 
   }
 });
 
+test('U11 open inline composer adds no horizontal scroll at 375px', async ({
+  page,
+  runtime,
+}) => {
+  await seedEntries(page, runtime);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openProjectJournal(page, runtime.origin);
+  const width = await documentWidth(page);
+  await projectFeed(page)
+    .getByRole('button', { name: 'Добавить запись', exact: true })
+    .click();
+  const composer = page.getByRole('region', { name: 'Новая запись журнала' });
+  await expect(composer).toBeVisible();
+  expect(await documentWidth(page)).toBe(width);
+  expect(
+    await composer.evaluate((node) => ({
+      inside:
+        node.getBoundingClientRect().right <=
+        document.documentElement.clientWidth,
+      ownScroll: node.scrollWidth > node.clientWidth,
+    })),
+  ).toEqual({ inside: true, ownScroll: false });
+});
+
 test('U07 feed dates align with the first toolbar action', async ({
   page,
   runtime,
