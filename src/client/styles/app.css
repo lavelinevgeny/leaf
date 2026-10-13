@@ -377,6 +377,72 @@ h2 {
   white-space: nowrap;
   font-weight: 400;
 }
+/* Row quick actions (C30): a zero-width sticky anchor after the date. The
+   buttons overlay the row end while shown, so they reserve no inline space and
+   stay at the visible edge of a horizontally scrolled tree. */
+.task-row-actions {
+  position: sticky;
+  inset-inline-end: 0;
+  flex: 0 0 0;
+  align-self: stretch;
+  /* Cancel the row gap so dates end at the row padding like the heading. */
+  margin-inline-start: calc(-1 * var(--leaf-row-gap));
+}
+.task-row-actions-inner {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-inline-start: var(--leaf-space-2);
+  background: var(--leaf-bg);
+  opacity: 0;
+  pointer-events: none;
+}
+.task-row:hover .task-row-actions-inner {
+  background: var(--leaf-surface-muted);
+}
+.task-row.selected .task-row-actions-inner {
+  background: var(--leaf-accent-soft);
+}
+.task-row-actions-inner > button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--leaf-row-action-size);
+  height: var(--leaf-row-action-size);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--leaf-text-muted);
+}
+.task-row-actions-inner > button:hover:not(:disabled) {
+  border-color: var(--leaf-border);
+  background: var(--leaf-bg);
+  color: var(--leaf-text);
+}
+.task-row-actions-inner .control-icon {
+  width: 16px;
+  height: 16px;
+}
+.task-row:hover .task-row-actions-inner,
+.task-row-actions-inner:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.task-row:hover .task-date,
+.task-row:has(.task-row-actions-inner:focus-within) .task-date {
+  visibility: hidden;
+}
+@media (hover: none) {
+  .task-row.selected .task-row-actions-inner {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .task-row.selected .task-date {
+    visibility: hidden;
+  }
+}
 .disclosure {
   width: 16px;
   flex: 0 0 16px;

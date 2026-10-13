@@ -384,31 +384,12 @@ test('nested row menu, keyboard tabs and picker include done/summary/undated dup
     });
   await page.goto(runtime.origin);
   const row = page.locator(`[role="treeitem"][data-task-id="${deepId}"]`);
-  await row
-    .getByRole('button', { name: 'Действия задачи: Уровень 5', exact: true })
-    .click();
-  const menu = page.getByRole('menu', {
-    name: 'Действия задачи: Уровень 5',
+  const entry = row.getByRole('button', {
+    name: 'Добавить запись: Уровень 5',
     exact: true,
   });
-  await expect(
-    menu.getByRole('menuitem', { name: 'Открыть задачу' }),
-  ).toBeFocused();
-  await page.keyboard.press('ArrowDown');
-  await expect(
-    menu.getByRole('menuitem', { name: 'Добавить запись' }),
-  ).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(
-    row.getByRole('button', {
-      name: 'Действия задачи: Уровень 5',
-      exact: true,
-    }),
-  ).toBeFocused();
-  await row
-    .getByRole('button', { name: 'Действия задачи: Уровень 5', exact: true })
-    .click();
-  await menu.getByRole('menuitem', { name: 'Добавить запись' }).click();
+  await entry.focus();
+  await page.keyboard.press('Enter');
   const panel = page.getByRole('complementary', {
     name: 'Задача',
     exact: true,
@@ -554,7 +535,7 @@ test('branch deletion and plan undo restore exact journal rows while surviving l
   await expect(entryCard(page, branch.entry.id)).toBeVisible();
 });
 
-test('row action trigger has its own pointer hit target', async ({
+test('row quick actions have their own pointer hit targets over the date', async ({
   page,
   runtime,
 }) => {
@@ -564,32 +545,27 @@ test('row action trigger has its own pointer hit target', async ({
     await page.getByRole('button', { name: view, exact: true }).click();
     for (const id of [summaryId, deepId]) {
       const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
-      const menu = row.locator('.task-row-menu > button');
-      await menu.focus();
-      const geometry = await row.evaluate((node) => {
-        const menu = node.querySelector('.task-row-menu > button')!;
-        const a = menu.getBoundingClientRect();
-        const date = node.querySelector('.task-date')!.getBoundingClientRect();
-        const hit = document.elementFromPoint(
-          a.x + a.width / 2,
-          a.y + a.height / 2,
-        );
-        return {
-          hitMenu: hit === menu || menu.contains(hit),
-          width: a.width,
-          height: a.height,
-          left: a.left,
-          dateRight: date.right,
-        };
-      });
-      expect(geometry.width).toBeGreaterThan(0);
-      expect(geometry.height).toBeGreaterThan(0);
-      expect(geometry.hitMenu).toBe(true);
-      // The trigger sits after the date column and never covers it.
-      expect(geometry.left).toBeGreaterThanOrEqual(geometry.dateRight);
-      await menu.click();
-      await expect(page.getByRole('menu')).toBeVisible();
-      await page.keyboard.press('Escape');
+      await row.hover();
+      const geometry = await row.evaluate((node) =>
+        [...node.querySelectorAll('.task-row-actions-inner > button')].map(
+          (button) => {
+            const a = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              a.x + a.width / 2,
+              a.y + a.height / 2,
+            );
+            return {
+              hit: !!hit && button.contains(hit),
+              size: a.width >= 28 && a.height >= 28,
+              inRow: a.right <= node.getBoundingClientRect().right,
+            };
+          },
+        ),
+      );
+      expect(geometry).toEqual([
+        { hit: true, size: true, inRow: true },
+        { hit: true, size: true, inRow: true },
+      ]);
     }
   }
 });

@@ -154,6 +154,8 @@ export const strings = {
   newTask: 'Новая задача',
   addTask: 'Добавить задачу',
   addChild: 'Добавить подзадачу',
+  addChildHint: 'Добавить подзадачу (Shift+Enter)',
+  addJournalEntry: 'Добавить запись',
   addSibling: 'Добавить соседнюю задачу',
   root: 'Корень проекта',
   parent: 'Родитель',

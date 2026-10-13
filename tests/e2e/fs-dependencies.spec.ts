@@ -347,12 +347,10 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     await expect(
       taskRow.getByRole('button', { name: /^После окончания:/ }),
     ).toHaveCount(0);
-    await expect(
-      taskRow.getByRole('button', {
-        name: 'Действия задачи: B',
-        exact: true,
-      }),
-    ).toHaveCSS('opacity', '1');
+    await expect(taskRow.locator('.task-row-actions-inner')).toHaveCSS(
+      'opacity',
+      '1',
+    );
     await taskRow.focus();
     await taskRow.press('Alt+l');
     await expect(picker(page)).toHaveCount(0);
@@ -374,12 +372,10 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
   await expect(
     subtaskRow.getByRole('button', { name: /^После окончания:/ }),
   ).toHaveCount(0);
-  await expect(
-    subtaskRow.getByRole('button', {
-      name: 'Действия задачи: B',
-      exact: true,
-    }),
-  ).toHaveCSS('opacity', '1');
+  await expect(subtaskRow.locator('.task-row-actions-inner')).toHaveCSS(
+    'opacity',
+    '1',
+  );
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
 });
 

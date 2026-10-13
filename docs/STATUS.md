@@ -1,5 +1,13 @@
 # Статус разработки
 
+## Быстрые действия строки вместо меню `⋯` (C30), 2026-10-14
+
+Ветка `feat/row-quick-actions`. По решению владельца C30 меню `⋯` строк `TaskTree` (дерево, левая часть Ганта, дерево подзадач) заменено двумя иконками «Добавить подзадачу» и «Добавить запись»; «Открыть задачу» удалён. Иконки — накладка на конец строки через sticky-якорь нулевой ширины, при показе дата скрыта через `visibility`, геометрия строки не меняется. Строка левой части Ганта теперь `width: 100%`, название сжимается многоточием: при колонке 300 px дата и иконки больше не уезжают за разделитель. Токен `--leaf-row-menu-reserve` удалён, `ActionMenu` остаётся для записей журнала. [Спецификация](superpowers/specs/2026-10-14-row-quick-actions-design.md).
+
+Затронуто: `TaskTree.tsx`, `ControlIcon.tsx`, `strings.ts`, стили `app/planning/journal/tokens.css`; client-тесты `inline-add`, `journal-compact`, `journal-navigation`; e2e `action-menus` (новые Q01, Q03–Q05), `task-journal`, `journal-drafts`, `inline-add`, `fs-dependencies`; документы DECISIONS/UI/ACCEPTANCE и спецификация 2026-10-12 (ссылка на замену §5.2).
+
+PASS: `typecheck`, `lint`, `format:check`, production `build`. NOT RUN в песочнице агента: jsdom client-тесты (чтение `node_modules/css-tree/data` закрыто правилом `**/data`) и `test:e2e` (браузер Playwright в домашнем каталоге недоступен) — их нужно запустить владельцу локально: `npm run verify` и `npm run test:e2e`. Поведение на touch (`hover: none`) автоматически не проверяется. Kit/security checks не запускались.
+
 ## Ветки вместо worktree по умолчанию и слияние журнала в main, 2026-10-13
 
 Владелец локально влил `feat/journal-menu-ux` в `feat/task-journal-complete` (merge `cc55c28`) и перемотал локальный `main` до этого коммита; журнал задач и компактные меню теперь в локальном `main`. Push не выполнялся, `origin/main` остаётся на `90e7aa9`. Перед слиянием агент проверил: пробное слияние без конфликтов, индекс совпал с ним. Полный `verify`/`test:e2e` объединённого состояния агентом NOT RUN: Node недоступен в оболочке агента.

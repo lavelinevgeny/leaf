@@ -38,45 +38,63 @@ async function documentWidth(page: Page) {
   return page.evaluate(() => document.documentElement.scrollWidth);
 }
 
-test('U03/U04 row menu floats above rows without shifting them and stays in viewport', async ({
+// C30: row quick actions replace the row menu. Hidden actions never
+// intercept a click; shown ones overlay the date without moving the row.
+function actionsOf(row: Locator) {
+  return row.locator('.task-row-actions-inner');
+}
+async function hitsItself(button: Locator) {
+  return button.evaluate((node) => {
+    const r = node.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      r.left + r.width / 2,
+      r.top + r.height / 2,
+    );
+    return !!hit && node.contains(hit);
+  });
+}
+
+test('Q04/Q05 row quick actions overlay the date without shifting rows', async ({
   page,
   runtime,
 }) => {
   await seedJournal(page, runtime);
-  await page.setViewportSize({ width: 1280, height: 420 });
   await page.goto(runtime.origin);
   const rows = page.locator('[role="treeitem"][data-task-id]');
-  const last = rows.last();
-  await last.scrollIntoViewIfNeeded();
-  const title = last.locator('.task-title');
-  const date = last.locator('.task-date');
-  const beforeHover = await rects(title.or(date));
-  await last.hover();
-  expect(await rects(title.or(date))).toEqual(beforeHover);
-  const trigger = last.getByRole('button', { name: /^Действия задачи: / });
-  await trigger.focus();
-  expect(await rects(title.or(date))).toEqual(beforeHover);
-  const scroller = page.locator('[data-plan-scroll]');
-  const scrollTop = () => scroller.evaluate((node) => node.scrollTop);
-  const beforeScroll = await scrollTop();
+  const row = rows.first();
+  await expect(row).toBeVisible();
+  const title = row.locator('.task-title');
+  const date = row.locator('.task-date');
+  const child = row.getByRole('button', { name: /^Добавить подзадачу: / });
+  const entry = row.getByRole('button', { name: /^Добавить запись: / });
+  await page.mouse.move(0, 0);
   const before = await rects(rows);
-  await trigger.click();
-  await expect(page.getByRole('menu')).toBeVisible();
+  const text = await rects(title.or(date));
+  await expect(actionsOf(row)).toHaveCSS('opacity', '0');
+  await expect(date).toHaveCSS('visibility', 'visible');
+  expect(await hitsItself(child)).toBe(false);
+  await row.hover();
+  await expect(actionsOf(row)).toHaveCSS('opacity', '1');
+  await expect(date).toHaveCSS('visibility', 'hidden');
+  for (const button of [child, entry]) {
+    const box = (await button.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(28);
+    expect(box.height).toBeGreaterThanOrEqual(28);
+    expect(await hitsItself(button)).toBe(true);
+  }
   expect(await rects(rows)).toEqual(before);
-  expect(await scrollTop()).toBe(beforeScroll);
-  expect(await menuInViewport(page)).toEqual({
-    inside: true,
-    onTop: true,
-    side: 'above',
-  });
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('menu')).toBeHidden();
-  await expect(trigger).toBeFocused();
+  expect(await rects(title.or(date))).toEqual(text);
+  await page.mouse.move(0, 0);
+  await child.focus();
+  await expect(actionsOf(row)).toHaveCSS('opacity', '1');
+  await expect(date).toHaveCSS('visibility', 'hidden');
   expect(await rects(rows)).toEqual(before);
-  expect(await scrollTop()).toBe(beforeScroll);
+  await row.focus();
+  await expect(actionsOf(row)).toHaveCSS('opacity', '0');
+  await expect(date).toHaveCSS('visibility', 'visible');
 });
 
-test('U03 visible row trigger keeps rows exactly 38px in the main and subtask trees', async ({
+test('Q04 visible row actions keep rows exactly 38px in the main and subtask trees', async ({
   page,
   runtime,
 }) => {
@@ -85,9 +103,7 @@ test('U03 visible row trigger keeps rows exactly 38px in the main and subtask tr
   async function expectRowHeights(rows: Locator) {
     const row = rows.first();
     await row.hover();
-    await expect(
-      row.getByRole('button', { name: /^Действия задачи: / }),
-    ).toHaveCSS('opacity', '1');
+    await expect(actionsOf(row)).toHaveCSS('opacity', '1');
     const heights = (await rects(rows)).map(([, , , height]) => height);
     expect(heights.length).toBeGreaterThan(1);
     expect(heights).toEqual(heights.map(() => 38));
@@ -100,7 +116,7 @@ test('U03 visible row trigger keeps rows exactly 38px in the main and subtask tr
   await expectRowHeights(page.locator('#panel-subtasks [role="treeitem"]'));
 });
 
-test('U11/U12 row trigger is at least 28px; its menu fits 375px and 200% zoom without adding horizontal scroll', async ({
+test('Q04 row actions fit 375px and 200% zoom without adding horizontal scroll', async ({
   page,
   runtime,
 }) => {
@@ -112,17 +128,57 @@ test('U11/U12 row trigger is at least 28px; its menu fits 375px and 200% zoom wi
     await page.setViewportSize(size);
     await page.goto(runtime.origin);
     const row = page.locator('[role="treeitem"][data-task-id]').first();
-    const trigger = row.getByRole('button', { name: /^Действия задачи: / });
-    await row.hover();
-    const box = (await trigger.boundingBox())!;
-    expect(box.width).toBeGreaterThanOrEqual(28);
-    expect(box.height).toBeGreaterThanOrEqual(28);
     const width = await documentWidth(page);
-    await trigger.click();
-    expect((await menuInViewport(page)).inside).toBe(true);
+    await row.hover();
+    for (const name of [/^Добавить подзадачу: /, /^Добавить запись: /]) {
+      const button = row.getByRole('button', { name });
+      const box = (await button.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(28);
+      expect(box.height).toBeGreaterThanOrEqual(28);
+      expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+    }
     expect(await documentWidth(page)).toBe(width);
-    await page.keyboard.press('Escape');
   }
+});
+
+test('Q03 narrowed Gantt tree keeps the deepest row actions inside the column', async ({
+  page,
+  runtime,
+}) => {
+  const { deepId } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('button', { name: 'Гант', exact: true }).click();
+  const divider = page.getByRole('separator', { name: 'Ширина дерева' });
+  await divider.focus();
+  for (let step = 0; step < 10; step += 1)
+    await page.keyboard.press('ArrowLeft');
+  await expect(divider).toHaveAttribute('aria-valuenow', '300');
+  const row = page.locator(`[role="treeitem"][data-task-id="${deepId}"]`);
+  await row.hover();
+  await expect(actionsOf(row)).toHaveCSS('opacity', '1');
+  for (const name of [
+    'Добавить подзадачу: Уровень 5',
+    'Добавить запись: Уровень 5',
+  ]) {
+    const button = row.getByRole('button', { name, exact: true });
+    const inside = await button.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      const column = node.closest('.timeline-tree')!.getBoundingClientRect();
+      return box.left >= column.left && box.right <= column.right;
+    });
+    expect(inside, name).toBe(true);
+    expect(await hitsItself(button), name).toBe(true);
+  }
+  // The row fits the column, so the tree has nothing to scroll sideways.
+  expect(
+    await page
+      .locator('.timeline-tree')
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  await row
+    .getByRole('button', { name: 'Добавить подзадачу: Уровень 5', exact: true })
+    .click();
+  await expect(page.getByLabel('Новая задача', { exact: true })).toBeFocused();
 });
 
 async function seedEntries(
@@ -282,7 +338,7 @@ test('U07 feed dates align with the first toolbar action', async ({
   await expect(hint).toHaveCount(0);
 });
 
-test('U10 rows have one action trigger and create children from the menu or Shift+Enter', async ({
+test('Q01 rows offer subtask and entry actions without a row menu', async ({
   page,
   runtime,
 }) => {
@@ -292,9 +348,6 @@ test('U10 rows have one action trigger and create children from the menu or Shif
   await page.goto(runtime.origin);
   const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
   await expect(row).toBeVisible();
-  const quickChild = page.getByRole('button', {
-    name: /^Добавить подзадачу:/,
-  });
   // Every row action except the expand/collapse disclosure.
   const rowButtons = (target: Locator) =>
     target.evaluate((node) =>
@@ -302,41 +355,44 @@ test('U10 rows have one action trigger and create children from the menu or Shif
         button.getAttribute('aria-label'),
       ),
     );
+  const actions = (title: string) => [
+    `Добавить подзадачу: ${title}`,
+    `Добавить запись: ${title}`,
+  ];
   await page.getByRole('button', { name: 'Список', exact: true }).click();
-  await expect(quickChild).toHaveCount(0);
-  expect(await rowButtons(row)).toEqual(['Действия задачи: Без дат']);
+  expect(await rowButtons(row)).toEqual(actions('Без дат'));
+  await expect(
+    page.getByRole('button', { name: /^Действия задачи: / }),
+  ).toHaveCount(0);
   await row
-    .getByRole('button', { name: 'Действия задачи: Без дат', exact: true })
+    .getByRole('button', { name: 'Добавить подзадачу: Без дат', exact: true })
     .click();
-  await page.getByRole('menuitem', { name: 'Добавить подзадачу' }).click();
   await expect(page.getByLabel('Новая задача', { exact: true })).toBeFocused();
+  await expect(row).toHaveAttribute('aria-selected', 'false');
   await page.keyboard.press('Escape');
   await row.focus();
   await page.keyboard.press('Shift+Enter');
   await expect(page.getByLabel('Новая задача', { exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Гант', exact: true }).click();
-  await expect(quickChild).toHaveCount(0);
-  expect(await rowButtons(row)).toEqual(['Действия задачи: Без дат']);
+  expect(await rowButtons(row)).toEqual(actions('Без дат'));
   await row.click();
   await page.getByRole('tab', { name: 'Подзадачи', exact: true }).click();
   const subtaskRow = page
     .getByRole('tree', { name: 'Подзадачи', exact: true })
     .locator(`[data-task-id="${childId}"]`);
   await expect(subtaskRow).toBeVisible();
-  await expect(quickChild).toHaveCount(0);
-  expect(await rowButtons(subtaskRow)).toEqual(['Действия задачи: Уровень 1']);
-  await subtaskRow
-    .getByRole('button', { name: 'Действия задачи: Уровень 1', exact: true })
-    .click();
+  expect(await rowButtons(subtaskRow)).toEqual(actions('Уровень 1'));
+  await subtaskRow.hover();
   await expect(
-    page.getByRole('menuitem', { name: 'Добавить подзадачу', exact: true }),
+    subtaskRow.getByRole('button', {
+      name: 'Добавить подзадачу: Уровень 1',
+      exact: true,
+    }),
   ).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('menu')).toBeHidden();
 });
 
-test('U10 date column heading aligns with row dates beside the action trigger', async ({
+test('U10 date column heading aligns with row dates', async ({
   page,
   runtime,
 }) => {

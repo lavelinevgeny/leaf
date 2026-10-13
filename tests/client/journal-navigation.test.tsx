@@ -401,18 +401,11 @@ it.each(['main', 'subtasks'])(
     expect(server.entries).toEqual([journal5]);
   },
 );
-it('row menu keyboard opens journal without accidental selection/plan writes; project tabs accept Home/End', async () => {
+it('row journal action keyboard opens journal without accidental selection/plan writes; project tabs accept Home/End', async () => {
   mockJournalApp();
   render(<App />);
   await screen.findByRole('heading', { name: 'Демо-проект' });
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Действия задачи: Работа 1' }),
-  );
-  const menu = screen.getByRole('menu');
-  fireEvent.keyDown(menu, { key: 'ArrowDown' });
-  expect(
-    screen.getByRole('menuitem', { name: 'Добавить запись' }),
-  ).toHaveFocus();
+  screen.getByRole('button', { name: 'Добавить запись: Работа 1' }).focus();
   await userEvent.keyboard('{Enter}');
   await waitFor(() =>
     expect(screen.getByLabelText('Текст записи')).toHaveFocus(),
@@ -758,10 +751,7 @@ it('row menu journal focus waits for mounted editor even when a frame runs befor
     return 0;
   });
   await userEvent.click(
-    screen.getByRole('button', { name: 'Действия задачи: Работа 1' }),
-  );
-  await userEvent.click(
-    screen.getByRole('menuitem', { name: 'Добавить запись' }),
+    screen.getByRole('button', { name: 'Добавить запись: Работа 1' }),
   );
   const editor = await screen.findByLabelText('Текст записи');
   await waitFor(() => expect(editor).toHaveFocus());

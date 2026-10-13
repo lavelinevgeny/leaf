@@ -567,12 +567,11 @@ test('deleted task keeps own RAM draft unavailable; separate project create draf
   await page.goto(runtime.origin);
   const row = page.locator(`[role="treeitem"][data-task-id="${deepId}"]`);
   await row
-    .getByRole('button', { name: 'Действия задачи: Уровень 5', exact: true })
+    .getByRole('button', { name: 'Добавить запись: Уровень 5', exact: true })
     .focus();
   await row
-    .getByRole('button', { name: 'Действия задачи: Уровень 5', exact: true })
+    .getByRole('button', { name: 'Добавить запись: Уровень 5', exact: true })
     .press('Enter');
-  await page.getByRole('menuitem', { name: 'Добавить запись' }).click();
   const panel = page.getByRole('complementary', {
     name: 'Задача',
     exact: true,

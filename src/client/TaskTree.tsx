@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActionMenu } from './ActionMenu.js';
+import { ControlIcon } from './ControlIcon.js';
 import { draftTaskId } from './quick-add-view.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { compactDateLabel, computedDateLabel } from './gantt-view.js';
@@ -48,7 +48,6 @@ export function TaskTree({
   draftInput,
   disabled = false,
 }: Props) {
-  const [menuTask, setMenuTask] = useState<string | null>(null);
   const summaryIds = new Set(tasks.map((task) => task.parentId));
   const global = new Set(
     schedule?.analysisStatus === 'ready' ? schedule.criticalTaskIds : [],
@@ -293,38 +292,35 @@ export function TaskTree({
             >
               {compactDateLabel(task, schedule) || strings.noDate}
             </span>
-            {task.id !== draftTaskId && (
-              <ActionMenu
-                className="task-row-menu"
-                label={`Действия задачи: ${task.title}`}
-                open={menuTask === task.id}
-                onOpenChange={(open) => setMenuTask(open ? task.id : null)}
-                items={[
-                  {
-                    id: 'open',
-                    label: 'Открыть задачу',
-                    onSelect: () => onSelect(task),
-                  },
-                  ...(onJournal
-                    ? [
-                        {
-                          id: 'journal',
-                          label: 'Добавить запись',
-                          onSelect: (trigger: HTMLButtonElement) =>
-                            onJournal(task, trigger),
-                        },
-                      ]
-                    : []),
-                  {
-                    id: 'child',
-                    label: strings.addChild,
-                    disabled,
-                    separatorBefore: true,
-                    onSelect: () => onAction('child', task),
-                  },
-                ]}
-              />
-            )}
+            {/* Zero-width sticky anchor: the actions overlay the row end (and
+                its date) instead of reserving space, and stay at the visible
+                edge of a horizontally scrolled tree (C30). */}
+            <span
+              className="task-row-actions"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <span className="task-row-actions-inner">
+                <button
+                  type="button"
+                  aria-label={`${strings.addChild}: ${task.title}`}
+                  title={strings.addChildHint}
+                  disabled={disabled}
+                  onClick={() => onAction('child', task)}
+                >
+                  <ControlIcon name="subtask" />
+                </button>
+                {onJournal && (
+                  <button
+                    type="button"
+                    aria-label={`${strings.addJournalEntry}: ${task.title}`}
+                    title={strings.addJournalEntry}
+                    onClick={(event) => onJournal(task, event.currentTarget)}
+                  >
+                    <ControlIcon name="note" />
+                  </button>
+                )}
+              </span>
+            </span>
           </div>
         );
       })}

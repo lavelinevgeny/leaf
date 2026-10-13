@@ -219,28 +219,6 @@
   border-inline-start: 3px solid #ad7d37;
   padding: 0.5rem;
 }
-.task-row-menu {
-  margin-inline-end: var(--leaf-space-2);
-  position: relative;
-  flex-shrink: 0;
-}
-.task-row-menu > button {
-  opacity: 0;
-  width: var(--leaf-row-menu-size);
-  height: var(--leaf-row-menu-size);
-  margin-block: -2px;
-  padding: 0;
-}
-.task-row:hover .task-row-menu > button,
-.task-row:focus-within .task-row-menu > button,
-.task-row-menu > button[aria-expanded='true'] {
-  opacity: 1;
-}
-@media (hover: none) {
-  .task-row-menu > button {
-    opacity: 1;
-  }
-}
 .journal-header-search {
   margin: 0;
   font-size: 0;
