@@ -27,11 +27,32 @@ export function TaskJournal({
   }, [task.id, controller.active]);
   const draft = key ? controller.getDraft(key) : undefined;
   const root = useRef<HTMLDivElement>(null);
+  // Set by a successful save or clear; consumed after the next commit that
+  // renders an enabled composer, so an async save cannot outrun the focus.
+  // The draft key is stable per task, so the tick guarantees that commit.
+  const focusPending = useRef(false);
+  const [, requestFocus] = useState(0);
   useLayoutEffect(() => {
-    const editor = root.current?.querySelector<HTMLTextAreaElement>(
+    const node = root.current;
+    const editor = node?.querySelector<HTMLTextAreaElement>(
       '[data-journal-editor] textarea',
     );
-    if (editor && !editor.disabled) onEditorReady?.(editor);
+    if (!editor) return;
+    if (editor.disabled) {
+      // Blocked by the panel rather than by this save: drop the request so a
+      // stale flag cannot move focus when the composer is enabled later.
+      if (!controller.writing) focusPending.current = false;
+      return;
+    }
+    onEditorReady?.(editor);
+    if (!focusPending.current || !node) return;
+    const active = document.activeElement;
+    focusPending.current = false;
+    if (
+      !node.closest('[hidden]') &&
+      (!active || active === document.body || node.contains(active))
+    )
+      editor.focus({ preventScroll: true });
   });
   return (
     <div className="task-journal" ref={root}>
@@ -41,9 +62,13 @@ export function TaskJournal({
           draft={draft}
           controller={controller}
           disabled={disabled || !controller.active}
-          onSaved={() =>
-            setKey(controller.openCreate(task.projectId, task.id, today))
-          }
+          placeholder="Что сделали или узнали по задаче?"
+          compactIdle
+          onSaved={() => {
+            setKey(controller.openCreate(task.projectId, task.id, today));
+            focusPending.current = true;
+            requestFocus((tick) => tick + 1);
+          }}
         />
       ) : (
         <button

@@ -140,7 +140,32 @@
 .journal-editor textarea {
   resize: vertical;
   width: 100%;
-  min-height: 110px;
+  min-height: 72px;
+}
+.journal-editor-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--leaf-space-2);
+  align-items: end;
+  justify-content: space-between;
+}
+.journal-editor-footer .calendar-field {
+  flex: 0 1 150px;
+  margin-bottom: 0;
+}
+/* The actions block never shrinks below its widest button, so it wraps under
+   the date in narrow forms instead of squeezing labels onto two lines. */
+.journal-editor-footer .journal-editor-actions {
+  flex: 1 1 0;
+  min-width: min-content;
+  justify-content: flex-end;
+}
+.journal-editor-footer .journal-editor-actions > button {
+  white-space: nowrap;
+}
+.journal-editor .journal-hint {
+  margin: 0;
+  padding: 0;
 }
 .journal-editor-actions {
   display: flex;

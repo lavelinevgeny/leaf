@@ -625,3 +625,142 @@ test('empty/loading/error/load-more retry and filtered success preserve long pla
     ),
   ).toBe(true);
 });
+
+test('U08 compact composer: date and actions share a row; Ctrl+Enter save keeps focus in the empty field', async ({
+  page,
+  runtime,
+}) => {
+  await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  const editor = panel.locator('[data-journal-editor]');
+  const body = editor.getByLabel('Текст записи');
+  const save = editor.getByRole('button', {
+    name: 'Сохранить запись',
+    exact: true,
+  });
+  await expect(body).toBeEnabled();
+  await expect(save).toHaveCount(0);
+  await body.fill('Синтетическая запись Ctrl+Enter');
+  await expect(save).toBeVisible();
+  const row = await editor.evaluate((form) => {
+    const date = form
+      .querySelector('.journal-editor-footer .calendar-field')!
+      .getBoundingClientRect();
+    const actions = form
+      .querySelector('.journal-editor-actions')!
+      .getBoundingClientRect();
+    const footer = form.querySelector<HTMLElement>('.journal-editor-footer')!;
+    return {
+      overlap:
+        Math.min(date.bottom, actions.bottom) - Math.max(date.top, actions.top),
+      overflow: footer.scrollWidth > footer.clientWidth,
+    };
+  });
+  expect(row.overlap).toBeGreaterThan(0);
+  expect(row.overflow).toBe(false);
+  // Hold the save long enough for the field to be disabled across frames.
+  await page.route('**/api/projects/*/journal', async (route) => {
+    if (route.request().method() === 'POST')
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.continue();
+  });
+  await body.press('Control+Enter');
+  await expect(
+    panel.getByText('Синтетическая запись Ctrl+Enter', { exact: true }),
+  ).toBeVisible();
+  await expect(body).toBeEnabled();
+  await expect(body).toHaveValue('');
+  await expect(body).toBeFocused();
+  await expect(save).toHaveCount(0);
+  await page.unroute('**/api/projects/*/journal');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await body.fill('Узкая панель');
+  await expect(save).toBeVisible();
+  expect(
+    await editor.evaluate((form) => {
+      const footer = form.querySelector<HTMLElement>('.journal-editor-footer')!;
+      const right = form.getBoundingClientRect().right;
+      return (
+        footer.scrollWidth <= footer.clientWidth &&
+        [...footer.querySelectorAll('button, input')].every(
+          (node) => node.getBoundingClientRect().right <= right + 0.5,
+        )
+      );
+    }),
+  ).toBe(true);
+});
+
+test('task panel inline entry editor keeps footer labels on one line without overflow', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  await createJournalEntry(
+    page,
+    runtime.origin,
+    tree.project.id,
+    doneId,
+    0,
+    'Синтетическая запись для редактора',
+    '2026-10-10',
+  );
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  const card = panel.locator('[data-journal-entry-id]').first();
+  await card.getByRole('button', { name: /Действия записи/ }).click();
+  await page.getByRole('menuitem', { name: 'Редактировать запись' }).click();
+  const editor = card.locator('[data-journal-editor]');
+  await expect(
+    editor.getByRole('button', { name: 'Сохранить запись', exact: true }),
+  ).toBeVisible();
+  const measure = () =>
+    editor.evaluate((form) => {
+      const footer = form.querySelector<HTMLElement>('.journal-editor-footer')!;
+      const right = form.getBoundingClientRect().right;
+      const buttons = [...footer.querySelectorAll<HTMLElement>('button')]
+        .filter((node) => !node.closest('.calendar-field'))
+        .map((node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const lines = new Set(
+            [...range.getClientRects()].map((rect) => Math.round(rect.top)),
+          ).size;
+          return {
+            label: node.textContent,
+            lines,
+            clipped: node.scrollWidth > node.clientWidth,
+            outside: node.getBoundingClientRect().right > right + 0.5,
+          };
+        });
+      return {
+        footerOverflow: footer.scrollWidth > footer.clientWidth,
+        footerOutside: footer.getBoundingClientRect().right > right + 0.5,
+        buttons,
+      };
+    });
+  for (const width of [0, 375]) {
+    if (width) await page.setViewportSize({ width, height: 812 });
+    const result = await measure();
+    expect(result.buttons.length).toBeGreaterThanOrEqual(3);
+    expect(result.footerOverflow).toBe(false);
+    expect(result.footerOutside).toBe(false);
+    for (const button of result.buttons)
+      expect(button, String(button.label)).toEqual({
+        label: button.label,
+        lines: 1,
+        clipped: false,
+        outside: false,
+      });
+  }
+});

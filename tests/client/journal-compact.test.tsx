@@ -384,3 +384,172 @@ it('U06 reset closes an open period popover and keeps focus on the period button
     screen.getByRole('button', { name: 'Период: Все даты' }),
   ).toHaveFocus();
 });
+
+async function openTaskJournal() {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  await userEvent.click(
+    screen.getAllByRole('button', { name: 'Работа 1' })[0]!,
+  );
+  await waitFor(() =>
+    expect(document.getElementById('tab-journal')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    ),
+  );
+  return screen.getByRole('complementary', { name: 'Задача' });
+}
+
+it('U08 untouched task composer has no actions; erased text keeps only clear', async () => {
+  const panel = await openTaskJournal();
+  const body = within(panel).getByLabelText('Текст записи');
+  const save = () =>
+    within(panel).queryByRole('button', { name: 'Сохранить запись' });
+  const clear = () =>
+    within(panel).queryByRole('button', { name: 'Очистить черновик' });
+  expect(body).toHaveAttribute(
+    'placeholder',
+    'Что сделали или узнали по задаче?',
+  );
+  expect(save()).toBeNull();
+  expect(clear()).toBeNull();
+  const hint = document.getElementById(body.getAttribute('aria-describedby')!)!;
+  expect(hint).toHaveClass('sr-only');
+  expect(hint).toHaveTextContent('Нужны дата и непустой текст');
+  fireEvent.change(body, { target: { value: 'Проверил сборку' } });
+  expect(save()).toBeEnabled();
+  expect(clear()).toBeInTheDocument();
+  expect(hint).not.toHaveClass('sr-only');
+  fireEvent.change(body, { target: { value: '' } });
+  expect(save()).toBeNull();
+  expect(clear()).toBeInTheDocument();
+});
+
+it('U08 a changed date with empty text shows clear; empty or invalid date shows the hint', async () => {
+  const panel = await openTaskJournal();
+  const date = within(panel).getByLabelText('Дата записи');
+  const body = within(panel).getByLabelText('Текст записи');
+  const hint = document.getElementById(body.getAttribute('aria-describedby')!)!;
+  fireEvent.change(date, { target: { value: '01.10.2026' } });
+  expect(
+    within(panel).getByRole('button', { name: 'Очистить черновик' }),
+  ).toBeInTheDocument();
+  expect(
+    within(panel).queryByRole('button', { name: 'Сохранить запись' }),
+  ).toBeNull();
+  expect(hint).toHaveClass('sr-only');
+  fireEvent.change(date, { target: { value: '31.02.2026' } });
+  expect(hint).not.toHaveClass('sr-only');
+  fireEvent.change(date, { target: { value: '' } });
+  expect(hint).not.toHaveClass('sr-only');
+});
+
+it('U08 save and clear return focus to the text field', async () => {
+  const panel = await openTaskJournal();
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  const body = () => within(panel).getByLabelText('Текст записи');
+  fireEvent.change(body(), { target: { value: 'Проверил сборку' } });
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Сохранить запись' }),
+  );
+  await waitFor(() => expect(api.journalCreate).toHaveBeenCalledOnce());
+  await waitFor(() => expect(body()).toHaveFocus());
+  expect(body()).toHaveValue('');
+  fireEvent.change(body(), { target: { value: 'Черновик' } });
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Очистить черновик' }),
+  );
+  await waitFor(() => expect(body()).toHaveFocus());
+  expect(body()).toHaveValue('');
+});
+
+it('U08 Ctrl+Enter saves and a failed save keeps the text', async () => {
+  const panel = await openTaskJournal();
+  const body = within(panel).getByLabelText('Текст записи');
+  vi.mocked(api.journalCreate).mockRejectedValueOnce(new Error('synthetic'));
+  fireEvent.change(body, { target: { value: 'Проверил сборку' } });
+  fireEvent.keyDown(body, { key: 'Enter', ctrlKey: true });
+  await waitFor(() => expect(api.journalCreate).toHaveBeenCalledOnce());
+  await within(panel).findByRole('alert');
+  expect(body).toHaveValue('Проверил сборку');
+  expect(
+    within(panel).getByRole('button', { name: 'Сохранить запись' }),
+  ).toBeInTheDocument();
+});
+
+it('U08 Ctrl/Cmd+Enter successful save keeps focus in the empty text field', async () => {
+  const panel = await openTaskJournal();
+  const body = () => within(panel).getByLabelText('Текст записи');
+  const create = vi.mocked(api.journalCreate);
+  const original = create.getMockImplementation()!;
+  // Browsers ignore focus() on a disabled field; jsdom does not.
+  const focus = HTMLElement.prototype.focus;
+  vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (
+    this: HTMLElement,
+    options?: FocusOptions,
+  ) {
+    if (!(this instanceof HTMLTextAreaElement && this.disabled))
+      focus.call(this, options);
+  });
+  for (const [index, modifier] of (['ctrlKey', 'metaKey'] as const).entries()) {
+    const held = deferred<void>();
+    create.mockImplementationOnce(async (...args) => {
+      await held.promise;
+      const saved = await original(...args);
+      if (saved.kind === 'saved')
+        saved.entry.id = `55555555-5555-4555-8555-00000000000${index}`;
+      return saved;
+    });
+    body().focus();
+    fireEvent.change(body(), { target: { value: `Запись ${modifier}` } });
+    // A browser drops focus to <body> once the field is disabled during the
+    // save; jsdom keeps it there, so leave the field before submitting.
+    body().blur();
+    fireEvent.keyDown(body(), { key: 'Enter', [modifier]: true });
+    await waitFor(() => expect(body()).toBeDisabled());
+    expect(document.body).toHaveFocus();
+    // Worst-case ordering: the next animation frame runs before React commits
+    // the saved state, while the text field is still disabled.
+    const frame = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        callback(performance.now());
+        return 0;
+      });
+    await act(async () => held.resolve());
+    await within(panel).findByText(`Запись ${modifier}`);
+    frame.mockRestore();
+    await waitFor(() => expect(body()).toHaveFocus());
+    expect(body()).toHaveValue('');
+    expect(body()).toBeEnabled();
+    expect(
+      within(panel).queryByRole('button', { name: 'Сохранить запись' }),
+    ).toBeNull();
+  }
+  expect(create).toHaveBeenCalledTimes(2);
+});
+
+it('U08 the edit editor always shows save and close', async () => {
+  mockJournalApp();
+  render(<App />);
+  await openProjectJournal();
+  const feed = document.querySelector<HTMLElement>(
+    '[data-journal-feed="project"]',
+  )!;
+  await userEvent.click(
+    within(feed).getByRole('button', { name: 'Действия записи 2024-02-29' }),
+  );
+  await userEvent.click(
+    screen.getByRole('menuitem', { name: 'Редактировать запись' }),
+  );
+  fireEvent.change(within(feed).getByLabelText('Текст записи'), {
+    target: { value: '' },
+  });
+  expect(
+    within(feed).getByRole('button', { name: 'Сохранить запись' }),
+  ).toBeInTheDocument();
+  expect(
+    within(feed).getByRole('button', { name: 'Закрыть редактор' }),
+  ).toBeInTheDocument();
+});
