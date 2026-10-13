@@ -117,7 +117,6 @@ export const strings = {
   resetSchedule: 'Сбросить',
   confirmSchedule: 'Готово',
   cancelTaskInput: 'Отменить ввод задачи',
-  addChildShort: '+ Подзадача',
   checkSchedule: 'Проверьте сроки',
   draftSchedulePreview: 'Предварительный просмотр сроков',
   notSaved: 'Не сохранено',

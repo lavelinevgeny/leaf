@@ -18,6 +18,13 @@
   --leaf-today: #b98405;
   --leaf-radius: 8px;
   --leaf-row-height: 38px;
+  --leaf-row-gap: 10px;
+  --leaf-row-menu-size: 28px;
+  /* Inline space a tree row spends after its date column on the action menu
+     trigger (row gap + trigger + trigger margin); column headings reserve it. */
+  --leaf-row-menu-reserve: calc(
+    var(--leaf-row-gap) + var(--leaf-row-menu-size) + var(--leaf-space-2)
+  );
   --leaf-sidebar-width: 224px;
   --leaf-task-panel-width: 380px;
   --leaf-space-1: 4px;

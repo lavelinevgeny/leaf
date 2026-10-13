@@ -41,8 +41,8 @@ interface Props {
   onBack: () => void;
   collapsed: ReadonlySet<string>;
   onToggle: (id: string) => void;
-  onSelect: (task: Task) => void;
-  onAction: (action: TreeAction, task: Task) => void;
+  onSelect: (task: Task) => boolean | void;
+  onAction: (action: TreeAction, task: Task) => boolean | void;
   onMove: (task: Task, parentId: string | null) => void;
   onSave: (
     changes: Extract<Command, { type: 'task.edit' }>['changes'],
@@ -58,7 +58,8 @@ interface Props {
   subtaskInput?: ReactNode;
   journalContent?: ReactNode;
   journalTitle?: string | undefined;
-  onJournal?: ((task: Task, trigger: HTMLElement) => void) | undefined;
+  onJournal?:
+    ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
 }
 export function TaskPanel({
   task,

@@ -50,7 +50,7 @@ it('performs project create, task read, edit and single-entry delete through the
   await userEvent.click(
     screen.getByRole('button', { name: 'Добавить запись' }),
   );
-  const dialog = screen.getByRole('dialog', { name: 'Новая запись журнала' });
+  const dialog = screen.getByRole('region', { name: 'Новая запись журнала' });
   await userEvent.click(
     within(dialog).getByRole('button', { name: 'Выбрать задачу' }),
   );
@@ -62,7 +62,9 @@ it('performs project create, task read, edit and single-entry delete through the
     within(dialog).getByRole('button', { name: 'Сохранить запись' }),
   );
   await waitFor(() =>
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    expect(
+      screen.queryByRole('region', { name: 'Новая запись журнала' }),
+    ).not.toBeInTheDocument(),
   );
   expect(api.journalCreate).toHaveBeenCalledOnce();
   expect(vi.mocked(api.journalCreate).mock.calls[0]?.[1].body).toBe(
@@ -116,7 +118,7 @@ it('performs project create, task read, edit and single-entry delete through the
   await waitFor(() => expect(api.journalDelete).toHaveBeenCalledOnce());
   expect(api.command).not.toHaveBeenCalled();
 });
-it('modal Escape preserves its draft, restores trigger and inline body styles; period validation does not query', async () => {
+it('composer Escape preserves its draft, restores trigger and leaves inline body styles untouched; period validation does not query', async () => {
   mockJournalApp();
   document.body.style.overflow = 'auto';
   document.body.style.paddingRight = '3px';
@@ -127,6 +129,7 @@ it('modal Escape preserves its draft, restores trigger and inline body styles; p
   fireEvent.change(screen.getByLabelText('Текст записи'), {
     target: { value: 'Modal draft' },
   });
+  expect(document.body.style.overflow).toBe('auto');
   fireEvent.keyDown(screen.getByLabelText('Текст записи'), { key: 'Escape' });
   await waitFor(() => expect(add).toHaveFocus());
   expect(document.body.style.overflow).toBe('auto');
@@ -134,7 +137,9 @@ it('modal Escape preserves its draft, restores trigger and inline body styles; p
   await userEvent.click(add);
   expect(screen.getByLabelText('Текст записи')).toHaveValue('Modal draft');
   fireEvent.keyDown(screen.getByLabelText('Текст записи'), { key: 'Escape' });
-  await userEvent.click(screen.getByRole('button', { name: 'Период' }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Период: Все даты' }),
+  );
   fireEvent.change(screen.getByLabelText('С даты'), {
     target: { value: '2024-03-10' },
   });
@@ -378,7 +383,7 @@ it('project empty task set disables add with explanation', async () => {
     screen.getByRole('button', { name: 'Добавить запись' }),
   ).toBeDisabled();
 });
-it('modal trap and clear confirmation preserve draft on Cancel and require no plan command', async () => {
+it('project composer clear confirmation preserves draft on Cancel and requires no plan command', async () => {
   mockJournalApp();
   vi.spyOn(window, 'confirm').mockReturnValue(false);
   render(<App />);
@@ -386,18 +391,13 @@ it('modal trap and clear confirmation preserve draft on Cancel and require no pl
   await userEvent.click(
     screen.getByRole('button', { name: 'Добавить запись' }),
   );
-  const dialog = screen.getByRole('dialog');
-  const first = within(dialog).getByRole('button', { name: 'Выбрать задачу' }),
-    last = within(dialog).getByRole('button', { name: 'Очистить черновик' });
-  first.focus();
-  fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
-  expect(last).toHaveFocus();
-  fireEvent.keyDown(last, { key: 'Tab' });
-  expect(first).toHaveFocus();
+  const dialog = screen.getByRole('region', { name: 'Новая запись журнала' });
   fireEvent.change(screen.getByLabelText('Текст записи'), {
     target: { value: 'Keep text' },
   });
-  await userEvent.click(last);
+  await userEvent.click(
+    within(dialog).getByRole('button', { name: 'Очистить черновик' }),
+  );
   expect(window.confirm).toHaveBeenCalledWith('Очистить черновик записи?');
   expect(screen.getByLabelText('Текст записи')).toHaveValue('Keep text');
   const unload = new Event('beforeunload', { cancelable: true });
@@ -406,7 +406,7 @@ it('modal trap and clear confirmation preserve draft on Cancel and require no pl
   expect(api.command).not.toHaveBeenCalled();
 });
 import { ApiError } from '../../src/client/api.js';
-it('exact retry of a project modal save releases the modal scroll lock and returns add focus', async () => {
+it('exact retry of a project composer save leaves body styles untouched and returns add focus', async () => {
   mockJournalApp();
   vi.mocked(api.journalCreate).mockRejectedValueOnce(
     new ApiError('NETWORK_ERROR', 'offline', null, true),
@@ -428,7 +428,9 @@ it('exact retry of a project modal save releases the modal scroll lock and retur
     await screen.findByRole('button', { name: 'Повторить сохранение' }),
   );
   await waitFor(() =>
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    expect(
+      screen.queryByRole('region', { name: 'Новая запись журнала' }),
+    ).not.toBeInTheDocument(),
   );
   expect(document.body.style.overflow).toBe('auto');
   await waitFor(() => expect(add).toHaveFocus());
@@ -438,14 +440,14 @@ it('exact retry of a project modal save releases the modal scroll lock and retur
 });
 import type { JournalMutation } from '../../src/shared/journal-contracts.js';
 import { deferred } from './journal-fixtures.js';
-it.each(['modal', 'inline', 'orphan'] as const)(
+it.each(['composer', 'inline', 'orphan'] as const)(
   'round1 pending %s editor cannot close and hide its only retry control',
   async (kind) => {
     const server = mockJournalApp();
     render(<App />);
     await openProjectJournal();
     const add = screen.getByRole('button', { name: 'Добавить запись' });
-    if (kind === 'modal') {
+    if (kind === 'composer') {
       vi.mocked(api.journalCreate).mockRejectedValueOnce(
         new ApiError('NETWORK_ERROR', 'offline', null, true),
       );
@@ -497,9 +499,11 @@ it.each(['modal', 'inline', 'orphan'] as const)(
         screen.queryByRole('button', { name: 'Повторить сохранение' }),
       ).not.toBeInTheDocument(),
     );
-    if (kind === 'modal') {
+    if (kind === 'composer') {
       await waitFor(() =>
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+        expect(
+          screen.queryByRole('region', { name: 'Новая запись журнала' }),
+        ).not.toBeInTheDocument(),
       );
       expect(document.body.style.overflow).not.toBe('hidden');
     }
@@ -542,7 +546,7 @@ import { ProjectJournal } from '../../src/client/ProjectJournal.js';
 import { TaskJournal } from '../../src/client/TaskJournal.js';
 import type { JournalContext } from '../../src/client/use-journal.js';
 import { tree0 } from './journal-fixtures.js';
-it.each(['modal', 'inline', 'task'] as const)(
+it.each(['composer', 'inline', 'task'] as const)(
   'round1 %s editor recovers exact retry after inactive unmount and reentry',
   async (kind) => {
     mockJournalApp();
@@ -578,7 +582,7 @@ it.each(['modal', 'inline', 'task'] as const)(
     });
     const view = render(<Harness context={context} />);
     await screen.findByText('Original synthetic text');
-    if (kind === 'modal') {
+    if (kind === 'composer') {
       await userEvent.click(
         screen.getByRole('button', { name: 'Добавить запись' }),
       );
@@ -630,7 +634,7 @@ it.each(['modal', 'inline', 'task'] as const)(
     );
   },
 );
-it('round1 filter superseded successful modal save releases its scroll lock without an obsolete completion focus', async () => {
+it('round1 filter superseded successful composer save leaves body styles untouched without an obsolete completion focus', async () => {
   mockJournalApp();
   const late = deferred<JournalMutation>();
   vi.mocked(api.journalCreate).mockReturnValueOnce(late.promise);
@@ -684,29 +688,35 @@ it('round1 filter superseded successful modal save releases its scroll lock with
     }),
   );
   await waitFor(() =>
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    expect(
+      screen.queryByRole('region', { name: 'Новая запись журнала' }),
+    ).not.toBeInTheDocument(),
   );
   expect(document.body.style.overflow).toBe('auto');
   expect(currentFocus).toHaveFocus();
   await userEvent.click(
     screen.getByRole('button', { name: 'Добавить запись' }),
   );
-  expect(screen.getByRole('dialog')).toBeVisible();
+  expect(
+    screen.getByRole('region', { name: 'Новая запись журнала' }),
+  ).toBeVisible();
   fireEvent.keyDown(screen.getByLabelText('Текст записи'), { key: 'Escape' });
   await waitFor(() =>
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    expect(
+      screen.queryByRole('region', { name: 'Новая запись журнала' }),
+    ).not.toBeInTheDocument(),
   );
 });
 
 it.each([false, true])(
-  'successful modal save waits for its enabled trigger and respects later focus=%s',
+  'successful composer save waits for its enabled trigger and respects later focus=%s',
   async (laterFocus) => {
     const server = mockJournalApp();
     render(<App />);
     await openProjectJournal();
     const add = screen.getByRole('button', { name: 'Добавить запись' });
     await userEvent.click(add);
-    const dialog = screen.getByRole('dialog', { name: 'Новая запись журнала' });
+    const dialog = screen.getByRole('region', { name: 'Новая запись журнала' });
     await userEvent.click(
       within(dialog).getByRole('button', { name: 'Выбрать задачу' }),
     );

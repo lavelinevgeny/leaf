@@ -7,8 +7,7 @@ import type {
   JournalPosition,
 } from './journal-state.js';
 import { JournalEditor, JournalConflict } from './JournalEditor.js';
-export const journalUndoCopy =
-  'Записи редактируются и удаляются отдельно; отмена в шапке относится к плану';
+import { ActionMenu } from './ActionMenu.js';
 export function JournalFeed({
   state,
   controller,
@@ -38,18 +37,6 @@ export function JournalFeed({
   });
   const [menu, setMenu] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!menu) return;
-    const close = (event: PointerEvent) => {
-      if (
-        !(event.target instanceof Element) ||
-        !event.target.closest('[role=menu], [data-journal-menu]')
-      )
-        setMenu(null);
-    };
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [menu]);
   // Hidden DOM has zero rectangles and may clamp scroll while a refreshed page
   // replaces loaded rows. Keep the last actual visible position independently.
   const lastVisible = useRef<JournalPosition | null>(null);
@@ -90,8 +77,12 @@ export function JournalFeed({
       if (root.current?.closest('[hidden]')) return;
       restoration.current = null;
     };
+    const focusin = (event: FocusEvent) => {
+      // Programmatic focus on the feed itself (dismissed menu) is not navigation.
+      if (event.target !== root.current) cancel();
+    };
     document.addEventListener('pointerdown', cancel);
-    document.addEventListener('focusin', cancel);
+    document.addEventListener('focusin', focusin);
     const node = root.current;
     node?.addEventListener('wheel', cancel);
     const keyboard = (event: KeyboardEvent) => {
@@ -105,7 +96,7 @@ export function JournalFeed({
     node?.addEventListener('keydown', keyboard);
     return () => {
       document.removeEventListener('pointerdown', cancel);
-      document.removeEventListener('focusin', cancel);
+      document.removeEventListener('focusin', focusin);
       node?.removeEventListener('wheel', cancel);
       node?.removeEventListener('keydown', keyboard);
     };
@@ -193,6 +184,28 @@ export function JournalFeed({
       root.current
         ?.querySelector<HTMLButtonElement>(`[data-journal-menu="${id}"]`)
         ?.focus();
+    });
+  };
+  const focusInEntry = (id: string, selector: string) => {
+    const owned = document.activeElement;
+    requestAnimationFrame(() => {
+      // Same guards as restoreMenu: a hidden feed or a later focus choice wins.
+      if (
+        root.current?.closest('[hidden]') ||
+        (document.activeElement !== owned &&
+          document.activeElement !== document.body)
+      )
+        return;
+      // A silently refused action leaves no target: keep focus on the trigger,
+      // or on the feed itself when the trigger is disabled.
+      const trigger = root.current?.querySelector<HTMLButtonElement>(
+        `[data-journal-menu="${id}"]`,
+      );
+      (
+        root.current?.querySelector<HTMLElement>(
+          `[data-journal-entry-id="${id}"] ${selector}`,
+        ) ?? (trigger && !trigger.disabled ? trigger : root.current)
+      )?.focus({ preventScroll: true });
     });
   };
   return (
@@ -305,81 +318,48 @@ export function JournalFeed({
                     {task?.title ?? 'Загрузка задачи…'}
                   </button>
                 )}
-                <button
-                  type="button"
-                  data-journal-menu={entry.id}
-                  aria-label={`Действия записи ${entry.workDate}`}
-                  aria-haspopup="menu"
-                  aria-expanded={menu === entry.id}
+                <ActionMenu
+                  className="journal-entry-menu"
+                  label={`Действия записи ${entry.workDate}`}
+                  open={menu === entry.id}
+                  onOpenChange={(open) => setMenu(open ? entry.id : null)}
                   disabled={!coherent || blocked}
-                  onClick={() => setMenu(menu === entry.id ? null : entry.id)}
-                >
-                  ⋯
-                </button>
+                  triggerData={{ 'data-journal-menu': entry.id }}
+                  items={[
+                    {
+                      id: 'edit',
+                      label: 'Редактировать запись',
+                      onSelect: () => {
+                        const key = controller.openEdit(
+                          entry,
+                          state.page!.journalRevision,
+                        );
+                        if (!key) return false;
+                        setEditing(key);
+                        focusInEntry(
+                          entry.id,
+                          '[data-journal-editor] textarea',
+                        );
+                      },
+                    },
+                    {
+                      id: 'delete',
+                      label: 'Удалить запись',
+                      tone: 'danger',
+                      separatorBefore: true,
+                      onSelect: () => {
+                        // Same refusal as the disabled trigger: no write in flight.
+                        if (blocked) return false;
+                        controller.askDelete(
+                          entry,
+                          state.page!.journalRevision,
+                        );
+                        focusInEntry(entry.id, '[data-journal-cancel-delete]');
+                      },
+                    },
+                  ]}
+                />
               </header>
-              {menu === entry.id && (
-                <div
-                  role="menu"
-                  aria-label="Действия записи"
-                  onKeyDown={(event) => {
-                    event.stopPropagation();
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      restoreMenu(entry.id);
-                    }
-                    if (
-                      ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(
-                        event.key,
-                      )
-                    ) {
-                      event.preventDefault();
-                      const buttons = [
-                        ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                          'button',
-                        ),
-                      ];
-                      const index = buttons.indexOf(
-                        document.activeElement as HTMLButtonElement,
-                      );
-                      buttons[
-                        event.key === 'Home'
-                          ? 0
-                          : event.key === 'End'
-                            ? buttons.length - 1
-                            : (index +
-                                (event.key === 'ArrowDown'
-                                  ? 1
-                                  : buttons.length - 1)) %
-                              buttons.length
-                      ]?.focus();
-                    }
-                  }}
-                >
-                  <button
-                    role="menuitem"
-                    type="button"
-                    autoFocus
-                    onClick={() => {
-                      setEditing(
-                        controller.openEdit(entry, state.page!.journalRevision),
-                      );
-                      setMenu(null);
-                    }}
-                  >
-                    Редактировать запись
-                  </button>
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => {
-                      controller.askDelete(entry, state.page!.journalRevision);
-                      setMenu(null);
-                    }}
-                  >
-                    Удалить запись
-                  </button>
-                </div>
-              )}
               {draft?.entryId === entry.id ? (
                 <JournalEditor
                   draft={draft}
@@ -416,6 +396,7 @@ export function JournalFeed({
                     </button>
                     <button
                       type="button"
+                      data-journal-cancel-delete
                       disabled={blocked}
                       onClick={() => {
                         controller.cancelDelete();

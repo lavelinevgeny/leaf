@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ActionMenu } from './ActionMenu.js';
 import { draftTaskId } from './quick-add-view.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { compactDateLabel, computedDateLabel } from './gantt-view.js';
@@ -12,9 +13,10 @@ interface Props {
   selectedId: string | null;
   collapsed: ReadonlySet<string>;
   onToggle: (id: string) => void;
-  onSelect: (task: Task) => void;
-  onAction: (action: TreeAction, task: Task) => void;
-  onJournal?: ((task: Task, trigger: HTMLElement) => void) | undefined;
+  onSelect: (task: Task) => boolean | void;
+  onAction: (action: TreeAction, task: Task) => boolean | void;
+  onJournal?:
+    ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
   rootId?: string;
   label?: string;
   rows?: ReturnType<typeof treeRows>;
@@ -47,18 +49,6 @@ export function TaskTree({
   disabled = false,
 }: Props) {
   const [menuTask, setMenuTask] = useState<string | null>(null);
-  useEffect(() => {
-    if (!menuTask) return;
-    const close = (event: PointerEvent) => {
-      if (
-        !(event.target instanceof Element) ||
-        !event.target.closest('.task-row-menu')
-      )
-        setMenuTask(null);
-    };
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [menuTask]);
   const summaryIds = new Set(tasks.map((task) => task.parentId));
   const global = new Set(
     schedule?.analysisStatus === 'ready' ? schedule.criticalTaskIds : [],
@@ -303,114 +293,38 @@ export function TaskTree({
             >
               {compactDateLabel(task, schedule) || strings.noDate}
             </span>
-            {onJournal && task.id !== draftTaskId && (
-              <div
+            {task.id !== draftTaskId && (
+              <ActionMenu
                 className="task-row-menu"
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => {
-                  event.stopPropagation();
-                  if (event.key === 'Escape') {
-                    event.preventDefault();
-                    setMenuTask(null);
-                    event.currentTarget
-                      .querySelector<HTMLButtonElement>('[aria-haspopup]')
-                      ?.focus();
-                  }
-                  if (
-                    menuTask === task.id &&
-                    ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)
-                  ) {
-                    event.preventDefault();
-                    const items = [
-                      ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                        '[role="menuitem"]',
-                      ),
-                    ];
-                    const i = items.indexOf(
-                      document.activeElement as HTMLButtonElement,
-                    );
-                    items[
-                      event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? items.length - 1
-                          : (i +
-                              (event.key === 'ArrowDown'
-                                ? 1
-                                : items.length - 1)) %
-                            items.length
-                    ]?.focus();
-                  }
-                }}
-              >
-                <button
-                  type="button"
-                  aria-label={`Действия задачи: ${task.title}`}
-                  aria-haspopup="menu"
-                  aria-expanded={menuTask === task.id}
-                  onClick={() =>
-                    setMenuTask(menuTask === task.id ? null : task.id)
-                  }
-                >
-                  ⋯
-                </button>
-                {menuTask === task.id && (
-                  <div
-                    role="menu"
-                    aria-label={`Действия задачи: ${task.title}`}
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      autoFocus
-                      onClick={() => {
-                        setMenuTask(null);
-                        onSelect(task);
-                      }}
-                    >
-                      Открыть задачу
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={(event) => {
-                        const trigger = event.currentTarget
-                          .closest('.task-row-menu')
-                          ?.querySelector<HTMLButtonElement>('[aria-haspopup]');
-                        setMenuTask(null);
-                        if (trigger) onJournal(task, trigger);
-                      }}
-                    >
-                      Добавить запись
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={disabled}
-                      onClick={() => {
-                        setMenuTask(null);
-                        onAction('child', task);
-                      }}
-                    >
-                      Добавить подзадачу
-                    </button>
-                  </div>
-                )}
-              </div>
+                label={`Действия задачи: ${task.title}`}
+                open={menuTask === task.id}
+                onOpenChange={(open) => setMenuTask(open ? task.id : null)}
+                items={[
+                  {
+                    id: 'open',
+                    label: 'Открыть задачу',
+                    onSelect: () => onSelect(task),
+                  },
+                  ...(onJournal
+                    ? [
+                        {
+                          id: 'journal',
+                          label: 'Добавить запись',
+                          onSelect: (trigger: HTMLButtonElement) =>
+                            onJournal(task, trigger),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'child',
+                    label: strings.addChild,
+                    disabled,
+                    separatorBefore: true,
+                    onSelect: () => onAction('child', task),
+                  },
+                ]}
+              />
             )}
-            <button
-              type="button"
-              className="add-child"
-              disabled={disabled}
-              aria-label={`${strings.addChild}: ${task.title}`}
-              title={`${strings.addChild} · Shift+Enter`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onAction('child', task);
-              }}
-            >
-              {strings.addChildShort}
-            </button>
           </div>
         );
       })}

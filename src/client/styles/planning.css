@@ -66,6 +66,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
+  /* Align the date heading with row dates, which end before the row menu. */
+  padding-inline-end: calc(12px + var(--leaf-row-menu-reserve));
   font-size: 12px;
   color: #59675f;
   border-bottom: 1px solid var(--leaf-border);
@@ -624,18 +626,6 @@
 
 .task-row {
   position: relative;
-}
-.add-child {
-  display: none;
-  position: absolute;
-  right: 8px;
-  padding: 3px 7px;
-  font-size: 11px;
-  background: white;
-}
-.task-row:hover .add-child,
-.task-row:focus-within .add-child {
-  display: block;
 }
 .quick-draft-row {
   height: 38px;

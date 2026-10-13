@@ -85,9 +85,7 @@ test('real task create, project edit/date/delete, plain text, independent plan a
   await entryCard(page, id)
     .getByRole('button', { name: /Действия записи/ })
     .click();
-  await entryCard(page, id)
-    .getByRole('menuitem', { name: 'Удалить запись' })
-    .click();
+  await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
   await entryCard(page, id)
     .getByRole('button', { name: 'Отмена удаления' })
     .click();
@@ -97,9 +95,7 @@ test('real task create, project edit/date/delete, plain text, independent plan a
   await entryCard(page, id)
     .getByRole('button', { name: /Действия записи/ })
     .click();
-  await entryCard(page, id)
-    .getByRole('menuitem', { name: 'Удалить запись' })
-    .click();
+  await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
   await entryCard(page, id)
     .getByRole('button', { name: 'Подтвердить удаление записи' })
     .click();
@@ -172,7 +168,7 @@ test('125 records, inclusive dates, Russian/title/literal search, boundary pagin
   ).toBeVisible();
   await page.getByLabel('Поиск записей', { exact: true }).fill('');
   await projectFeed(page)
-    .getByRole('button', { name: 'Период', exact: true })
+    .getByRole('button', { name: 'Период: Все даты', exact: true })
     .click();
   await page.getByLabel('С даты', { exact: true }).fill('2026-10-10');
   await page.getByLabel('По дату', { exact: true }).fill('2026-10-10');
@@ -216,7 +212,7 @@ test('125 records, inclusive dates, Russian/title/literal search, boundary pagin
   await expect(projectFeed(page).getByText('Записей пока нет')).toBeVisible();
 });
 
-test('native modal on long scrolled feed preserves geometry, focus and successful prepend anchor', async ({
+test('inline composer on long scrolled feed preserves anchor geometry, focus and successful prepend anchor', async ({
   page,
   runtime,
 }) => {
@@ -244,22 +240,27 @@ test('native modal on long scrolled feed preserves geometry, focus and successfu
   ).toBeGreaterThan(0);
   const before = await journalGeometry(page);
   expect(before.id).toBeTruthy();
+  const pick = (g: Awaited<ReturnType<typeof journalGeometry>>) => ({
+    id: g.id,
+    offset: g.offset,
+    left: g.left,
+    cardX: g.cardX,
+    cardWidth: g.cardWidth,
+    controlsX: g.controlsX,
+    controlsY: g.controlsY,
+    controlsWidth: g.controlsWidth,
+    headerY: g.headerY,
+    headerHeight: g.headerHeight,
+  });
   const add = projectFeed(page).getByRole('button', {
     name: 'Добавить запись',
     exact: true,
   });
   for (const close of ['Escape', 'cancel']) {
     await add.click();
-    const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+    const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
     await expect(dialog).toBeVisible();
-    expect(await dialog.evaluate((n) => n.matches(':modal'))).toBe(true);
-    expect(await journalGeometry(page)).toEqual(before);
-    const last = dialog.getByRole('button', { name: 'Очистить черновик' });
-    await last.focus();
-    await page.keyboard.press('Tab');
-    expect(
-      await dialog.evaluate((n) => n.contains(document.activeElement)),
-    ).toBe(true);
+    expect(pick(await journalGeometry(page))).toEqual(pick(before));
     if (close === 'Escape') await page.keyboard.press('Escape');
     else await dialog.getByRole('button', { name: 'Закрыть редактор' }).click();
     await expect(dialog).toBeHidden();
@@ -267,8 +268,24 @@ test('native modal on long scrolled feed preserves geometry, focus and successfu
     expect(await journalGeometry(page)).toEqual(before);
   }
   await add.click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
-  await chooseTask(dialog, 'Этап P');
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
+  await expect(dialog).toBeVisible();
+  expect(pick(await journalGeometry(page))).toEqual(pick(before));
+  // With the task picker open the composer does not scroll inside itself:
+  // the text field and the date stay visible next to the results list.
+  await dialog
+    .getByRole('button', { name: 'Выбрать задачу', exact: true })
+    .click();
+  await expect(dialog.getByRole('listbox')).toBeVisible();
+  expect(
+    await dialog.evaluate((node) => node.scrollHeight - node.clientHeight),
+  ).toBeLessThanOrEqual(0);
+  await expect(dialog.getByLabel('Текст записи')).toBeInViewport({ ratio: 1 });
+  await expect(
+    dialog.getByLabel('Дата записи', { exact: true }),
+  ).toBeInViewport({ ratio: 1 });
+  await dialog.getByRole('combobox', { name: 'Поиск задачи' }).fill('Этап P');
+  await dialog.getByRole('option').last().click();
   await dialog.getByLabel('Дата записи', { exact: true }).fill('2026-10-12');
   await dialog.getByLabel('Текст записи').fill('Новая запись сверху');
   await dialog.getByRole('button', { name: 'Сохранить запись' }).click();
@@ -285,6 +302,68 @@ test('native modal on long scrolled feed preserves geometry, focus and successfu
     body: 'Новая запись сверху',
     workDate: '2026-10-12',
   });
+});
+
+test('open composer with task picker keeps the project feed on screen at 375x812 and 1280x800', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, summaryId } = await seedJournal(page, runtime);
+  for (let index = 0; index < 12; index++)
+    await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      summaryId,
+      index,
+      `Запись ${index}`,
+      '2026-10-09',
+    );
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await openProjectJournal(page, runtime.origin);
+    await projectFeed(page)
+      .getByRole('button', { name: 'Добавить запись', exact: true })
+      .click();
+    const composer = page.getByRole('region', {
+      name: 'Новая запись журнала',
+    });
+    await composer
+      .getByRole('button', { name: 'Выбрать задачу', exact: true })
+      .click();
+    await expect(composer.getByRole('listbox')).toBeVisible();
+    // Spec §5.7: the feed never collapses under the open composer and the
+    // journal pane itself does not overflow (no second outer scroll).
+    const geometry = await projectFeed(page).evaluate((node) => {
+      const journal = node.querySelector<HTMLElement>('.project-journal')!;
+      const feed = node.querySelector<HTMLElement>('[data-journal-scroll]')!;
+      return {
+        feedHeight: feed.clientHeight,
+        feedTop: feed.getBoundingClientRect().top,
+        innerHeight,
+        overflow: journal.scrollHeight - journal.clientHeight,
+      };
+    });
+    expect(
+      geometry.feedHeight,
+      JSON.stringify(viewport),
+    ).toBeGreaterThanOrEqual(96);
+    expect(geometry.feedTop + 96).toBeLessThanOrEqual(geometry.innerHeight);
+    expect(geometry.overflow).toBeLessThanOrEqual(1);
+    await expect(
+      composer.getByRole('combobox', { name: 'Поиск задачи' }),
+    ).toBeInViewport({ ratio: 1 });
+    // Desktop height fits both: the composer does not scroll inside itself.
+    if (viewport.width === 1280)
+      expect(
+        await composer.evaluate(
+          (node) => node.scrollHeight - node.clientHeight,
+        ),
+      ).toBeLessThanOrEqual(0);
+  }
 });
 
 test('nested row menu, keyboard tabs and picker include done/summary/undated duplicate paths without plan actions', async ({
@@ -366,7 +445,7 @@ test('nested row menu, keyboard tabs and picker include done/summary/undated dup
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
   await dialog
     .getByRole('button', { name: 'Выбрать задачу', exact: true })
     .click();
@@ -475,40 +554,43 @@ test('branch deletion and plan undo restore exact journal rows while surviving l
   await expect(entryCard(page, branch.entry.id)).toBeVisible();
 });
 
-test('row journal menu has an independent pointer hit target beside quick child action', async ({
+test('row action trigger has its own pointer hit target', async ({
   page,
   runtime,
 }) => {
   const { summaryId, deepId } = await seedJournal(page, runtime);
   await page.goto(runtime.origin);
-  for (const id of [summaryId, deepId]) {
-    const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
-    const menu = row.locator('.task-row-menu > button');
-    await menu.focus();
-    const geometry = await row.evaluate((node) => {
-      const menu = node.querySelector('.task-row-menu > button')!;
-      const a = menu.getBoundingClientRect();
-      const b = node.querySelector('.add-child')!.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        a.x + a.width / 2,
-        a.y + a.height / 2,
-      );
-      return {
-        overlap:
-          Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
-          Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top),
-        hitMenu: hit === menu || menu.contains(hit),
-        width: a.width,
-        height: a.height,
-      };
-    });
-    expect(geometry.width).toBeGreaterThan(0);
-    expect(geometry.height).toBeGreaterThan(0);
-    expect(geometry.overlap).toBe(false);
-    expect(geometry.hitMenu).toBe(true);
-    await menu.click();
-    await expect(row.getByRole('menu')).toBeVisible();
-    await page.keyboard.press('Escape');
+  for (const view of ['Список', 'Гант']) {
+    await page.getByRole('button', { name: view, exact: true }).click();
+    for (const id of [summaryId, deepId]) {
+      const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
+      const menu = row.locator('.task-row-menu > button');
+      await menu.focus();
+      const geometry = await row.evaluate((node) => {
+        const menu = node.querySelector('.task-row-menu > button')!;
+        const a = menu.getBoundingClientRect();
+        const date = node.querySelector('.task-date')!.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          a.x + a.width / 2,
+          a.y + a.height / 2,
+        );
+        return {
+          hitMenu: hit === menu || menu.contains(hit),
+          width: a.width,
+          height: a.height,
+          left: a.left,
+          dateRight: date.right,
+        };
+      });
+      expect(geometry.width).toBeGreaterThan(0);
+      expect(geometry.height).toBeGreaterThan(0);
+      expect(geometry.hitMenu).toBe(true);
+      // The trigger sits after the date column and never covers it.
+      expect(geometry.left).toBeGreaterThanOrEqual(geometry.dateRight);
+      await menu.click();
+      await expect(page.getByRole('menu')).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
   }
 });
 
@@ -523,7 +605,7 @@ test('empty/loading/error/load-more retry and filtered success preserve long pla
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
   await chooseTask(dialog, 'Этап P');
   await dialog.getByLabel('Текст записи').fill('Сохранено вне поиска');
   await dialog.getByRole('button', { name: 'Сохранить запись' }).click();
@@ -628,4 +710,143 @@ test('empty/loading/error/load-more retry and filtered success preserve long pla
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test('U08 compact composer: date and actions share a row; Ctrl+Enter save keeps focus in the empty field', async ({
+  page,
+  runtime,
+}) => {
+  await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  const editor = panel.locator('[data-journal-editor]');
+  const body = editor.getByLabel('Текст записи');
+  const save = editor.getByRole('button', {
+    name: 'Сохранить запись',
+    exact: true,
+  });
+  await expect(body).toBeEnabled();
+  await expect(save).toHaveCount(0);
+  await body.fill('Синтетическая запись Ctrl+Enter');
+  await expect(save).toBeVisible();
+  const row = await editor.evaluate((form) => {
+    const date = form
+      .querySelector('.journal-editor-footer .calendar-field')!
+      .getBoundingClientRect();
+    const actions = form
+      .querySelector('.journal-editor-actions')!
+      .getBoundingClientRect();
+    const footer = form.querySelector<HTMLElement>('.journal-editor-footer')!;
+    return {
+      overlap:
+        Math.min(date.bottom, actions.bottom) - Math.max(date.top, actions.top),
+      overflow: footer.scrollWidth > footer.clientWidth,
+    };
+  });
+  expect(row.overlap).toBeGreaterThan(0);
+  expect(row.overflow).toBe(false);
+  // Hold the save long enough for the field to be disabled across frames.
+  await page.route('**/api/projects/*/journal', async (route) => {
+    if (route.request().method() === 'POST')
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.continue();
+  });
+  await body.press('Control+Enter');
+  await expect(
+    panel.getByText('Синтетическая запись Ctrl+Enter', { exact: true }),
+  ).toBeVisible();
+  await expect(body).toBeEnabled();
+  await expect(body).toHaveValue('');
+  await expect(body).toBeFocused();
+  await expect(save).toHaveCount(0);
+  await page.unroute('**/api/projects/*/journal');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await body.fill('Узкая панель');
+  await expect(save).toBeVisible();
+  expect(
+    await editor.evaluate((form) => {
+      const footer = form.querySelector<HTMLElement>('.journal-editor-footer')!;
+      const right = form.getBoundingClientRect().right;
+      return (
+        footer.scrollWidth <= footer.clientWidth &&
+        [...footer.querySelectorAll('button, input')].every(
+          (node) => node.getBoundingClientRect().right <= right + 0.5,
+        )
+      );
+    }),
+  ).toBe(true);
+});
+
+test('task panel inline entry editor keeps footer labels on one line without overflow', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  await createJournalEntry(
+    page,
+    runtime.origin,
+    tree.project.id,
+    doneId,
+    0,
+    'Синтетическая запись для редактора',
+    '2026-10-10',
+  );
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  const card = panel.locator('[data-journal-entry-id]').first();
+  await card.getByRole('button', { name: /Действия записи/ }).click();
+  await page.getByRole('menuitem', { name: 'Редактировать запись' }).click();
+  const editor = card.locator('[data-journal-editor]');
+  await expect(
+    editor.getByRole('button', { name: 'Сохранить запись', exact: true }),
+  ).toBeVisible();
+  const measure = () =>
+    editor.evaluate((form) => {
+      const footer = form.querySelector<HTMLElement>('.journal-editor-footer')!;
+      const right = form.getBoundingClientRect().right;
+      const buttons = [...footer.querySelectorAll<HTMLElement>('button')]
+        .filter((node) => !node.closest('.calendar-field'))
+        .map((node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const lines = new Set(
+            [...range.getClientRects()].map((rect) => Math.round(rect.top)),
+          ).size;
+          return {
+            label: node.textContent,
+            lines,
+            clipped: node.scrollWidth > node.clientWidth,
+            outside: node.getBoundingClientRect().right > right + 0.5,
+          };
+        });
+      return {
+        footerOverflow: footer.scrollWidth > footer.clientWidth,
+        footerOutside: footer.getBoundingClientRect().right > right + 0.5,
+        buttons,
+      };
+    });
+  for (const width of [0, 375]) {
+    if (width) await page.setViewportSize({ width, height: 812 });
+    const result = await measure();
+    expect(result.buttons.length).toBeGreaterThanOrEqual(3);
+    expect(result.footerOverflow).toBe(false);
+    expect(result.footerOutside).toBe(false);
+    for (const button of result.buttons)
+      expect(button, String(button.label)).toEqual({
+        label: button.label,
+        lines: 1,
+        clipped: false,
+        outside: false,
+      });
+  }
 });

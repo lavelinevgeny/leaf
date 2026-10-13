@@ -312,7 +312,7 @@ test('second client metadata rename/move/create keeps dirty planning baseline an
     await projectFeed(page)
       .getByRole('button', { name: 'Добавить запись', exact: true })
       .click();
-    const modal = page.getByRole('dialog', { name: 'Новая запись журнала' });
+    const modal = page.getByRole('region', { name: 'Новая запись журнала' });
     await modal
       .getByRole('button', { name: 'Выбрать задачу', exact: true })
       .click();

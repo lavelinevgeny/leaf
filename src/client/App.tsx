@@ -346,8 +346,9 @@ export function App() {
         },
   );
   const journalLocked = journal.writing || !!journal.pending;
-  function openTaskJournal(task: Task, trigger: HTMLElement) {
-    if (journalLocked || (selected?.id !== task.id && !canNavigate())) return;
+  function openTaskJournal(task: Task, trigger: HTMLElement): boolean {
+    if (journalLocked || (selected?.id !== task.id && !canNavigate()))
+      return false;
     journalOrigin.current = trigger;
     panelOrigin.current = task.id;
     setSelected(task);
@@ -358,6 +359,7 @@ export function App() {
       taskId: task.id,
       token: ++journalFocus.current,
     };
+    return true;
   }
   function changeProjectView(view: ProjectView) {
     if (journalLocked) return;
@@ -854,13 +856,16 @@ export function App() {
       },
     ));
   }
-  function selectTask(task: Task) {
-    if (!canNavigate()) return;
+  // false: refused, or the reused panel will not take focus (focus returns to the trigger).
+  function selectTask(task: Task): boolean {
+    if (!canNavigate()) return false;
+    const reselect = selected?.id === task.id;
     setSelected(task);
     setPanelTab('details');
     setPanelHistory([]);
     panelOrigin.current = task.id;
     setContext({ parentId: task.parentId, afterId: task.id });
+    return !reselect;
   }
   function closePanel() {
     if (!canNavigate()) return;
@@ -884,8 +889,8 @@ export function App() {
     )
       document.getElementById('quick-task')?.focus();
   }
-  function selectSubtask(task: Task) {
-    if (!canNavigate()) return;
+  function selectSubtask(task: Task): boolean {
+    if (!canNavigate()) return false;
     if (selected)
       setPanelHistory((previous) => [
         ...previous,
@@ -893,6 +898,7 @@ export function App() {
       ]);
     setSelected(task);
     setPanelTab('details');
+    return true;
   }
   function selectNeighbor(task: Task) {
     if (!canNavigate()) return;
@@ -972,8 +978,8 @@ export function App() {
       });
     }
   }
-  function action(value: TreeAction, task: Task) {
-    if (!canNavigate()) return;
+  function action(value: TreeAction, task: Task): boolean | void {
+    if (!canNavigate()) return false;
     if (value === 'sibling' || value === 'child') {
       quickOrigin.current = task.id;
       setQuickEditing(true);
@@ -1616,7 +1622,7 @@ export function App() {
   );
   if (subtaskAfter && subtaskAfter.parentId === subtaskContext.parentId)
     subtaskContext.afterId = subtaskAfter.id;
-  function subtaskAction(value: TreeAction, task: Task) {
+  function subtaskAction(value: TreeAction, task: Task): boolean | void {
     const parentId = value === 'child' ? task.id : task.parentId;
     if (
       panelTab === 'subtasks' &&
@@ -1624,7 +1630,7 @@ export function App() {
       parentId &&
       subtaskIds.has(parentId)
     ) {
-      if (!canNavigate()) return;
+      if (!canNavigate()) return false;
       updateQuick(subtaskKey, (draft) => ({
         ...draft,
         context: {
@@ -1633,7 +1639,7 @@ export function App() {
         },
       }));
       document.getElementById('quick-subtask')?.focus();
-    } else action(value, task);
+    } else return action(value, task);
   }
   return (
     <div

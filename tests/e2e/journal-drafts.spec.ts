@@ -143,7 +143,7 @@ test('delete confirmation5 remains pinned after background6; fresh confirmation 
   await openProjectJournal(page, runtime.origin);
   const card = entryCard(page, entryId);
   await card.getByRole('button', { name: /Действия записи/ }).click();
-  await card.getByRole('menuitem', { name: 'Удалить запись' }).click();
+  await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
   const context = await browser.newContext();
   try {
     const remote = await context.newPage();
@@ -181,7 +181,7 @@ test('delete confirmation5 remains pinned after background6; fresh confirmation 
     ).toBe(true);
     await card.getByRole('button', { name: 'Отмена удаления' }).click();
     await card.getByRole('button', { name: /Действия записи/ }).click();
-    await card.getByRole('menuitem', { name: 'Удалить запись' }).click();
+    await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
     await card
       .getByRole('button', { name: 'Подтвердить удаление записи' })
       .click();
@@ -246,7 +246,7 @@ for (const method of ['POST', 'PATCH', 'DELETE'] as const) {
       await projectFeed(page)
         .getByRole('button', { name: 'Добавить запись', exact: true })
         .click();
-      const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+      const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
       await chooseTask(dialog, 'Этап P');
       await dialog.getByLabel('Текст записи').fill('Точный потерянный ответ');
       await dialog.getByRole('button', { name: 'Сохранить запись' }).click();
@@ -258,9 +258,7 @@ for (const method of ['POST', 'PATCH', 'DELETE'] as const) {
       await entryCard(page, entryId)
         .getByRole('button', { name: /Действия записи/ })
         .click();
-      await entryCard(page, entryId)
-        .getByRole('menuitem', { name: 'Удалить запись' })
-        .click();
+      await page.getByRole('menuitem', { name: 'Удалить запись' }).click();
       await entryCard(page, entryId)
         .getByRole('button', { name: 'Подтвердить удаление записи' })
         .click();
@@ -352,7 +350,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
   await expect(dialog.getByLabel('Текст записи')).toHaveValue('');
   await chooseTask(dialog, 'Работа A');
   await dialog.getByLabel('Текст записи').fill('Отдельный modal черновик');
@@ -446,7 +444,7 @@ test('literal Moscow day across UTC/browser timezone boundaries keeps touched/di
     await projectFeed(page)
       .getByRole('button', { name: 'Добавить запись', exact: true })
       .click();
-    const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+    const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
     await expect(dialog.getByLabel('Дата записи', { exact: true })).toHaveValue(
       '09.10.2026',
     );
@@ -516,7 +514,7 @@ test('expired real session clears private RAM and denies journal URL before reau
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
   await page
-    .getByRole('dialog')
+    .getByRole('region', { name: 'Новая запись журнала' })
     .getByLabel('Текст записи')
     .fill('Удаляемый приватный черновик');
   await page.keyboard.press('Escape');
@@ -548,9 +546,11 @@ test('expired real session clears private RAM and denies journal URL before reau
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  await expect(page.getByRole('dialog').getByLabel('Текст записи')).toHaveValue(
-    '',
-  );
+  await expect(
+    page
+      .getByRole('region', { name: 'Новая запись журнала' })
+      .getByLabel('Текст записи'),
+  ).toHaveValue('');
 });
 
 test('deleted task keeps own RAM draft unavailable; separate project create draft stays isolated on Back', async ({
@@ -572,7 +572,7 @@ test('deleted task keeps own RAM draft unavailable; separate project create draf
   await row
     .getByRole('button', { name: 'Действия задачи: Уровень 5', exact: true })
     .press('Enter');
-  await row.getByRole('menuitem', { name: 'Добавить запись' }).click();
+  await page.getByRole('menuitem', { name: 'Добавить запись' }).click();
   const panel = page.getByRole('complementary', {
     name: 'Задача',
     exact: true,
@@ -600,7 +600,7 @@ test('deleted task keeps own RAM draft unavailable; separate project create draf
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Новая запись журнала' });
+  const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
   await dialog.getByLabel('Текст записи').fill('Только первый проект');
   await page.keyboard.press('Escape');
   await page

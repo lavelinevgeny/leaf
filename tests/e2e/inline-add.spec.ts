@@ -98,8 +98,9 @@ test('inline child draft, schedule presets, keyboard, conditional bars and atomi
     ).toHaveCount(0);
     await parent.hover();
     await parent
-      .getByRole('button', { name: 'Добавить подзадачу: Этап P' })
+      .getByRole('button', { name: 'Действия задачи: Этап P', exact: true })
       .click();
+    await page.getByRole('menuitem', { name: 'Добавить подзадачу' }).click();
     await input.fill('Отменённый черновик');
     await quick.getByRole('button', { name: 'Отменить ввод задачи' }).click();
     await expect(parent).toBeFocused();
