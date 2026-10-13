@@ -50,6 +50,32 @@ git add -- .gitleaks.toml
 
 Отсутствующая, конфликтующая или symlink-конфигурация в index блокирует проверку. Незастейдженные правила не подменяют правила публикации. Workspace scan использует отдельный снимок рабочей конфигурации, чтобы проверить ещё не подготовленные к коммиту файлы. Снимки создаются вне checkout с ограниченными правами и удаляются после успеха, находки или ошибки scanner.
 
+## Node и Gitleaks для Claude Code
+
+Общий `.claude/settings.json` закрывает песочнице Claude весь домашний каталог. Если Node установлен через nvm, а Gitleaks через `go install`, они лежат в home. Тогда команды Claude и запускаемые ими Git hooks их не находят (`node: not found`), коммит отменяется, проверки не запускаются. Пути конкретной машины нельзя записывать в общий файл, поэтому исключение настраивается в личном `.claude/settings.local.json`: Git его игнорирует, а Claude не может его изменить. Codex это не требуется: `agent:codex` вычисляет пути инструментов сам.
+
+Владелец один раз запускает из корня checkout в обычном терминале, с тем Node, который требует `.nvmrc`:
+
+```sh
+node - <<'EOF'
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), { execSync } = require('node:child_process');
+const file = '.claude/settings.local.json';
+const nodeBin = path.dirname(fs.realpathSync(process.execPath));
+const gitleaksBin = path.dirname(fs.realpathSync(execSync('command -v gitleaks', { shell: '/bin/sh', encoding: 'utf8' }).trim()));
+const home = os.homedir() + path.sep;
+const settings = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+const filesystem = ((settings.sandbox ??= {}).filesystem ??= {});
+const reads = new Set(filesystem.allowRead ?? []);
+for (const dir of [path.dirname(nodeBin), gitleaksBin]) if (dir.startsWith(home)) reads.add(dir);
+filesystem.allowRead = [...reads];
+settings.env = { ...settings.env, PATH: [...new Set([nodeBin, gitleaksBin, '/usr/local/bin', '/usr/bin', '/bin'])].join(':') };
+fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+console.log(`allowRead: ${filesystem.allowRead.join(', ')}\nPATH: ${settings.env.PATH}`);
+EOF
+```
+
+Скрипт сохраняет существующие ключи файла и открывает на чтение только каталог установки Node (вместе с npm) и каталог Gitleaks, если они внутри home; остальной home остаётся закрытым. Каталог внутри `.local` может по-прежнему перекрываться запретом `**/.local`; надёжнее установить Gitleaks в `/usr/local/bin`. После запуска перезапустить сессию Claude Code. Агент проверяет `command -v node gitleaks` и `npm run doctor`. `git commit` и `git push` по-прежнему требуют подтверждения владельца. Workspace guard сообщает о `.claude/settings.local.json` как LOCAL_AGENT_FILE — это известный FAIL owner-checkout `preflight`; gate публикации — ordinary clean clone.
+
 ## Единый локальный preflight
 
 ```sh
