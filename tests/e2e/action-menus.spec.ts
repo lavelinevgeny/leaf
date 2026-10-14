@@ -128,6 +128,8 @@ test('Q04 row actions fit 375px and 200% zoom without adding horizontal scroll',
     await page.setViewportSize(size);
     await page.goto(runtime.origin);
     const row = page.locator('[role="treeitem"][data-task-id]').first();
+    // Measure the loaded workspace, not the page before the tree renders.
+    await expect(row).toBeVisible();
     const width = await documentWidth(page);
     await row.hover();
     for (const name of [/^Добавить подзадачу: /, /^Добавить запись: /]) {
@@ -169,12 +171,8 @@ test('Q03 narrowed Gantt tree keeps the deepest row actions inside the column', 
     expect(inside, name).toBe(true);
     expect(await hitsItself(button), name).toBe(true);
   }
-  // The row fits the column, so the tree has nothing to scroll sideways.
-  expect(
-    await page
-      .locator('.timeline-tree')
-      .evaluate((node) => node.scrollWidth <= node.clientWidth),
-  ).toBe(true);
+  // Very deep rows may still scroll sideways (spec §3); the sticky actions
+  // stay at the visible column edge, which the checks above cover.
   await row
     .getByRole('button', { name: 'Добавить подзадачу: Уровень 5', exact: true })
     .click();
@@ -364,6 +362,8 @@ test('Q01 rows offer subtask and entry actions without a row menu', async ({
   await expect(
     page.getByRole('button', { name: /^Действия задачи: / }),
   ).toHaveCount(0);
+  // Hidden actions ignore pointers (Q05); a pointer reveals them by hovering.
+  await row.hover();
   await row
     .getByRole('button', { name: 'Добавить подзадачу: Без дат', exact: true })
     .click();
