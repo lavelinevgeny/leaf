@@ -26,7 +26,7 @@ const draftOf = (task: Task): Draft => ({
   description: task.description,
   status: task.status,
 });
-export type PanelTab = 'details' | 'subtasks' | 'dependencies';
+export type PanelTab = 'details' | 'subtasks' | 'dependencies' | 'journal';
 interface Props {
   task: Task;
   removed: boolean;
@@ -41,8 +41,8 @@ interface Props {
   onBack: () => void;
   collapsed: ReadonlySet<string>;
   onToggle: (id: string) => void;
-  onSelect: (task: Task) => void;
-  onAction: (action: TreeAction, task: Task) => void;
+  onSelect: (task: Task) => boolean | void;
+  onAction: (action: TreeAction, task: Task) => boolean | void;
   onMove: (task: Task, parentId: string | null) => void;
   onSave: (
     changes: Extract<Command, { type: 'task.edit' }>['changes'],
@@ -56,6 +56,10 @@ interface Props {
   locked: boolean;
   feedback: ReactNode;
   subtaskInput?: ReactNode;
+  journalContent?: ReactNode;
+  journalTitle?: string | undefined;
+  onJournal?:
+    ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
 }
 export function TaskPanel({
   task,
@@ -84,7 +88,11 @@ export function TaskPanel({
   locked,
   feedback,
   subtaskInput,
+  journalContent,
+  journalTitle,
+  onJournal,
 }: Props) {
+  const keyboardTabChange = useRef(false);
   const [draft, setDraft] = useState<Draft>(() => draftOf(task));
   const [baseline, setBaseline] = useState<Draft>(() => draftOf(task));
   const [plan, setPlan] = useState<SourceFields>(() => sourceOf(task));
@@ -243,7 +251,11 @@ export function TaskPanel({
             ←
           </button>
         )}
-        <h2>{task.title}</h2>
+        <h2>
+          {tab === 'journal'
+            ? (journalTitle ?? 'Загрузка задачи…')
+            : task.title}
+        </h2>
         <button
           type="button"
           aria-label={strings.close}
@@ -254,38 +266,60 @@ export function TaskPanel({
         </button>
       </header>
       <div className="panel-tabs" role="tablist" aria-label={strings.task}>
-        {(['details', 'subtasks', 'dependencies'] as const).map((value) => (
-          <button
-            type="button"
-            key={value}
-            role="tab"
-            id={`tab-${value}`}
-            aria-controls={`panel-${value}`}
-            aria-selected={tab === value}
-            tabIndex={tab === value ? 0 : -1}
-            onClick={() => onTab(value)}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                event.preventDefault();
-                const tabs = ['details', 'subtasks', 'dependencies'] as const;
-                const next =
-                  tabs[
-                    (tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : 2)) %
-                      3
-                  ]!;
-                onTab(next);
-                document.getElementById(`tab-${next}`)?.focus();
-              }
-            }}
-          >
-            {strings[value]}
-          </button>
-        ))}
+        {(['details', 'subtasks', 'dependencies', 'journal'] as const).map(
+          (value) => (
+            <button
+              type="button"
+              key={value}
+              role="tab"
+              id={`tab-${value}`}
+              aria-controls={`panel-${value}`}
+              aria-selected={tab === value}
+              tabIndex={tab === value ? 0 : -1}
+              onClick={() => {
+                keyboardTabChange.current = false;
+                onTab(value);
+              }}
+              onKeyDown={(event) => {
+                if (
+                  ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
+                ) {
+                  event.preventDefault();
+                  const tabs = [
+                    'details',
+                    'subtasks',
+                    'dependencies',
+                    'journal',
+                  ] as const;
+                  const next =
+                    tabs[
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? 3
+                          : (tabs.indexOf(tab) +
+                              (event.key === 'ArrowRight' ? 1 : 3)) %
+                            4
+                    ]!;
+                  keyboardTabChange.current = true;
+                  onTab(next);
+                  document.getElementById(`tab-${next}`)?.focus();
+                }
+              }}
+            >
+              {strings[value]}
+            </button>
+          ),
+        )}
       </div>
       <div className="panel-content">
         {feedback}
         {removed && <p role="status">{strings.taskRemoved}</p>}
-        {tab === 'details' ? (
+        {tab === 'journal' ? (
+          <div role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
+            {journalContent}
+          </div>
+        ) : tab === 'details' ? (
           <div role="tabpanel" id="panel-details" aria-labelledby="tab-details">
             <form
               onSubmit={(event) => {
@@ -297,7 +331,7 @@ export function TaskPanel({
                 <label>
                   {strings.title}
                   <input
-                    autoFocus
+                    autoFocus={!keyboardTabChange.current}
                     value={draft.title}
                     maxLength={300}
                     onChange={(event) => update('title', event.target.value)}
@@ -479,6 +513,7 @@ export function TaskPanel({
                 onToggle={onToggle}
                 onSelect={onSelect}
                 onAction={onAction}
+                onJournal={onJournal}
                 label={strings.subtasks}
                 schedule={tree.schedule}
                 quickInputId="quick-subtask"

@@ -76,7 +76,11 @@ test('cancels duration choice before navigating through a held real project GET'
     expect((await readTree(page, runtime.origin, otherId)).tasks).toEqual([]);
   } finally {
     release();
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -138,6 +142,10 @@ test('cancels stale duration choice when a background command changes the revisi
     });
     expect(mutations).toBe(2);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });

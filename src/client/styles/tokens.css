@@ -18,6 +18,8 @@
   --leaf-today: #b98405;
   --leaf-radius: 8px;
   --leaf-row-height: 38px;
+  --leaf-row-gap: 10px;
+  --leaf-row-action-size: 28px;
   --leaf-sidebar-width: 224px;
   --leaf-task-panel-width: 380px;
   --leaf-space-1: 4px;

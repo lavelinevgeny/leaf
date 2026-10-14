@@ -75,15 +75,19 @@
   height: var(--plan-row-height);
   min-height: var(--plan-row-height);
   padding-block: 0;
+  /* Rows follow the column width so a narrowed tree shortens titles instead
+     of pushing the date and row actions behind the Gantt divider (C30). */
+  width: 100%;
 }
 .timeline-tree .task-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 100px;
+  min-width: 0;
   max-width: 230px;
 }
 .timeline-tree .task-date {
+  flex-shrink: 0;
   padding-left: 4px;
   font-size: 11px;
 }
@@ -625,18 +629,6 @@
 .task-row {
   position: relative;
 }
-.add-child {
-  display: none;
-  position: absolute;
-  right: 8px;
-  padding: 3px 7px;
-  font-size: 11px;
-  background: white;
-}
-.task-row:hover .add-child,
-.task-row:focus-within .add-child {
-  display: block;
-}
 .quick-draft-row {
   height: 38px;
   border-bottom: 1px solid var(--leaf-border);
@@ -905,4 +897,13 @@
 }
 .task-panel .quick-line .quick-submit {
   grid-column: 2 / 4;
+}
+
+/* Keep the mounted timeline state while the journal occupies its workspace. */
+.task-view-container,
+.project-journal-container {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }

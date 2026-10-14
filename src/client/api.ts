@@ -1,4 +1,14 @@
 import {
+  journalPageSchema,
+  journalEntryReadSchema,
+  journalMutationSchema,
+  type JournalProjectQuery,
+  type JournalTaskQuery,
+  type JournalCreate,
+  type JournalUpdate,
+  type JournalDelete,
+} from '../shared/journal-contracts.js';
+import {
   errorSchema,
   projectSchema,
   projectTreeSchema,
@@ -81,7 +91,38 @@ async function request<T>(
     clearTimeout(timer);
   }
 }
+function journalQuery(query: JournalProjectQuery | JournalTaskQuery) {
+  const fields = new URLSearchParams();
+  for (const [key, value] of Object.entries(query))
+    if (value !== undefined) fields.set(key, String(value));
+  return fields.size ? `?${fields}` : '';
+}
 export const api = {
+  journalProject: (id: string, query: JournalProjectQuery) =>
+    request(`/projects/${id}/journal${journalQuery(query)}`, journalPageSchema),
+  journalTask: (id: string, taskId: string, query: JournalTaskQuery) =>
+    request(
+      `/projects/${id}/tasks/${taskId}/journal${journalQuery(query)}`,
+      journalPageSchema,
+    ),
+  journalEntry: (id: string, entryId: string) =>
+    request(`/projects/${id}/journal/${entryId}`, journalEntryReadSchema),
+  journalCreate: (id: string, input: JournalCreate) =>
+    request(`/projects/${id}/journal`, journalMutationSchema, 'POST', input),
+  journalUpdate: (id: string, entryId: string, input: JournalUpdate) =>
+    request(
+      `/projects/${id}/journal/${entryId}`,
+      journalMutationSchema,
+      'PATCH',
+      input,
+    ),
+  journalDelete: (id: string, entryId: string, input: JournalDelete) =>
+    request(
+      `/projects/${id}/journal/${entryId}`,
+      journalMutationSchema,
+      'DELETE',
+      input,
+    ),
   replayLegacy: (
     id: string,
     originalBody: unknown,

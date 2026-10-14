@@ -11,12 +11,16 @@ import { commandEnvelopeV2Schema } from '../../src/shared/contracts.js';
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });
@@ -144,7 +148,7 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
   );
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   expect((await undoReply).status()).toBe(200);
   const undone = await readTree(page, runtime.origin, projectId);
@@ -357,7 +361,7 @@ test('deep update and presentation actions preserve authoritative analysis and k
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
   );
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .focus();
   await page.keyboard.press('Enter');
   expect((await undone).status()).toBe(200);
@@ -366,7 +370,7 @@ test('deep update and presentation actions preserve authoritative analysis and k
   expect(restored.schedule).toEqual(before.schedule);
   await expect(
     page.getByRole('button', {
-      name: 'Отменить последнее изменение',
+      name: 'Отменить изменение плана',
       exact: true,
     }),
   ).toBeFocused();
@@ -650,7 +654,7 @@ test('F03 tight and non-tight edges distinguish global and partial criticality a
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
   );
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   expect((await undo).status()).toBe(200);
   const restored = await readTree(page, runtime.origin, tree.project.id);
@@ -764,7 +768,7 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
   );
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   expect((await undo).status()).toBe(200);
   const restored = await readTree(page, runtime.origin, p10.project.id);
@@ -772,11 +776,12 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
   expect(restored.schedule).toEqual(p10.schedule);
 });
 
-for (const focusDuringResponse of [false, true])
+for (const focusDuringResponse of ['none', 'control', 'blur'] as const)
   test(
     'one-step undo ' +
-      (focusDuringResponse
-        ? 'preserves another control focus'
+      (focusDuringResponse !== 'none'
+        ? 'preserves another control focus' +
+          (focusDuringResponse === 'blur' ? ' after blur' : '')
         : 'falls back to quick input when originating undo becomes disabled'),
     async ({ page, runtime }) => {
       const login = await page.request.post(
@@ -808,7 +813,7 @@ for (const focusDuringResponse of [false, true])
       expect(tree.canUndo).toBe(true);
       await page.goto(runtime.origin);
       const undo = page.getByRole('button', {
-        name: 'Отменить последнее изменение',
+        name: 'Отменить изменение плана',
         exact: true,
       });
       await expect(undo).toBeEnabled();
@@ -839,9 +844,11 @@ for (const focusDuringResponse of [false, true])
           name: 'Сегодня',
           exact: true,
         });
-        if (focusDuringResponse) {
+        if (focusDuringResponse !== 'none') {
           await other.focus();
           await expect(other).toBeFocused();
+          if (focusDuringResponse === 'blur')
+            await other.evaluate((element) => (element as HTMLElement).blur());
         }
         const response = page.waitForResponse(
           (r) =>
@@ -857,7 +864,12 @@ for (const focusDuringResponse of [false, true])
         expect(current.canUndo).toBe(false);
         expect(current.tasks).toEqual([]);
         await expect(undo).toBeDisabled();
-        if (focusDuringResponse) await expect(other).toBeFocused();
+        if (focusDuringResponse === 'control')
+          await expect(other).toBeFocused();
+        else if (focusDuringResponse === 'blur')
+          expect(
+            await page.evaluate(() => document.activeElement === document.body),
+          ).toBe(true);
         else
           await expect(
             page.getByLabel('Новая задача', { exact: true }),

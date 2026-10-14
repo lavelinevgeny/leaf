@@ -12,12 +12,16 @@ import type { ProjectTree } from '../../src/shared/contracts.js';
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });
@@ -257,7 +261,7 @@ test('Details relation-only save adopts canonical weekday dates, clean baseline 
   });
   await page.keyboard.press('Escape');
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(page.locator('[data-gantt-edge]')).toHaveCount(0);
   const restored = await readTree(page, runtime.origin, tree.project.id);
@@ -320,7 +324,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   ).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(page.locator('.gantt-edge')).toHaveCount(0);
   const restored = await readTree(page, runtime.origin, tree.project.id);
@@ -328,7 +332,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   expect(restored.dependencies).toEqual(tree.dependencies);
 });
 
-test('tree rows expose child creation without a chain in list and Gantt views', async ({
+test('tree rows show the row action trigger without a chain in list, Gantt and subtask views', async ({
   page,
   runtime,
 }) => {
@@ -343,12 +347,10 @@ test('tree rows expose child creation without a chain in list and Gantt views', 
     await expect(
       taskRow.getByRole('button', { name: /^После окончания:/ }),
     ).toHaveCount(0);
-    await expect(
-      taskRow.getByRole('button', {
-        name: 'Добавить подзадачу: B',
-        exact: true,
-      }),
-    ).toHaveCSS('opacity', '1');
+    await expect(taskRow.locator('.task-row-actions-inner')).toHaveCSS(
+      'opacity',
+      '1',
+    );
     await taskRow.focus();
     await taskRow.press('Alt+l');
     await expect(picker(page)).toHaveCount(0);
@@ -370,12 +372,10 @@ test('tree rows expose child creation without a chain in list and Gantt views', 
   await expect(
     subtaskRow.getByRole('button', { name: /^После окончания:/ }),
   ).toHaveCount(0);
-  await expect(
-    subtaskRow.getByRole('button', {
-      name: 'Добавить подзадачу: B',
-      exact: true,
-    }),
-  ).toHaveCSS('opacity', '1');
+  await expect(subtaskRow.locator('.task-row-actions-inner')).toHaveCSS(
+    'opacity',
+    '1',
+  );
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
 });
 
@@ -559,7 +559,7 @@ test('saved FS from a completed task to an undated subtask stays visible after r
     current,
   );
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(edge).toHaveCount(0);
   const restored = await readTree(page, runtime.origin, tree.project.id);
@@ -1156,7 +1156,7 @@ test('parent critical branch changes in one edit and exact undo survives restart
     path: `/tmp/leaf-fs-${info.project.name}-critical.png`,
   });
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   await expect(page.locator('.gantt-work.critical')).toHaveCount(4);
   await expect(page.locator('.gantt-edge.critical')).toHaveCount(2);

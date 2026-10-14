@@ -42,13 +42,28 @@ export type GanttReveal = {
   sequence: number;
   focusStart?: boolean;
 };
+export type TimelineViewState = {
+  scale: Scale;
+  start: string;
+  width: number;
+  filteredCollapse: { key: string; ids: string[] };
+  scrollTop: number;
+  scrollLeft: number;
+};
+export type TimelineRestoreRequest = { state: TimelineViewState };
 interface Props {
+  active?: boolean;
+  onJournal?:
+    ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
+  onViewState?: (state: TimelineViewState) => void;
+  restoreRequest?: TimelineRestoreRequest | undefined;
+  onRestoreApplied?: (request: TimelineRestoreRequest) => void;
   tree: ProjectTree;
   selectedId: string | null;
   collapsed: ReadonlySet<string>;
   onToggle: (id: string) => void;
-  onSelect: (task: Task) => void;
-  onAction: (action: TreeAction, task: Task) => void;
+  onSelect: (task: Task) => boolean | void;
+  onAction: (action: TreeAction, task: Task) => boolean | void;
   onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onPlan: (task: Task, kind: PlanGestureKind, target: string) => void;
   disabled: boolean;
@@ -66,7 +81,12 @@ interface Props {
   };
 }
 export function TaskTimeline({
+  active = true,
   tree,
+  onJournal,
+  onViewState,
+  restoreRequest,
+  onRestoreApplied,
   selectedId,
   collapsed,
   onToggle,
@@ -93,6 +113,7 @@ export function TaskTimeline({
     ids: new Set<string>(),
   });
   useEffect(() => {
+    if (restoreRequest?.state.filteredCollapse.key === filterKey) return;
     setFilteredCollapse({ key: filterKey, ids: new Set<string>() });
   }, [filterKey]);
   const filteredIds =
@@ -145,14 +166,58 @@ export function TaskTimeline({
   const horizontal = useRef<HTMLDivElement>(null);
   const vertical = useRef<HTMLDivElement>(null);
   const horizontalOffset = useRef(0);
+  const consumedRestore = useRef<TimelineRestoreRequest | undefined>(undefined);
+  const viewCallback = useRef(onViewState);
+  viewCallback.current = onViewState;
+  function captureView() {
+    if (!active) return;
+    viewCallback.current?.({
+      scale,
+      start,
+      width,
+      filteredCollapse: {
+        key: filteredCollapse.key,
+        ids: [...filteredCollapse.ids],
+      },
+      scrollTop: vertical.current?.scrollTop ?? 0,
+      scrollLeft: horizontal.current?.scrollLeft ?? horizontalOffset.current,
+    });
+  }
   useLayoutEffect(() => {
+    if (
+      !active ||
+      !restoreRequest ||
+      consumedRestore.current === restoreRequest
+    )
+      return;
+    consumedRestore.current = restoreRequest;
+    const restoreViewState = restoreRequest.state;
+    setScale(restoreViewState.scale);
+    setStart(restoreViewState.start);
+    setWidth(restoreViewState.width);
+    setFilteredCollapse({
+      key: restoreViewState.filteredCollapse.key,
+      ids: new Set(restoreViewState.filteredCollapse.ids),
+    });
+    horizontalOffset.current = restoreViewState.scrollLeft;
+    if (vertical.current)
+      vertical.current.scrollTop = restoreViewState.scrollTop;
+    if (horizontal.current)
+      horizontal.current.scrollLeft = restoreViewState.scrollLeft;
+    onRestoreApplied?.(restoreRequest);
+  }, [restoreRequest, active, onRestoreApplied]);
+  useLayoutEffect(() => {
+    captureView();
+  }, [active, scale, start, width, filteredCollapse]);
+  useLayoutEffect(() => {
+    if (!active) return;
     if (show && horizontal.current)
       horizontal.current.scrollLeft = horizontalOffset.current;
     else {
       setTodayHovered(false);
       setTodayFocused(false);
     }
-  }, [show]);
+  }, [show, active]);
   const resize = useRef<{ x: number; width: number } | null>(null);
   const draftDate = draft?.active
     ? draftInterval(tree, draft.task, today)?.start
@@ -305,7 +370,12 @@ export function TaskTimeline({
           </div>
         )}
       </div>
-      <div className="plan-scroll" ref={vertical} data-plan-scroll>
+      <div
+        className="plan-scroll"
+        ref={vertical}
+        data-plan-scroll
+        onScroll={captureView}
+      >
         <div className={`timeline-columns${show ? '' : ' list-view'}`}>
           <div className="timeline-tree">
             <div className="timeline-heading">
@@ -314,7 +384,7 @@ export function TaskTimeline({
                 {strings.start} / {strings.finish}
               </span>
             </div>
-            <TaskTree {...treeProps} />
+            <TaskTree {...treeProps} onJournal={onJournal} />
             {projection.active &&
               tree.tasks.length > 0 &&
               projection.matchIds.size === 0 && (
@@ -375,7 +445,8 @@ export function TaskTimeline({
             hidden={!show}
             ref={horizontal}
             onScroll={(event) => {
-              if (show)
+              captureView();
+              if (show && active)
                 horizontalOffset.current = event.currentTarget.scrollLeft;
             }}
             tabIndex={0}

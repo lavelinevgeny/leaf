@@ -128,7 +128,11 @@ test('own/group/today geometry refreshes across midnight without source writes o
       path: `/tmp/leaf-c19-gantt-${info.project.name}.png`,
     });
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -208,7 +212,7 @@ test('creation defaults and explicit Today persist atomically through lost respo
     await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
     await expect(quick.getByLabel('Начало', { exact: true })).toHaveValue('');
     await page
-      .getByRole('button', { name: 'Отменить последнее изменение' })
+      .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
     await expect(
       page.getByRole('treeitem', { name: /^Явно сегодня,/ }),
@@ -219,6 +223,10 @@ test('creation defaults and explicit Today persist atomically through lost respo
       (await readTree(page, runtime.origin, tree.project.id)).tasks,
     ).toEqual(before.tasks);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });

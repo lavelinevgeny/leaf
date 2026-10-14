@@ -65,7 +65,11 @@ test('outside clicks from quick schedule date and duration focus the selected vi
       before,
     );
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -475,6 +479,10 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
       }),
     );
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });

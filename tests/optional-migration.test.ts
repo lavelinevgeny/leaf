@@ -1113,6 +1113,9 @@ it('HTTP legacy command and rename replay are lookup-only, session/project scope
 it('actual Repository undo restores a migrated deleted task and its complete private snapshot', () =>
   fixture((db) => {
     migrate(db);
+    // Preserve schema3 fixture construction; current Repository runs on schema4.
+    db.exec(readFileSync('migrations/004-task-journal.sql', 'utf8'));
+    db.exec('INSERT INTO migrations VALUES (4)');
     const repository = new Repository(db);
     const expected = snapshotV2Schema.parse(
       JSON.parse(

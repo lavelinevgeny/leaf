@@ -10,12 +10,16 @@ import {
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });
@@ -144,9 +148,7 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
     path: `/tmp/leaf-task5-${info.project.name}-dependencies.png`,
   });
   await page.keyboard.press('Escape');
-  await page
-    .getByRole('button', { name: 'Отменить последнее изменение' })
-    .click();
+  await page.getByRole('button', { name: 'Отменить изменение плана' }).click();
   await expect(page.locator('[data-gantt-edge]')).toHaveCount(0);
   await page.reload();
   await runtime.restart();
@@ -214,9 +216,7 @@ test('dirty selected deletion retains readable tombstone then discards and resto
       (t) => t.id === selectedId,
     ),
   ).toBe(false);
-  await page
-    .getByRole('button', { name: 'Отменить последнее изменение' })
-    .click();
+  await page.getByRole('button', { name: 'Отменить изменение плана' }).click();
   await expect(page.getByRole('treeitem', { name: /Работа C,/ })).toBeVisible();
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).tasks.find(
@@ -257,9 +257,7 @@ test('unavailable original done must reopen, explicitly adopts equal source, und
   tree = await readTree(page, runtime.origin, tree.project.id);
   expect(tree.schedule.tasks[id]!.startDate).toBe('2026-10-05');
   await page.keyboard.press('Escape');
-  await page
-    .getByRole('button', { name: 'Отменить последнее изменение' })
-    .click();
+  await page.getByRole('button', { name: 'Отменить изменение плана' }).click();
   await runtime.restart();
   await page.reload();
   tree = await readTree(page, runtime.origin, tree.project.id);

@@ -35,14 +35,14 @@ function fixture(version = 2) {
   }
   return { db, path };
 }
-it('creates 1→2→3 fresh and reopens3 without approval', () => {
+it('creates 1→2→3→4 fresh and reopens4 without approval', () => {
   const dir = mkdtempSync(join(tmpdir(), 'leaf-fresh-registry-'));
   directories.push(dir);
   const path = join(dir, 'synthetic.sqlite');
   let db = openDatabase(path);
   expect(
     db.prepare('SELECT version FROM migrations ORDER BY version').all(),
-  ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+  ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
   db.close();
   db = openDatabase(path);
   expect(
@@ -50,7 +50,7 @@ it('creates 1→2→3 fresh and reopens3 without approval', () => {
   ).toEqual([]);
   db.close();
 });
-it('refuses legacy startup before journal/DDL changes, then confirms2→3 preserving accounts', async () => {
+it('refuses legacy startup before journal/DDL changes, then confirms2→3→4 preserving accounts', async () => {
   const { db, path } = fixture();
   db.prepare('INSERT INTO account VALUES (1,?)').run(
     'synthetic-placeholder-only',
@@ -69,7 +69,7 @@ it('refuses legacy startup before journal/DDL changes, then confirms2→3 preser
   });
   expect(
     active.prepare('SELECT version FROM migrations ORDER BY version').all(),
-  ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+  ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
   active.close();
 });
 it('rejects stale preview without mutation and source schema1 before history clearing', () => {
@@ -197,7 +197,7 @@ it('real CLI previews readonly, rejects ordinary/stale startup, explicitly appli
   expect(run([`--confirm-preview=${next.previewDigest}`]).status).toBe(0);
   expect(run([]).status).toBe(0);
 });
-it('the actual pinned S3 registry rejects current schema3 downgrade', () => {
+it('the actual pinned S3 registry rejects current schema4 downgrade', () => {
   const directory = mkdtempSync(join(tmpdir(), 'leaf-pinned-registry-'));
   directories.push(directory);
   execFileSync('git', [

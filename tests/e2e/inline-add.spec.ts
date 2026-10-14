@@ -91,14 +91,14 @@ test('inline child draft, schedule presets, keyboard, conditional bars and atomi
       page.locator(`[data-gantt-bar="${child.id}"]`).locator('..'),
     ).not.toHaveClass(/conditional/);
     await page
-      .getByRole('button', { name: 'Отменить последнее изменение' })
+      .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
     await expect(
       page.getByRole('treeitem', { name: /^Новая подзадача,/ }),
     ).toHaveCount(0);
     await parent.hover();
     await parent
-      .getByRole('button', { name: 'Добавить подзадачу: Этап P' })
+      .getByRole('button', { name: 'Добавить подзадачу: Этап P', exact: true })
       .click();
     await input.fill('Отменённый черновик');
     await quick.getByRole('button', { name: 'Отменить ввод задачи' }).click();
@@ -120,6 +120,10 @@ test('inline child draft, schedule presets, keyboard, conditional bars and atomi
       ),
     ).toBe(true);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });

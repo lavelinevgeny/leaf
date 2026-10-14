@@ -14,12 +14,16 @@ const captures = mkdtempSync(join(tmpdir(), 'leaf-c20-captures-'));
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });
@@ -102,11 +106,11 @@ async function open(page: Page, action = 'Настройки проекта') {
       }),
   ).toBeVisible();
   const undo = page.locator('.workspace-header').getByRole('button', {
-    name: 'Отменить последнее изменение',
+    name: 'Отменить изменение плана',
     exact: true,
   });
   await expect(undo.locator('svg')).toBeVisible();
-  await expect(undo).toHaveAttribute('title', 'Отменить последнее изменение');
+  await expect(undo).toHaveAttribute('title', 'Отменить изменение плана');
   await expect(page.getByText('Задачи', { exact: true })).toHaveCount(1);
   await opener.focus();
   await page.keyboard.press('Enter');
@@ -634,7 +638,7 @@ test('settings drafts survive discard, uncertain response, exact retry and real 
   ).toBeVisible();
   const undone = reply(page);
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   expect((await undone).status()).toBe(200);
   const restored = await readTree(page, runtime.origin, tree.project.id);

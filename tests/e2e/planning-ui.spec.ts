@@ -49,7 +49,7 @@ test('Gantt keyboard move, resize choice cancellation, explicit clearing and und
       )!.durationDays,
     ).toBeNull();
     await page
-      .getByRole('button', { name: 'Отменить последнее изменение' })
+      .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
     await expect(bar).toHaveAttribute('aria-label', /2026-10-06 – 2026-10-07/);
     const box = await page.locator(`[data-gantt-bar="${a}"]`).boundingBox();
@@ -65,7 +65,11 @@ test('Gantt keyboard move, resize choice cancellation, explicit clearing and und
       )!.inputStart,
     ).toBe('2026-10-06');
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 test('project settings preserve dirty calendar draft, done requires return and panel keyboard focus survives close', async ({
@@ -144,7 +148,11 @@ test('project settings preserve dirty calendar draft, done requires return and p
     ).toBeVisible();
     await page.keyboard.press('Tab');
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 test('project rename preserves dirty Escape and returns focus after save and clean close', async ({
@@ -191,7 +199,11 @@ test('project rename preserves dirty Escape and returns focus after save and cle
     await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await expect(opener).toBeFocused();
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 test('long project title keeps the first task within the compact header limit', async ({
@@ -283,7 +295,11 @@ test('long project title keeps the first task within the compact header limit', 
       page.getByRole('complementary', { name: 'Задача', exact: true }),
     ).toBeVisible();
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -324,7 +340,7 @@ test('C27 left keyboard and pointer persist fixed finish, nullable undo and focu
       page.getByRole('button', { name: /Работа A, 2026/ }),
     ).toHaveAttribute('aria-label', /2026-10-02 – 2026-10-06/);
     await page
-      .getByRole('button', { name: 'Отменить последнее изменение' })
+      .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
     await expect(
       page.getByRole('button', { name: /Работа A, 2026/ }),
@@ -366,7 +382,11 @@ test('C27 left keyboard and pointer persist fixed finish, nullable undo and focu
       changed,
     );
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -423,7 +443,11 @@ test('C27 rejects weekend and cancels left gestures on Escape, lost capture, sca
         await page.getByRole('searchbox', { name: 'Поиск задач' }).fill('');
     }
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -498,7 +522,11 @@ test('C27 FS rollback keeps source and focus; later start preserves successor an
       changed,
     );
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -550,7 +578,11 @@ test('C27 uncertain response retries exact operation and renders canonical sourc
       applied,
     );
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -621,7 +653,11 @@ test('C27 competing real write yields 409, preserves source and resumes focus af
     expect(changed.project.revision).toBe(tree.project.revision + 1);
   } finally {
     release?.();
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -693,7 +729,7 @@ test('C27 one-day edges/body remain separate at each scale and cannot cross fini
       });
       expect(moved.project.revision).toBe(tree.project.revision + 1);
       await page
-        .getByRole('button', { name: 'Отменить последнее изменение' })
+        .getByRole('button', { name: 'Отменить изменение плана' })
         .click();
       await expect(
         page.getByRole('button', { name: /Работа A, 2026/ }),
@@ -701,7 +737,11 @@ test('C27 one-day edges/body remain separate at each scale and cannot cross fini
       tree = await readTree(page, runtime.origin, tree.project.id);
     }
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -797,7 +837,11 @@ test('C27 empty/loading/error and done/summary/conditional states never expose l
     expect(await readTree(page, runtime.origin, projectId)).toEqual(tree);
   } finally {
     release?.();
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -850,7 +894,11 @@ test('C27 uses changed all-days calendar while panel C18 and right duration choi
     });
     expect(final.project.revision).toBe(changed.project.revision + 1);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -898,7 +946,11 @@ test('C27 boundary keyboard ack reveals real start and keeps focus for a further
     });
     expect(changed.project.revision).toBe(initial.project.revision + 3);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -990,7 +1042,11 @@ test('C27 boundary exact retry reveals acknowledged start; incoming FS refusal k
     });
     expect(repeated.project.revision).toBe(accepted.project.revision + 1);
   } finally {
-    await runtime.close();
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
@@ -1056,7 +1112,7 @@ for (const transition of ['list', 'period', 'scale', 'filter'] as const) {
       } else await control.click();
       release();
       await expect(
-        page.getByRole('button', { name: 'Отменить последнее изменение' }),
+        page.getByRole('button', { name: 'Отменить изменение плана' }),
       ).toBeEnabled();
       await expect(control).toBeFocused();
       if (transition === 'list') {
@@ -1102,7 +1158,11 @@ for (const transition of ['list', 'period', 'scale', 'filter'] as const) {
       await expect(left).not.toBeFocused();
     } finally {
       release?.();
-      await runtime.close();
+      try {
+        await page.context().close();
+      } finally {
+        await runtime.close();
+      }
     }
   });
 }
@@ -1179,7 +1239,11 @@ for (const takeover of ['focus', 'click', 'tab'] as const) {
       });
     } finally {
       release?.();
-      await runtime.close();
+      try {
+        await page.context().close();
+      } finally {
+        await runtime.close();
+      }
     }
   });
 }

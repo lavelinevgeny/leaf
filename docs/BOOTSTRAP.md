@@ -50,6 +50,32 @@ git add -- .gitleaks.toml
 
 Отсутствующая, конфликтующая или symlink-конфигурация в index блокирует проверку. Незастейдженные правила не подменяют правила публикации. Workspace scan использует отдельный снимок рабочей конфигурации, чтобы проверить ещё не подготовленные к коммиту файлы. Снимки создаются вне checkout с ограниченными правами и удаляются после успеха, находки или ошибки scanner.
 
+## Node и Gitleaks для Claude Code
+
+Общий `.claude/settings.json` закрывает песочнице Claude весь домашний каталог. Если Node установлен через nvm, а Gitleaks через `go install`, они лежат в home. Тогда команды Claude и запускаемые ими Git hooks их не находят (`node: not found`), коммит отменяется, проверки не запускаются. Пути конкретной машины нельзя записывать в общий файл, поэтому исключение настраивается в личном `.claude/settings.local.json`: Git его игнорирует, а Claude не может его изменить. Codex это не требуется: `agent:codex` вычисляет пути инструментов сам.
+
+Владелец один раз запускает из корня checkout в обычном терминале, с тем Node, который требует `.nvmrc`:
+
+```sh
+node - <<'EOF'
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), { execSync } = require('node:child_process');
+const file = '.claude/settings.local.json';
+const nodeBin = path.dirname(fs.realpathSync(process.execPath));
+const gitleaksBin = path.dirname(fs.realpathSync(execSync('command -v gitleaks', { shell: '/bin/sh', encoding: 'utf8' }).trim()));
+const home = os.homedir() + path.sep;
+const settings = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+const filesystem = ((settings.sandbox ??= {}).filesystem ??= {});
+const reads = new Set(filesystem.allowRead ?? []);
+for (const dir of [path.dirname(nodeBin), gitleaksBin]) if (dir.startsWith(home)) reads.add(dir);
+filesystem.allowRead = [...reads];
+settings.env = { ...settings.env, PATH: [...new Set([nodeBin, gitleaksBin, '/usr/local/bin', '/usr/bin', '/bin'])].join(':') };
+fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+console.log(`allowRead: ${filesystem.allowRead.join(', ')}\nPATH: ${settings.env.PATH}`);
+EOF
+```
+
+Скрипт сохраняет существующие ключи файла и открывает на чтение только каталог установки Node (вместе с npm) и каталог Gitleaks, если они внутри home; остальной home остаётся закрытым. Каталог внутри `.local` может по-прежнему перекрываться запретом `**/.local`; надёжнее установить Gitleaks в `/usr/local/bin`. После запуска перезапустить сессию Claude Code. Агент проверяет `command -v node gitleaks` и `npm run doctor`. `git commit` и `git push` по-прежнему требуют подтверждения владельца. Workspace guard сообщает о `.claude/settings.local.json` как LOCAL_AGENT_FILE — это известный FAIL owner-checkout `preflight`; gate публикации — ordinary clean clone.
+
 ## Единый локальный preflight
 
 ```sh
@@ -84,7 +110,7 @@ E2E запускает реальные собранные серверные п
 
 Для локальной разработки задайте абсолютный внешний каталог `LEAF_DATA_DIR`, выполните build, `npm run admin:setup` в интерактивном терминале и `npm run dev`. Вход — на http://127.0.0.1:5173. API по умолчанию на 3000; `LEAF_PORT` меняет серверный порт и Vite proxy; `LEAF_DEV_PORT` меняет порт Vite и вычисляемый dev origin. `LEAF_PUBLIC_ORIGIN` в dev по умолчанию равен origin Vite. SIGINT/SIGTERM останавливает оба дочерних процесса. Настройка аккаунта не принимает пароль из args/env и не выводит его.
 
-Новая пустая база последовательно применяет 001→002→003; повторный запуск schema3 не требует подтверждения. Существующая schema2 требует отдельного согласия на C17-конвертацию. Обычный startup отказывает до изменяющих PRAGMA/DDL. Schema1 и неизвестные версии отклоняются до промежуточных миграций и очистки истории.
+Новая пустая база последовательно применяет 001→002→003→004. Schema3 получает только аддитивную004 журнала, повторное открытие schema4 не выполняет DDL и не требует подтверждения. Существующая schema2 требует отдельного согласия на C17-конвертацию. Обычный startup отказывает до изменяющих PRAGMA/DDL. Schema1 и неизвестные версии отклоняются до промежуточных миграций и очистки истории.
 
 Владелец останавливает сервер и сохраняет согласованный приватный backup через `npm run db:backup -- /absolute/external/new-snapshot.sqlite`. Затем на той же установке выполняет:
 
@@ -95,7 +121,7 @@ npm run db:migrate -- --confirm-preview=<previewDigest>
 
 Preview открывает существующую базу readonly и показывает только policy, counts и SHA256 digest. Вторую команду запускают после проверки результата, подставляя полученный digest. Перед первой записью в IMMEDIATE-транзакции сервер повторно проверяет digest; изменившиеся данные требуют нового preview. Аккаунт, операции и undo сохраняются; original legacy fields архивируются приватно. Deadline не становится finish, project start не назначает новые сроки. Невосстановимый прежний интервал получает понятную диагностику; после возврата в работу его можно явно проверить и сохранить даже с теми же датами. Production execution требует отдельного поручения владельца.
 
-Backup использует native SQLite backup API, destination должен быть новым regular file вне application tree; права0600, новый каталог0700. Restore/import/export остаются S5. Локальный контейнерный workflow описан в [DEPLOYMENT](DEPLOYMENT.md).
+Backup использует native SQLite backup API, destination должен быть новым regular file вне application tree; права0600, новый каталог0700. Согласованный backup включает active journal/state/replay и private Undo sidecar schema4. Restore/import/export остаются S5; будущий versioned project export/import обязан учитывать активный журнал, исключая auth, operation logs и Undo sidecar. Локальный контейнерный workflow описан в [DEPLOYMENT](DEPLOYMENT.md).
 
 ## Готовность S0
 

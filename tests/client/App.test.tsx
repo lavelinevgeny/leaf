@@ -82,6 +82,7 @@ const json = (body: unknown, status = 200) =>
     }),
   );
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   tree = {
     contractVersion: 2,
     project: { ...project },
@@ -114,6 +115,18 @@ beforeEach(() => {
       }
       return json([tree.project]);
     }
+    if (/\/journal(?:\?|$)/.test(url) && init?.method === 'GET')
+      return json({
+        journalContractVersion: 1,
+        projectId: tree.project.id,
+        taskId: url.includes('/tasks/')
+          ? url.split('/tasks/')[1]!.split('/')[0]
+          : null,
+        projectRevision: tree.project.revision,
+        journalRevision: 0,
+        entries: [],
+        nextCursor: null,
+      });
     if (url.endsWith('/tree')) return json(tree);
     if (init?.method === 'PATCH') {
       tree = {
@@ -218,6 +231,151 @@ async function open() {
 }
 
 describe('client HTTP interactions', () => {
+  it.each(['before commit', 'suspended'] as const)(
+    'restores one-step undo focus after DOM commit with animation frames %s',
+    async (frames) => {
+      tree = { ...tree, tasks: [task(1, 'Работа A')], canUndo: true };
+      await open();
+      // Frames can precede React's commit or be suspended in a hidden tab.
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(
+        (callback) => {
+          if (frames === 'before commit') callback(0);
+          return 1;
+        },
+      );
+      let respond!: (response: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const undo = screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Отменить изменение плана',
+      });
+      undo.focus();
+      fireEvent.click(undo);
+      await waitFor(() => expect(undo).toBeDisabled());
+      // Browsers blur a focused button when it becomes disabled; jsdom does not.
+      undo.disabled = false;
+      undo.blur();
+      undo.disabled = true;
+      expect(document.activeElement).toBe(document.body);
+      await act(async () => {
+        respond(
+          await json({
+            ...tree,
+            project: { ...project, revision: 1 },
+            tasks: [],
+            canUndo: false,
+          }),
+        );
+      });
+      expect(screen.getByText('В проекте пока нет задач.')).toBeVisible();
+      expect(undo).toBeDisabled();
+      expect(screen.getByLabelText('Новая задача')).toHaveFocus();
+    },
+  );
+
+  it.each([false, true])(
+    'preserves focus taken by another control while undo is pending (blur=%s)',
+    async (blur) => {
+      tree = { ...tree, tasks: [task(1, 'Работа A')], canUndo: true };
+      await open();
+      let respond!: (response: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const undo = screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Отменить изменение плана',
+      });
+      undo.focus();
+      fireEvent.click(undo);
+      await waitFor(() => expect(undo).toBeDisabled());
+      undo.disabled = false;
+      undo.blur();
+      undo.disabled = true;
+      const search = screen.getByRole('searchbox');
+      act(() => {
+        search.focus();
+        if (blur) search.blur();
+      });
+      await act(async () => {
+        respond(
+          await json({
+            ...tree,
+            project: { ...project, revision: 1 },
+            tasks: [],
+            canUndo: false,
+          }),
+        );
+      });
+      await screen.findByText('В проекте пока нет задач.');
+      expect(document.activeElement).toBe(blur ? document.body : search);
+    },
+  );
+
+  it.each(['enabled undo', 'remaining row', 'rejection'] as const)(
+    'uses the acknowledged undo result for focus: %s',
+    async (outcome) => {
+      tree = {
+        ...tree,
+        tasks: [task(1, 'Работа A'), task(2, 'Работа B')],
+        canUndo: true,
+      };
+      await open();
+      let respond!: (response: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const undo = screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Отменить изменение плана',
+      });
+      undo.focus();
+      fireEvent.click(undo);
+      await waitFor(() => expect(undo).toBeDisabled());
+      undo.disabled = false;
+      undo.blur();
+      undo.disabled = true;
+      await act(async () => {
+        respond(
+          await (outcome === 'rejection'
+            ? json(
+                { code: 'BAD_COMMAND', message: 'Синтетический отказ.' },
+                400,
+              )
+            : json({
+                ...tree,
+                project: { ...project, revision: 1 },
+                tasks: [task(2, 'Работа B')],
+                canUndo: outcome === 'enabled undo',
+              })),
+        );
+      });
+      if (outcome === 'enabled undo') {
+        expect(undo).toBeEnabled();
+        expect(undo).toHaveFocus();
+      } else if (outcome === 'remaining row') {
+        expect(undo).toBeDisabled();
+        expect(
+          screen.getByRole('treeitem', { name: /Работа B,/ }),
+        ).toHaveFocus();
+      } else {
+        expect(screen.getByRole('alert')).toBeVisible();
+        expect(
+          screen.getByRole('treeitem', { name: /Работа A,/ }),
+        ).toBeVisible();
+        expect(screen.getByLabelText('Новая задача')).not.toHaveFocus();
+      }
+    },
+  );
+
   it('keeps schedule explanations out of workspace and opens the existing panel from a row conflict', async () => {
     tree.tasks = [
       task(1, 'Работа A'),
@@ -666,11 +824,11 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Новая задача'), 'Задача A{Enter}');
-    await user.click(
-      await screen.findByRole('treeitem', { name: /Задача A,/ }),
-    );
+    (await screen.findByRole('treeitem', { name: /Задача A,/ })).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Черновик B');
-    await user.click(screen.getByRole('button', { name: 'Удалить ветку' }));
+    screen.getByRole('treeitem', { name: /Задача A,/ }).focus();
+    await user.keyboard('{Delete}');
     await screen.findByText('В проекте пока нет задач.');
     expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик B');
     await user.click(screen.getByLabelText('Новая задача'));
@@ -695,7 +853,7 @@ describe('client HTTP interactions', () => {
     // Independent server snapshot for undo, not generated by client tree logic.
     tree = { ...tree, tasks: [] };
     await user.click(
-      screen.getByRole('button', { name: 'Отменить последнее изменение' }),
+      screen.getByRole('button', { name: 'Отменить изменение плана' }),
     );
     await screen.findByText('В проекте пока нет задач.');
     expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик B');
@@ -730,7 +888,7 @@ describe('client HTTP interactions', () => {
       } else {
         tree = { ...tree, tasks: [] };
         await user.click(
-          screen.getByRole('button', { name: 'Отменить последнее изменение' }),
+          screen.getByRole('button', { name: 'Отменить изменение плана' }),
         );
       }
       await screen.findByText('В проекте пока нет задач.');
@@ -755,8 +913,10 @@ describe('client HTTP interactions', () => {
     tree.tasks = [task(1, 'Задача A'), task(2, 'Задача B', null, 1)];
     await open();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
+    screen.getByRole('treeitem', { name: /Задача B,/ }).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Черновик корня');
+    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
     tree = {
       ...tree,
       tasks: [task(1, 'Задача A'), task(2, 'Задача B', id(1))],
@@ -782,12 +942,43 @@ describe('client HTTP interactions', () => {
       parentId: null,
     });
   });
+  it('keeps the quick input in place when a row is selected (C31)', async () => {
+    tree.tasks = [task(1, 'Задача A'), task(2, 'Задача B', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    const follows = (name: RegExp) =>
+      !!(
+        screen
+          .getByRole('treeitem', { name })
+          .compareDocumentPosition(screen.getByLabelText('Новая задача')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+    await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    expect(screen.getByText('Родитель: Корень проекта')).toBeInTheDocument();
+    expect(follows(/Задача B,/)).toBe(true);
+    screen.getByRole('treeitem', { name: /Задача A,/ }).focus();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    expect(follows(/Задача B,/)).toBe(false);
+    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
+    expect(screen.getByText('Родитель: Корень проекта')).toBeInTheDocument();
+    expect(follows(/Задача B,/)).toBe(true);
+    screen.getByRole('treeitem', { name: /Задача A,/ }).focus();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    await user.type(screen.getByLabelText('Новая задача'), 'Черновик');
+    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
+    expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик');
+    expect(commands).toHaveLength(0);
+  });
   it('retains a surviving quick parent when its child anchor is deleted', async () => {
     tree.tasks = [task(1, 'Родитель A'), task(2, 'Ребёнок A', id(1))];
     await open();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('treeitem', { name: /Ребёнок A,/ }));
+    screen.getByRole('treeitem', { name: /Ребёнок A,/ }).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Сосед ребёнка');
+    await user.click(screen.getByRole('treeitem', { name: /Ребёнок A,/ }));
     await user.click(screen.getByRole('button', { name: 'Удалить ветку' }));
     await waitFor(() =>
       expect(
@@ -821,14 +1012,15 @@ describe('client HTTP interactions', () => {
     };
     await open();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('treeitem', { name: /Ребёнок A,/ }));
+    screen.getByRole('treeitem', { name: /Ребёнок A,/ }).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Сосед ребёнка');
     tree = {
       ...tree,
       tasks: [task(1, 'Родитель A'), task(2, 'Ребёнок A', id(1))],
     };
     await user.click(
-      screen.getByRole('button', { name: 'Отменить последнее изменение' }),
+      screen.getByRole('button', { name: 'Отменить изменение плана' }),
     );
     await waitFor(() =>
       expect(
@@ -1050,7 +1242,7 @@ describe('client HTTP interactions', () => {
       taskId: id(1),
     });
     await user.click(
-      screen.getByRole('button', { name: 'Отменить последнее изменение' }),
+      screen.getByRole('button', { name: 'Отменить изменение плана' }),
     );
     await waitFor(() => expect(commands[1]?.command).toEqual({ type: 'undo' }));
   });
@@ -1573,7 +1765,7 @@ describe('client HTTP interactions', () => {
       tasks: [task(1, 'Задача A'), task(2, 'Задача B', null, 1)],
     };
     await user.click(
-      screen.getByRole('button', { name: 'Отменить последнее изменение' }),
+      screen.getByRole('button', { name: 'Отменить изменение плана' }),
     );
     await waitFor(() =>
       expect(screen.getByLabelText('Новый родитель')).toHaveValue(''),

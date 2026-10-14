@@ -90,7 +90,7 @@ test('demo uses shared real transactions, independent sessions and a fresh seed 
     await page.reload();
     await expect(row(page, 'Синтетическая общая задача')).toBeVisible();
     await page
-      .getByRole('button', { name: /Отменить последнее изменение/ })
+      .getByRole('button', { name: /Отменить изменение плана/ })
       .click();
     await expect(row(page, 'Синтетическая общая задача')).toHaveCount(0);
     await add(page, 'Синтетическая перезагрузка');
@@ -111,7 +111,14 @@ test('demo uses shared real transactions, independent sessions and a fresh seed 
       second.getByRole('button', { name: strings.demoEntry }),
     ).toBeVisible();
   } finally {
-    await other.close();
-    await runtime.close();
+    try {
+      await other.close();
+    } finally {
+      try {
+        await page.context().close();
+      } finally {
+        await runtime.close();
+      }
+    }
   }
 });

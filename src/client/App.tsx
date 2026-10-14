@@ -1,4 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useJournal } from './use-journal.js';
+import { useProjectToday } from './use-project-today.js';
+import { ProjectViewTabs } from './ProjectViewTabs.js';
+import { ProjectJournal } from './ProjectJournal.js';
+import { TaskJournal } from './TaskJournal.js';
+import {
+  parseWorkspaceUrl,
+  writeWorkspaceVisit,
+  type ProjectView,
+  type WorkspaceVisit,
+} from './workspace-navigation.js';
+import type { JournalPosition } from './journal-state.js';
+import type { JournalProjectQuery } from '../shared/journal-contracts.js';
+import type {
+  TimelineRestoreRequest,
+  TimelineViewState,
+} from './TaskTimeline.js';
+import './styles/journal.css';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AuthSession,
   Command,
@@ -59,6 +83,10 @@ interface PanelVisit {
   tab: PanelTab;
   focusId?: string;
 }
+interface UndoFocus {
+  trigger: HTMLButtonElement;
+  projectId: string;
+}
 function asError(error: unknown) {
   return error instanceof ApiError
     ? error
@@ -72,6 +100,45 @@ function isTextInput(target: EventTarget | null) {
   );
 }
 export function App() {
+  const initialVisit = useRef(parseWorkspaceUrl(new URL(window.location.href)));
+  const [projectView, setProjectView] = useState<ProjectView>('tasks');
+  const [journalQuery, setJournalQuery] = useState<JournalProjectQuery>({});
+  const feedPosition = useRef<JournalPosition>({
+    id: null,
+    date: null,
+    offset: 0,
+    top: 0,
+    left: 0,
+  });
+  const [restoreFeed, setRestoreFeed] = useState<JournalPosition | undefined>(
+    undefined,
+  );
+  const journalOrigin = useRef<HTMLElement | null>(null);
+  const journalFocus = useRef(0);
+  const journalFocusRequest = useRef<{ taskId: string; token: number } | null>(
+    null,
+  );
+  const timelineView = useRef<TimelineViewState | undefined>(undefined);
+  const [restoreTimeline, setRestoreTimeline] = useState<
+    TimelineRestoreRequest | undefined
+  >(undefined);
+  type SessionVisit = {
+    visit: WorkspaceVisit;
+    index: number;
+    collapsed: Set<string>;
+    filter: TaskFilter;
+    showGantt: boolean;
+    query: JournalProjectQuery;
+    timeline: TimelineViewState | undefined;
+    scroll: JournalPosition;
+    origin: HTMLElement | null;
+  };
+  const visits = useRef(new Map<string, SessionVisit>());
+  const visitId = useRef<string | null>(null);
+  const restoringVisit = useRef<SessionVisit | null>(null);
+  const restorationApplied = useRef(false);
+  const [restorationTick, setRestorationTick] = useState(0);
+  const suppressedPop = useRef(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tree, setTree] = useState<ProjectTree | null>(null);
@@ -105,6 +172,11 @@ export function App() {
   immediateHostRef.current = immediateHost;
   const [restoreImmediate, setRestoreImmediate] =
     useState<typeof immediateHost>(null);
+  const undoFocus = useRef<UndoFocus | null>(null);
+  const [restoreUndo, setRestoreUndo] = useState<{
+    request: UndoFocus;
+    snapshot: ProjectTree;
+  } | null>(null);
   const [quickEditing, setQuickEditing] = useState(false);
   const quickOrigin = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -209,6 +281,93 @@ export function App() {
     dirtyRef.current = value;
     setDirty(value);
   }, []);
+  const projectToday = useProjectToday(tree?.project.timezone ?? 'UTC');
+  function expireSession() {
+    ++loadSequence.current;
+    journal.clearPrivateState();
+    setSession({
+      authenticated: false,
+      setupRequired: false,
+      ...(session?.demoMode ? { demoMode: true } : {}),
+    });
+    setProjects([]);
+    setTree(null);
+    treeRef.current = null;
+    currentProject.current = null;
+    setSelected(null);
+    setQuickDrafts({});
+    setPending(null);
+    pendingRef.current = null;
+    setConflict(false);
+    setPanelDirty(false);
+    setProjectPlanDirty(false);
+    visits.current.clear();
+    visitId.current = null;
+  }
+  const journal = useJournal(
+    session?.authenticated &&
+      tree &&
+      !loading &&
+      tree.project.id === currentProject.current
+      ? {
+          status: 'active',
+          projectId: tree.project.id,
+          taskId: selected?.id ?? null,
+          today: projectToday,
+          projectQuery: journalQuery,
+          planningTree: tree,
+          planningDirty: dirty || projectDirty,
+          planningUncertain: uncertain,
+          planningBusy: busy || !!pending,
+          applyCleanTree: (next) => {
+            if (
+              dirtyRef.current ||
+              projectDirtyRef.current ||
+              lock.current ||
+              pendingRef.current
+            )
+              return false;
+            return apply(next);
+          },
+          onAuthRequired: expireSession,
+        }
+      : {
+          status: 'inactive',
+          reason: !session
+            ? 'auth-loading'
+            : !session.authenticated
+              ? 'signed-out'
+              : loading
+                ? 'project-loading'
+                : !projects.length
+                  ? 'no-projects'
+                  : 'project-unavailable',
+          onAuthRequired: expireSession,
+        },
+  );
+  const journalLocked = journal.writing || !!journal.pending;
+  function openTaskJournal(task: Task, trigger: HTMLElement): boolean {
+    if (journalLocked || (selected?.id !== task.id && !canNavigate()))
+      return false;
+    journalOrigin.current = trigger;
+    panelOrigin.current = task.id;
+    setSelected(task);
+    setPanelTab('journal');
+    setPanelHistory([]);
+    journal.openCreate(task.projectId, task.id, projectToday);
+    journalFocusRequest.current = {
+      taskId: task.id,
+      token: ++journalFocus.current,
+    };
+    return true;
+  }
+  function changeProjectView(view: ProjectView) {
+    if (journalLocked) return;
+    lastCapture.current();
+    cancelStartFocus();
+    ++journalFocus.current;
+    setProjectView(view);
+  }
   function updateQuick(
     projectId: string,
     update: (draft: QuickDraft) => QuickDraft,
@@ -289,18 +448,26 @@ export function App() {
       if (current) return current;
       if (
         dirtyRef.current ||
+        [...journal.drafts.values()].some(
+          (draft) =>
+            draft.projectId === next.project.id &&
+            draft.taskId === previous.id &&
+            draft.dirty,
+        ) ||
         (quickDrafts[`${next.project.id}/${previous.id}`] &&
           hasQuickDraft(quickDrafts[`${next.project.id}/${previous.id}`]!))
       )
         return previous;
-      requestAnimationFrame(() =>
-        document.getElementById('quick-task')?.focus(),
-      );
+      if (projectView === 'tasks')
+        requestAnimationFrame(() =>
+          document.getElementById('quick-task')?.focus(),
+        );
       return null;
     });
     return true;
   }
   function canNavigate(allowRename = false) {
+    lastCapture.current();
     if (
       dirtyRef.current ||
       projectDirtyRef.current ||
@@ -309,6 +476,10 @@ export function App() {
         rename !== treeRef.current?.project.title)
     ) {
       setNotice(strings.unsaved);
+      return false;
+    }
+    if (journalLocked) {
+      setNotice('Повторите сохранение записи перед переходом.');
       return false;
     }
     if (lock.current || pendingRef.current || conflict || loading) return false;
@@ -325,6 +496,20 @@ export function App() {
     setError(null);
     setNotice('');
     if (!preserveDraft) {
+      setProjectView('tasks');
+      setShowGantt(true);
+      timelineView.current = undefined;
+      feedPosition.current = {
+        id: null,
+        date: null,
+        offset: 0,
+        top: 0,
+        left: 0,
+      };
+      setRestoreFeed(undefined);
+      setJournalQuery({});
+      setRestoreTimeline(undefined);
+      ++journalFocus.current;
       setQuickEditing(false);
       quickOrigin.current = null;
       setSelected(null);
@@ -361,13 +546,21 @@ export function App() {
       const items = await api.projects();
       setProjects(items);
       setCreateUncertain(false);
-      if (items[0])
+      const unavailableVisit =
+        initialVisit.current &&
+        !items.some((item) => item.id === initialVisit.current?.projectId);
+      if (unavailableVisit) initialVisit.current = null;
+      if (initialVisit.current)
+        await loadProject(initialVisit.current.projectId);
+      else if (items[0])
         await loadProject(
           currentProject.current &&
             items.some((item) => item.id === currentProject.current)
             ? currentProject.current
             : items[0].id,
         );
+      if (unavailableVisit)
+        setNotice('Проект из ссылки недоступен. Показаны доступные проекты.');
     } catch (failure) {
       setError(asError(failure));
     } finally {
@@ -375,17 +568,7 @@ export function App() {
     }
   }
   useEffect(() => {
-    if (error?.status !== 401 || !session?.demoMode || !session.authenticated)
-      return;
-    setSession({ authenticated: false, setupRequired: false, demoMode: true });
-    setProjects([]);
-    setTree(null);
-    treeRef.current = null;
-    currentProject.current = null;
-    setSelected(null);
-    setQuickDrafts({});
-    setPending(null);
-    setConflict(false);
+    if (error?.status === 401 && session?.authenticated) expireSession();
   }, [error, session]);
   async function initialize() {
     setLoading(true);
@@ -409,6 +592,8 @@ export function App() {
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (
+        journal.hasDirtyDrafts ||
+        journalLocked ||
         dirty ||
         projectDirty ||
         hasQuickDrafts ||
@@ -422,7 +607,17 @@ export function App() {
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
-  }, [dirty, projectDirty, hasQuickDrafts, pending, busy, rename, tree]);
+  }, [
+    dirty,
+    projectDirty,
+    hasQuickDrafts,
+    pending,
+    busy,
+    rename,
+    tree,
+    journal.hasDirtyDrafts,
+    journalLocked,
+  ]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && selected) {
@@ -442,7 +637,7 @@ export function App() {
     return () => window.removeEventListener('keydown', keydown);
   });
   async function execute(job: Mutation): Promise<ProjectTree | null> {
-    if (lock.current) return null;
+    if (lock.current || journalLocked) return null;
     lock.current = true;
     setBusy(true);
     setError(null);
@@ -504,6 +699,7 @@ export function App() {
       }
       pendingRef.current = null;
       setPending(null);
+      void journal.refresh();
       return next;
     } catch (failure) {
       const failed = asError(failure);
@@ -528,7 +724,14 @@ export function App() {
       immediateTaskId?: string;
     } = {},
   ) {
-    if (conflict || loading || lock.current || !treeRef.current) return null;
+    if (
+      journalLocked ||
+      conflict ||
+      loading ||
+      lock.current ||
+      !treeRef.current
+    )
+      return null;
     if (pendingRef.current) return execute(pendingRef.current);
     return execute({
       kind: 'command',
@@ -653,19 +856,33 @@ export function App() {
       },
     ));
   }
-  function selectTask(task: Task) {
-    if (!canNavigate()) return;
+  // false: refused, or the reused panel will not take focus (focus returns to the trigger).
+  function selectTask(task: Task): boolean {
+    if (!canNavigate()) return false;
+    const reselect = selected?.id === task.id;
     setSelected(task);
     setPanelTab('details');
     setPanelHistory([]);
     panelOrigin.current = task.id;
-    setContext({ parentId: task.parentId, afterId: task.id });
+    // C31: selecting a row never moves the quick input; an untouched one returns to the end.
+    const draft = quickDrafts[task.projectId];
+    if (!draft || !hasQuickDraft(draft)) {
+      setQuickEditing(false);
+      quickOrigin.current = null;
+      setContext({ parentId: null });
+    }
+    return !reselect;
   }
   function closePanel() {
     if (!canNavigate()) return;
     const id = selected?.id;
+    ++journalFocus.current;
     setSelected(null);
     setPanelHistory([]);
+    if (projectView === 'journal' && journalOrigin.current?.isConnected) {
+      journalOrigin.current.focus();
+      return;
+    }
     const mainTree = document.querySelector(
       `[role="tree"][aria-label="${strings.tasks}"]`,
     );
@@ -678,8 +895,8 @@ export function App() {
     )
       document.getElementById('quick-task')?.focus();
   }
-  function selectSubtask(task: Task) {
-    if (!canNavigate()) return;
+  function selectSubtask(task: Task): boolean {
+    if (!canNavigate()) return false;
     if (selected)
       setPanelHistory((previous) => [
         ...previous,
@@ -687,6 +904,7 @@ export function App() {
       ]);
     setSelected(task);
     setPanelTab('details');
+    return true;
   }
   function selectNeighbor(task: Task) {
     if (!canNavigate()) return;
@@ -701,6 +919,7 @@ export function App() {
   function showOnGantt(task: Task) {
     if (!canNavigate() || !treeRef.current) return;
     cancelStartFocus();
+    setProjectView('tasks');
     setTaskFilter(emptyTaskFilter);
     const byId = new Map(treeRef.current.tasks.map((item) => [item.id, item]));
     setCollapsed((previous) => {
@@ -765,8 +984,8 @@ export function App() {
       });
     }
   }
-  function action(value: TreeAction, task: Task) {
-    if (!canNavigate()) return;
+  function action(value: TreeAction, task: Task): boolean | void {
+    if (!canNavigate()) return false;
     if (value === 'sibling' || value === 'child') {
       quickOrigin.current = task.id;
       setQuickEditing(true);
@@ -814,23 +1033,48 @@ export function App() {
         );
     }
   }
+  useLayoutEffect(() => {
+    if (!restoreUndo) return;
+    const { request, snapshot } = restoreUndo;
+    if (
+      undoFocus.current !== request ||
+      tree?.project.id !== request.projectId ||
+      !request.trigger.isConnected
+    ) {
+      setRestoreUndo(null);
+      if (undoFocus.current === request) undoFocus.current = null;
+      return;
+    }
+    // Wait for the acknowledged tree and enabled controls to reach the DOM.
+    if (tree !== snapshot || busy || loading || pending) return;
+    undoFocus.current = null;
+    setRestoreUndo(null);
+    if (
+      document.activeElement !== document.body &&
+      document.activeElement !== request.trigger
+    )
+      return;
+    if (!request.trigger.disabled) request.trigger.focus();
+    else {
+      const row = document.querySelector<HTMLElement>(
+        '[role="tree"][aria-label="Задачи"] [role="treeitem"][tabindex="0"]',
+      );
+      if (row) row.focus();
+      else document.getElementById('quick-task')?.focus();
+    }
+  }, [restoreUndo, tree, busy, loading, pending]);
   async function undo() {
     if (!canNavigate() || !treeRef.current?.canUndo) return;
     const trigger = document.activeElement;
-    await command({ type: 'undo' });
-    if (trigger instanceof HTMLButtonElement)
-      requestAnimationFrame(() => {
-        if (!trigger.isConnected || document.activeElement !== document.body)
-          return;
-        if (!trigger.disabled) trigger.focus();
-        else {
-          const row = document.querySelector<HTMLElement>(
-            '[role="tree"][aria-label="Задачи"] [role="treeitem"][tabindex="0"]',
-          );
-          if (row) row.focus();
-          else document.getElementById('quick-task')?.focus();
-        }
-      });
+    const request =
+      trigger instanceof HTMLButtonElement
+        ? { trigger, projectId: treeRef.current.project.id }
+        : null;
+    undoFocus.current = request;
+    const next = await commandTree({ type: 'undo' });
+    if (next && request && undoFocus.current === request)
+      setRestoreUndo({ request, snapshot: next });
+    else if (undoFocus.current === request) undoFocus.current = null;
   }
   async function planTask(task: Task, kind: PlanGestureKind, target: string) {
     if (!canNavigate() || !treeRef.current) return;
@@ -988,6 +1232,15 @@ export function App() {
     }
   }
   async function logout() {
+    if (journalLocked) {
+      setNotice('Повторите сохранение записи перед выходом.');
+      return;
+    }
+    if (
+      journal.hasDirtyDrafts &&
+      !window.confirm('Выйти и потерять несохранённые черновики журнала?')
+    )
+      return;
     if (hasQuickDrafts) {
       setNotice(strings.unsavedQuick);
       return;
@@ -998,6 +1251,10 @@ export function App() {
     setError(null);
     try {
       await api.logout();
+      journal.clearPrivateState();
+      ++loadSequence.current;
+      visits.current.clear();
+      visitId.current = null;
       setSession({
         authenticated: false,
         setupRequired: false,
@@ -1017,6 +1274,187 @@ export function App() {
       setBusy(false);
     }
   }
+  function captureVisit() {
+    const id = visitId.current,
+      previous = id ? visits.current.get(id) : null;
+    if (
+      !id ||
+      !previous ||
+      loading ||
+      restoringVisit.current ||
+      tree?.project.id !== previous.visit.projectId
+    )
+      return;
+    const feed = document.querySelector<HTMLElement>(
+      '[data-journal-feed="project"]',
+    );
+    visits.current.set(id, {
+      ...previous,
+      collapsed: new Set(collapsed),
+      filter: taskFilter,
+      showGantt,
+      query: journalQuery,
+      timeline: timelineView.current,
+      scroll: {
+        ...feedPosition.current,
+        top:
+          feed && !feed.closest('[hidden]')
+            ? feed.scrollTop
+            : feedPosition.current.top,
+        left:
+          feed && !feed.closest('[hidden]')
+            ? feed.scrollLeft
+            : feedPosition.current.left,
+      },
+      origin: journalOrigin.current,
+    });
+  }
+  const lastCapture = useRef(captureVisit);
+  lastCapture.current = captureVisit;
+  const navHandler = useRef<(event: PopStateEvent) => void>(() => {});
+  navHandler.current = (event) => {
+    if (suppressedPop.current) {
+      suppressedPop.current = false;
+      return;
+    }
+    const targetId = (
+      event.state as { leaf?: { version?: number; visitId?: string } } | null
+    )?.leaf?.visitId;
+    const target = targetId ? visits.current.get(targetId) : undefined;
+    const old = visitId.current
+      ? visits.current.get(visitId.current)
+      : undefined;
+    if (!session?.authenticated) return;
+    if (!canNavigate()) {
+      if (old && target) {
+        suppressedPop.current = true;
+        window.history.go(old.index - target.index);
+      } else if (old && visitId.current)
+        writeWorkspaceVisit(old.visit, visitId.current, 'replace');
+      return;
+    }
+    captureVisit();
+    cancelStartFocus();
+    ++journalFocus.current;
+    const parsed =
+      target?.visit ?? parseWorkspaceUrl(new URL(window.location.href));
+    if (!parsed) return;
+    restorationApplied.current = false;
+    restoringVisit.current = target ?? {
+      visit: parsed,
+      index: (old?.index ?? 0) + 1,
+      collapsed: new Set(),
+      filter: emptyTaskFilter,
+      showGantt: true,
+      query: {},
+      timeline: undefined,
+      scroll: { id: null, date: null, offset: 0, top: 0, left: 0 },
+      origin: null,
+    };
+    visitId.current = targetId ?? crypto.randomUUID();
+    if (tree?.project.id !== parsed.projectId)
+      void loadProject(parsed.projectId);
+    else restoreWorkspace(restoringVisit.current, tree);
+  };
+  function restoreWorkspace(saved: SessionVisit, next: ProjectTree) {
+    restorationApplied.current = true;
+    setRestorationTick((value) => value + 1);
+    setProjectView(saved.visit.view);
+    setSelected(
+      next.tasks.find((task) => task.id === saved.visit.taskId) ?? null,
+    );
+    setPanelTab(saved.visit.panel);
+    setCollapsed(new Set(saved.collapsed));
+    setTaskFilter(saved.filter);
+    setShowGantt(saved.showGantt);
+    setJournalQuery(saved.query);
+    setRestoreTimeline(saved.timeline ? { state: saved.timeline } : undefined);
+    setRestoreFeed({ ...saved.scroll });
+    journalOrigin.current = saved.origin;
+    ++journalFocus.current;
+  }
+  useEffect(() => {
+    const handler = (event: PopStateEvent) => navHandler.current(event);
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, []);
+  useLayoutEffect(() => {
+    if (!session?.authenticated || loading || !tree) return;
+    if (initialVisit.current) {
+      const visit = initialVisit.current;
+      initialVisit.current = null;
+      const id = crypto.randomUUID();
+      visitId.current = id;
+      const saved: SessionVisit = {
+        visit,
+        index: 0,
+        collapsed: new Set(),
+        filter: emptyTaskFilter,
+        showGantt: true,
+        query: {},
+        timeline: undefined,
+        scroll: { id: null, date: null, offset: 0, top: 0, left: 0 },
+        origin: null,
+      };
+      visits.current.set(id, saved);
+      writeWorkspaceVisit(visit, id, 'replace');
+      restoringVisit.current = saved;
+      restoreWorkspace(saved, tree);
+      return;
+    }
+    if (restoringVisit.current) {
+      const saved = restoringVisit.current;
+      if (saved.visit.projectId !== tree.project.id) return;
+      if (
+        !restorationApplied.current ||
+        projectView !== saved.visit.view ||
+        panelTab !== saved.visit.panel ||
+        (selected?.id ?? null) !==
+          (tree.tasks.some((task) => task.id === saved.visit.taskId)
+            ? saved.visit.taskId
+            : null)
+      ) {
+        restoreWorkspace(saved, tree);
+        return;
+      }
+      restoringVisit.current = null;
+      if (visitId.current) visits.current.set(visitId.current, saved);
+      return;
+    }
+    const visit: WorkspaceVisit = {
+      projectId: tree.project.id,
+      view: projectView,
+      taskId: selected?.id ?? null,
+      panel: panelTab,
+    };
+    const old = visitId.current ? visits.current.get(visitId.current) : null;
+    if (old && JSON.stringify(old.visit) === JSON.stringify(visit)) return;
+    const id = crypto.randomUUID();
+    visitId.current = id;
+    visits.current.set(id, {
+      visit,
+      index: old ? old.index + 1 : 0,
+      collapsed: new Set(collapsed),
+      filter: taskFilter,
+      showGantt,
+      query: journalQuery,
+      timeline: timelineView.current,
+      scroll: { id: null, date: null, offset: 0, top: 0, left: 0 },
+      origin: journalOrigin.current,
+    });
+    writeWorkspaceVisit(visit, id, old ? 'push' : 'replace');
+  }, [
+    tree?.project.id,
+    loading,
+    projectView,
+    selected?.id,
+    panelTab,
+    session?.authenticated,
+    restorationTick,
+  ]);
+  useEffect(() => {
+    captureVisit();
+  }, [collapsed, taskFilter, showGantt, journalQuery]);
   const errorView = (
     <>
       {notice && (
@@ -1190,7 +1628,7 @@ export function App() {
   );
   if (subtaskAfter && subtaskAfter.parentId === subtaskContext.parentId)
     subtaskContext.afterId = subtaskAfter.id;
-  function subtaskAction(value: TreeAction, task: Task) {
+  function subtaskAction(value: TreeAction, task: Task): boolean | void {
     const parentId = value === 'child' ? task.id : task.parentId;
     if (
       panelTab === 'subtasks' &&
@@ -1198,7 +1636,7 @@ export function App() {
       parentId &&
       subtaskIds.has(parentId)
     ) {
-      if (!canNavigate()) return;
+      if (!canNavigate()) return false;
       updateQuick(subtaskKey, (draft) => ({
         ...draft,
         context: {
@@ -1207,12 +1645,19 @@ export function App() {
         },
       }));
       document.getElementById('quick-subtask')?.focus();
-    } else action(value, task);
+    } else return action(value, task);
   }
   return (
     <div
       className="app-shell"
       onFocusCapture={(event) => {
+        if (!(event.target as Element).closest('#panel-journal'))
+          ++journalFocus.current;
+        if (
+          undoFocus.current &&
+          (event.target as Element) !== undoFocus.current.trigger
+        )
+          undoFocus.current = null;
         const restore = restoreStartHandle.current;
         if (
           restore &&
@@ -1227,6 +1672,7 @@ export function App() {
         selectedId={tree?.project.id ?? null}
         onSelect={(id, openMenu = false) => {
           if (!canNavigate()) return;
+          initialVisit.current = null;
           setProjectMenuTarget(openMenu ? id : null);
           void loadProject(id);
         }}
@@ -1238,7 +1684,14 @@ export function App() {
               key={tree.project.id}
               initialMenuOpen={projectMenuTarget === tree.project.id}
               project={tree.project}
-              disabled={busy || loading || !!pending || conflict || dirty}
+              disabled={
+                journalLocked ||
+                busy ||
+                loading ||
+                !!pending ||
+                conflict ||
+                dirty
+              }
               dirty={projectDirty}
               onSave={command}
               onDirty={setProjectPlanDirty}
@@ -1251,7 +1704,14 @@ export function App() {
             />
           )
         }
-        busy={busy || !!pending || conflict || loading || createUncertain}
+        busy={
+          journalLocked ||
+          busy ||
+          !!pending ||
+          conflict ||
+          loading ||
+          createUncertain
+        }
       />
       <main className="workspace">
         {session.demoMode && (
@@ -1269,6 +1729,7 @@ export function App() {
                 <button
                   type="button"
                   disabled={
+                    journalLocked ||
                     !tree.canUndo ||
                     busy ||
                     loading ||
@@ -1283,20 +1744,38 @@ export function App() {
                 >
                   <ControlIcon name="undo" />
                 </button>
-                <TaskFilters
-                  key={tree.project.id}
-                  filter={taskFilter}
-                  tasks={tree.tasks}
-                  onChange={(filter) => {
-                    cancelStartFocus();
-                    setTaskFilter(filter);
-                  }}
-                  disabled={loading}
-                />
+                {projectView === 'journal' && (
+                  <label className="journal-header-search">
+                    Поиск записей
+                    <input
+                      aria-label="Поиск записей"
+                      maxLength={300}
+                      value={journalQuery.q ?? ''}
+                      onChange={(event) =>
+                        setJournalQuery({
+                          ...journalQuery,
+                          q: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                )}
+                {projectView === 'tasks' && (
+                  <TaskFilters
+                    key={tree.project.id}
+                    filter={taskFilter}
+                    tasks={tree.tasks}
+                    onChange={(filter) => {
+                      cancelStartFocus();
+                      setTaskFilter(filter);
+                    }}
+                    disabled={loading}
+                  />
+                )}
               </div>
             )}
           </div>
-          <span className="view-label">{strings.tasks}</span>
+          <ProjectViewTabs value={projectView} onChange={changeProjectView} />
         </header>
         <div className="workspace-content planning-workspace">
           {!selectedTask && !projectControlsOpen && errorView}
@@ -1308,109 +1787,161 @@ export function App() {
           )}
           {tree && (
             <>
-              {!tree.tasks.length && (
-                <p className="empty-state">{strings.empty}</p>
-              )}
-              <TaskTimeline
-                key={`timeline-${tree.project.id}`}
-                tree={tree}
-                draft={{
-                  task: draftTask(
-                    tree,
+              <div
+                id="project-view-tasks"
+                role="tabpanel"
+                aria-labelledby="project-tab-tasks"
+                hidden={projectView !== 'tasks'}
+                className="task-view-container"
+              >
+                {!tree.tasks.length && (
+                  <p className="empty-state">{strings.empty}</p>
+                )}
+                <TaskTimeline
+                  key={`timeline-${tree.project.id}`}
+                  tree={tree}
+                  draft={{
+                    task: draftTask(
+                      tree,
+                      context,
+                      quickDrafts[tree.project.id]?.title ?? '',
+                      quickDrafts[tree.project.id]?.plan ?? newTaskPlan(),
+                    ),
                     context,
-                    quickDrafts[tree.project.id]?.title ?? '',
-                    quickDrafts[tree.project.id]?.plan ?? newTaskPlan(),
-                  ),
-                  context,
-                  active:
-                    quickEditing ||
-                    !!quickDrafts[tree.project.id]?.title ||
-                    !!quickDrafts[tree.project.id]?.plan.inputStart ||
-                    !!quickDrafts[tree.project.id]?.plan.inputFinish,
-                  input: (
-                    <QuickAdd
-                      tree={tree}
-                      predecessorIds={
-                        quickDrafts[tree.project.id]?.predecessorIds ?? []
-                      }
-                      onPredecessors={(predecessorIds) =>
-                        updateQuick(tree.project.id, (draft) => ({
-                          ...draft,
-                          predecessorIds,
-                        }))
-                      }
-                      acknowledgement={
-                        quickAcknowledgements[tree.project.id] ?? 0
-                      }
-                      key={tree.project.id}
-                      inline
-                      onEditing={setQuickEditing}
-                      onCancel={() => {
-                        setQuickEditing(false);
-                        setContext({ parentId: null });
-                        requestAnimationFrame(() => {
-                          if (quickOrigin.current)
-                            focusTaskRow(quickOrigin.current);
-                        });
+                    active:
+                      quickEditing ||
+                      !!quickDrafts[tree.project.id]?.title ||
+                      !!quickDrafts[tree.project.id]?.plan.inputStart ||
+                      !!quickDrafts[tree.project.id]?.plan.inputFinish,
+                    input: (
+                      <QuickAdd
+                        tree={tree}
+                        predecessorIds={
+                          quickDrafts[tree.project.id]?.predecessorIds ?? []
+                        }
+                        onPredecessors={(predecessorIds) =>
+                          updateQuick(tree.project.id, (draft) => ({
+                            ...draft,
+                            predecessorIds,
+                          }))
+                        }
+                        acknowledgement={
+                          quickAcknowledgements[tree.project.id] ?? 0
+                        }
+                        key={tree.project.id}
+                        inline
+                        onEditing={setQuickEditing}
+                        onCancel={() => {
+                          setQuickEditing(false);
+                          setContext({ parentId: null });
+                          requestAnimationFrame(() => {
+                            if (quickOrigin.current)
+                              focusTaskRow(quickOrigin.current);
+                          });
+                        }}
+                        parentPlan={parentPlan(tree, context.parentId)}
+                        calendar={tree.project.calendarType}
+                        timezone={tree.project.timezone}
+                        plan={
+                          quickDrafts[tree.project.id]?.plan ?? newTaskPlan()
+                        }
+                        onPlan={(plan) =>
+                          updateQuick(tree.project.id, (draft) => ({
+                            ...draft,
+                            plan,
+                          }))
+                        }
+                        tasks={tree.tasks}
+                        context={context}
+                        onContext={setContext}
+                        onCreate={createTask}
+                        busy={busy || loading}
+                        blocked={
+                          journalLocked ||
+                          !!pending ||
+                          conflict ||
+                          dirty ||
+                          projectDirty
+                        }
+                        title={quickDrafts[tree.project.id]?.title ?? ''}
+                        onTitle={(title) =>
+                          updateQuick(tree.project.id, (draft) => ({
+                            ...draft,
+                            title,
+                          }))
+                        }
+                      />
+                    ),
+                  }}
+                  show={showGantt}
+                  viewControl={
+                    <TaskViewControl
+                      showGantt={showGantt}
+                      onChange={(show) => {
+                        cancelStartFocus();
+                        setShowGantt(show);
                       }}
-                      parentPlan={parentPlan(tree, context.parentId)}
-                      calendar={tree.project.calendarType}
-                      timezone={tree.project.timezone}
-                      plan={quickDrafts[tree.project.id]?.plan ?? newTaskPlan()}
-                      onPlan={(plan) =>
-                        updateQuick(tree.project.id, (draft) => ({
-                          ...draft,
-                          plan,
-                        }))
-                      }
-                      tasks={tree.tasks}
-                      context={context}
-                      onContext={setContext}
-                      onCreate={createTask}
-                      busy={busy || loading}
-                      blocked={!!pending || conflict || dirty || projectDirty}
-                      title={quickDrafts[tree.project.id]?.title ?? ''}
-                      onTitle={(title) =>
-                        updateQuick(tree.project.id, (draft) => ({
-                          ...draft,
-                          title,
-                        }))
-                      }
                     />
-                  ),
-                }}
-                show={showGantt}
-                viewControl={
-                  <TaskViewControl
-                    showGantt={showGantt}
-                    onChange={(show) => {
-                      cancelStartFocus();
-                      setShowGantt(show);
-                    }}
-                  />
-                }
-                reveal={ganttReveal}
-                onViewChange={cancelStartFocus}
-                onStartHandleVisible={restoreVisibleStart}
-                disabled={
-                  busy ||
-                  loading ||
-                  !!pending ||
-                  conflict ||
-                  dirty ||
-                  projectDirty
-                }
-                onPredecessors={openPredecessors}
-                onPlan={(task, kind, target) =>
-                  void planTask(task, kind, target)
-                }
-                selectedId={selected?.id ?? null}
-                collapsed={collapsed}
-                filter={taskFilter}
-                onToggle={toggle}
-                onSelect={selectTask}
-                onAction={action}
-              />
+                  }
+                  reveal={ganttReveal}
+                  onViewChange={cancelStartFocus}
+                  onStartHandleVisible={restoreVisibleStart}
+                  disabled={
+                    journalLocked ||
+                    busy ||
+                    loading ||
+                    !!pending ||
+                    conflict ||
+                    dirty ||
+                    projectDirty
+                  }
+                  onJournal={openTaskJournal}
+                  onViewState={(value) => {
+                    timelineView.current = value;
+                    lastCapture.current();
+                  }}
+                  active={projectView === 'tasks'}
+                  restoreRequest={restoreTimeline}
+                  onRestoreApplied={(request) => {
+                    setRestoreTimeline((pending) =>
+                      pending === request ? undefined : pending,
+                    );
+                  }}
+                  onPredecessors={openPredecessors}
+                  onPlan={(task, kind, target) =>
+                    void planTask(task, kind, target)
+                  }
+                  selectedId={selected?.id ?? null}
+                  collapsed={collapsed}
+                  filter={taskFilter}
+                  onToggle={toggle}
+                  onSelect={selectTask}
+                  onAction={action}
+                />
+              </div>
+              <div
+                id="project-view-journal"
+                role="tabpanel"
+                aria-labelledby="project-tab-journal"
+                hidden={projectView !== 'journal'}
+                className="project-journal-container"
+              >
+                <ProjectJournal
+                  visible={projectView === 'journal'}
+                  disabled={busy || !!pending || conflict}
+                  controller={journal}
+                  projectId={tree.project.id}
+                  today={projectToday}
+                  query={journalQuery}
+                  onQuery={setJournalQuery}
+                  onOpenTask={openTaskJournal}
+                  restorePosition={restoreFeed}
+                  onPosition={(value) => {
+                    feedPosition.current = value;
+                    lastCapture.current();
+                  }}
+                />
+              </div>
             </>
           )}
         </div>
@@ -1456,11 +1987,47 @@ export function App() {
         <TaskPanel
           key={selectedTask.id}
           task={selectedTask}
-          removed={!tree.tasks.some((task) => task.id === selectedTask.id)}
+          removed={
+            journal.unavailableTaskIds.has(selectedTask.id) ||
+            !tree.tasks.some((task) => task.id === selectedTask.id)
+          }
           tasks={tree.tasks}
           tree={tree}
           tab={panelTab}
-          onTab={setPanelTab}
+          onTab={(tab) => {
+            if (!journalLocked) {
+              lastCapture.current();
+              setPanelTab(tab);
+            }
+          }}
+          onJournal={openTaskJournal}
+          journalTitle={
+            journal.taskFeed?.metadata?.tasks.find(
+              (task) => task.id === selectedTask.id,
+            )?.title
+          }
+          journalContent={
+            <TaskJournal
+              disabled={busy || !!pending || conflict}
+              controller={journal}
+              task={selectedTask}
+              today={projectToday}
+              onEditorReady={(editor) => {
+                const request = journalFocusRequest.current;
+                if (!request || request.taskId !== selectedTask.id) return;
+                journalFocusRequest.current = null;
+                requestAnimationFrame(() => {
+                  if (
+                    request.token === journalFocus.current &&
+                    editor.isConnected &&
+                    !editor.disabled &&
+                    !editor.closest('[hidden]')
+                  )
+                    editor.focus();
+                });
+              }}
+            />
+          }
           onDependency={(value) =>
             canNavigate() ? command(value) : Promise.resolve(false)
           }
@@ -1494,10 +2061,10 @@ export function App() {
           }
           onDirty={setPanelDirty}
           onClose={closePanel}
-          busy={busy}
+          busy={busy || journal.writing}
           retry={panelRetry}
           conflict={conflict}
-          locked={!!pending || loading || projectDirty}
+          locked={journalLocked || !!pending || loading || projectDirty}
           feedback={projectControlsOpen ? null : errorView}
           subtaskInput={
             <QuickAdd
@@ -1543,6 +2110,7 @@ export function App() {
               }
               busy={busy || loading}
               blocked={
+                journalLocked ||
                 !!pending ||
                 conflict ||
                 dirty ||

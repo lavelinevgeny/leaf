@@ -35,6 +35,7 @@ const json = (body: unknown) =>
   );
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   tree = {
     contractVersion: 2,
     project: { ...project },
@@ -47,6 +48,18 @@ beforeEach(() => {
     if (url === '/api/auth/session')
       return json({ authenticated: true, setupRequired: false });
     if (url === '/api/projects') return json([project, other]);
+    if (/\/journal(?:\?|$)/.test(url))
+      return json({
+        journalContractVersion: 1,
+        projectId: url.includes(other.id) ? other.id : tree.project.id,
+        taskId: url.includes('/tasks/')
+          ? url.split('/tasks/')[1]!.split('/')[0]
+          : null,
+        projectRevision: tree.project.revision,
+        journalRevision: 0,
+        entries: [],
+        nextCursor: null,
+      });
     if (url.includes(other.id))
       return json({ ...tree, project: other, tasks: [] });
     if (url.endsWith('/tree')) return json(tree);

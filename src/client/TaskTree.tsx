@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ControlIcon } from './ControlIcon.js';
 import { draftTaskId } from './quick-add-view.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { compactDateLabel, computedDateLabel } from './gantt-view.js';
@@ -12,8 +13,10 @@ interface Props {
   selectedId: string | null;
   collapsed: ReadonlySet<string>;
   onToggle: (id: string) => void;
-  onSelect: (task: Task) => void;
-  onAction: (action: TreeAction, task: Task) => void;
+  onSelect: (task: Task) => boolean | void;
+  onAction: (action: TreeAction, task: Task) => boolean | void;
+  onJournal?:
+    ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
   rootId?: string;
   label?: string;
   rows?: ReturnType<typeof treeRows>;
@@ -35,6 +38,7 @@ export function TaskTree({
   onToggle,
   onSelect,
   onAction,
+  onJournal,
   rootId,
   label = strings.tasks,
   rows: suppliedRows,
@@ -288,19 +292,35 @@ export function TaskTree({
             >
               {compactDateLabel(task, schedule) || strings.noDate}
             </span>
-            <button
-              type="button"
-              className="add-child"
-              disabled={disabled}
-              aria-label={`${strings.addChild}: ${task.title}`}
-              title={`${strings.addChild} · Shift+Enter`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onAction('child', task);
-              }}
+            {/* Zero-width sticky anchor: the actions overlay the row end (and
+                its date) instead of reserving space, and stay at the visible
+                edge of a horizontally scrolled tree (C30). */}
+            <span
+              className="task-row-actions"
+              onClick={(event) => event.stopPropagation()}
             >
-              {strings.addChildShort}
-            </button>
+              <span className="task-row-actions-inner">
+                <button
+                  type="button"
+                  aria-label={`${strings.addChild}: ${task.title}`}
+                  title={strings.addChildHint}
+                  disabled={disabled}
+                  onClick={() => onAction('child', task)}
+                >
+                  <ControlIcon name="subtask" />
+                </button>
+                {onJournal && (
+                  <button
+                    type="button"
+                    aria-label={`${strings.addJournalEntry}: ${task.title}`}
+                    title={strings.addJournalEntry}
+                    onClick={(event) => onJournal(task, event.currentTarget)}
+                  >
+                    <ControlIcon name="note" />
+                  </button>
+                )}
+              </span>
+            </span>
           </div>
         );
       })}

@@ -519,3 +519,97 @@ it.each(['create', 'rename', 'command', 'undo', 'legacy'])(
     expect(spy).not.toHaveBeenCalled();
   },
 );
+
+import { createInput, rawTables } from './helpers/journal-fixture.js';
+it('all journal CRUD and exact retries consume demo admission attempts before repository', async () => {
+  const session = await enter();
+  const token = session.cookies[0]!.value;
+  const project = app.repository.listProjects()[0]!;
+  const task = app.repository.getTree(project.id, 'synthetic-session')
+    .tasks[0]!;
+  const url = `/api/projects/${project.id}/journal`;
+  const create = createInput(task.id);
+  const created = await app.inject({
+    method: 'POST',
+    url,
+    headers: headers(token),
+    payload: create,
+  });
+  expect(created.statusCode).toBe(201);
+  const id = created.json().entry.id;
+  const update = {
+    journalContractVersion: 1,
+    operationId: randomUUID(),
+    expectedJournalRevision: 1,
+    body: 'Synthetic updated',
+    workDate: '2024-02-29',
+  };
+  const remove = {
+    journalContractVersion: 1,
+    operationId: randomUUID(),
+    expectedJournalRevision: 2,
+  };
+  for (const [method, payload] of [
+    ['PATCH', update],
+    ['DELETE', remove],
+  ] as const)
+    expect(
+      (
+        await app.inject({
+          method,
+          url: `${url}/${id}`,
+          headers: headers(token),
+          payload,
+        })
+      ).statusCode,
+    ).toBe(200);
+  for (let attempt = 3; attempt < 120; attempt++) {
+    const [method, payload, target] =
+      attempt % 3 === 0
+        ? (['POST', create, url] as const)
+        : attempt % 3 === 1
+          ? (['PATCH', update, `${url}/${id}`] as const)
+          : (['DELETE', remove, `${url}/${id}`] as const);
+    expect(
+      (
+        await app.inject({
+          method,
+          url: target,
+          headers: headers(token),
+          payload,
+        })
+      ).statusCode,
+    ).toBe(method === 'POST' ? 201 : 200);
+  }
+  const db = openDatabase(join(directory, 'synthetic.sqlite'));
+  try {
+    const tables = ['journal_entries', 'journal_state', 'journal_operations'];
+    const before = rawTables(db, tables);
+    for (const [method, payload, target] of [
+      ['POST', create, url],
+      ['PATCH', update, `${url}/${id}`],
+      ['DELETE', remove, `${url}/${id}`],
+    ] as const)
+      expect(
+        (
+          await app.inject({
+            method,
+            url: target,
+            headers: headers(token),
+            payload,
+          })
+        ).statusCode,
+      ).toBe(429);
+    expect(rawTables(db, tables)).toEqual(before);
+    expect(
+      db
+        .prepare('SELECT revision FROM journal_state WHERE projectId=?')
+        .get(project.id),
+    ).toEqual({ revision: 3 });
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM journal_operations').get(),
+    ).toEqual({ n: 3 });
+  } finally {
+    db.close();
+  }
+});

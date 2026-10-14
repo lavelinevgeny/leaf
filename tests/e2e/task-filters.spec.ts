@@ -10,12 +10,16 @@ import {
 const test = base.extend<{
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>;
 }>({
-  runtime: async ({}, use) => {
+  runtime: async ({ context }, use) => {
     const runtime = await syntheticRuntime();
     try {
       await use(runtime);
     } finally {
-      await runtime.close();
+      try {
+        await context.close();
+      } finally {
+        await runtime.close();
+      }
     }
   },
 });
@@ -398,7 +402,7 @@ test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', 
       response.request().method() === 'POST',
   );
   await page
-    .getByRole('button', { name: 'Отменить последнее изменение', exact: true })
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
     .click();
   expect((await undone).status()).toBe(200);
   const restored = await readTree(page, runtime.origin, tree.project.id);

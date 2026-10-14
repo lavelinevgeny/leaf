@@ -1,5 +1,13 @@
 type IconName =
-  'search' | 'filter' | 'chevron' | 'list' | 'gantt' | 'undo' | 'chain';
+  | 'search'
+  | 'filter'
+  | 'chevron'
+  | 'list'
+  | 'gantt'
+  | 'undo'
+  | 'chain'
+  | 'subtask'
+  | 'note';
 
 const paths: Record<IconName, string> = {
   chain:
@@ -10,6 +18,8 @@ const paths: Record<IconName, string> = {
   list: 'M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1',
   gantt: 'M3 3h5v18H3zM10 8h5v13h-5zM17 13h4v8h-4z',
   undo: 'M4 10h8a7 7 0 0 1 7 7M4 10l5-5M4 10l5 5',
+  subtask: 'M5 4v6a4 4 0 0 0 4 4h7M13 11l3 3-3 3M19 3v6M16 6h6',
+  note: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
 };
 
 export function ControlIcon({ name }: { name: IconName }) {

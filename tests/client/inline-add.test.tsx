@@ -24,16 +24,17 @@ import { treeRows } from '../../src/client/tree-view.js';
 import { optionalTreeFixture, optionalIds } from './fixtures.js';
 
 afterEach(cleanup);
-it('opens a child editor with Shift+Enter and a row action', () => {
+it('opens a child editor with Shift+Enter and the row quick action', async () => {
   const tree = optionalTreeFixture();
   const action = vi.fn();
+  const select = vi.fn();
   render(
     <TaskTree
       tasks={tree.tasks}
       collapsed={new Set()}
       selectedId={null}
       onToggle={vi.fn()}
-      onSelect={vi.fn()}
+      onSelect={select}
       onAction={action}
     />,
   );
@@ -42,10 +43,81 @@ it('opens a child editor with Shift+Enter and a row action', () => {
     shiftKey: true,
   });
   expect(action).toHaveBeenLastCalledWith('child', tree.tasks[1]);
-  fireEvent.click(
+  await userEvent.click(
     screen.getByRole('button', { name: 'Добавить подзадачу: Работа C' }),
   );
   expect(action).toHaveBeenLastCalledWith('child', tree.tasks[2]);
+  expect(select).not.toHaveBeenCalled();
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  // Without a journal handler the row offers only the subtask action.
+  expect(
+    within(screen.getByRole('treeitem', { name: /^Работа C,/ }))
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label')),
+  ).toEqual(['Добавить подзадачу: Работа C']);
+});
+it('row quick actions work from the keyboard and never select or nest the row', async () => {
+  const tree = optionalTreeFixture();
+  const action = vi.fn();
+  const select = vi.fn();
+  const journal = vi.fn();
+  render(
+    <TaskTree
+      tasks={tree.tasks}
+      collapsed={new Set()}
+      selectedId={null}
+      onToggle={vi.fn()}
+      onSelect={select}
+      onAction={action}
+      onJournal={journal}
+    />,
+  );
+  const row = screen.getByRole('treeitem', { name: /^Работа C,/ });
+  expect(
+    within(row)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label')),
+  ).toEqual(['Добавить подзадачу: Работа C', 'Добавить запись: Работа C']);
+  const child = within(row).getByRole('button', {
+    name: 'Добавить подзадачу: Работа C',
+  });
+  expect(child).toHaveAttribute('title', 'Добавить подзадачу (Shift+Enter)');
+  child.focus();
+  await userEvent.keyboard('{Enter}');
+  expect(action).toHaveBeenCalledTimes(1);
+  expect(action).toHaveBeenLastCalledWith('child', tree.tasks[2]);
+  // Shift+Enter on the button is the button's own activation, not a second
+  // row command.
+  fireEvent.keyDown(child, { key: 'Enter', shiftKey: true });
+  expect(action).toHaveBeenCalledTimes(1);
+  const entry = within(row).getByRole('button', {
+    name: 'Добавить запись: Работа C',
+  });
+  expect(entry).toHaveAttribute('title', 'Добавить запись');
+  await userEvent.click(entry);
+  expect(journal).toHaveBeenLastCalledWith(tree.tasks[2], entry);
+  expect(select).not.toHaveBeenCalled();
+});
+it('disables the subtask quick action while the tree is disabled', () => {
+  const tree = optionalTreeFixture();
+  render(
+    <TaskTree
+      tasks={tree.tasks}
+      collapsed={new Set()}
+      selectedId={null}
+      onToggle={vi.fn()}
+      onSelect={vi.fn()}
+      onAction={vi.fn()}
+      onJournal={vi.fn()}
+      disabled
+    />,
+  );
+  expect(
+    screen.getByRole('button', { name: 'Добавить подзадачу: Работа C' }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: 'Добавить запись: Работа C' }),
+  ).toBeEnabled();
 });
 it('inserts the draft after the parent branch and uses group dates without changing the tree', () => {
   const tree = optionalTreeFixture();

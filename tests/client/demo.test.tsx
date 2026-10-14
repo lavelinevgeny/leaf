@@ -10,6 +10,7 @@ const notice =
   'Публичное демо: данные общие для всех посетителей и сбрасываются при каждом запуске сервера. Не вводите личные данные.';
 const guest = { authenticated: false, setupRequired: false, demoMode: true };
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   vi.spyOn(api, 'session').mockResolvedValue(guest);
   vi.spyOn(api, 'projects').mockResolvedValue([]);
 });

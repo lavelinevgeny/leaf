@@ -1,0 +1,278 @@
+.project-view-tabs {
+  display: flex;
+  gap: 1rem;
+  min-height: 38px;
+  align-items: stretch;
+}
+.project-view-tabs button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+}
+.project-view-tabs [aria-selected='true'] {
+  border-bottom-color: var(--accent, #32805c);
+}
+.project-journal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.journal-controls {
+  display: flex;
+  gap: 0.6rem;
+  align-items: end;
+  min-height: 64px;
+  padding: 0.5rem 1rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border, #e7e9ed);
+}
+.journal-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+.journal-controls .calendar-field {
+  width: 150px;
+}
+.journal-feed {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 0 0 var(--leaf-space-4);
+}
+.journal-hint {
+  color: var(--muted, #667085);
+  font-size: 0.78rem;
+}
+.journal-entry {
+  max-width: 960px;
+  margin: 0;
+}
+.journal-entry h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--leaf-space-3);
+  margin: var(--leaf-space-4) 0 var(--leaf-space-1);
+  color: var(--leaf-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  /* Integer line boxes: prepend anchor restoration (J14) needs whole-pixel
+     entry heights, because scrollTop snaps to device pixels. */
+  line-height: 16px;
+  letter-spacing: 0.04em;
+}
+.journal-entry h3::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--leaf-border);
+}
+.journal-entry article {
+  position: relative;
+  padding: 10px 40px 10px 20px;
+  border-bottom: 1px solid var(--leaf-border);
+}
+.journal-entry article::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  left: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--leaf-accent);
+}
+.journal-task-link {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--leaf-accent);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: start;
+}
+.journal-body {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.journal-entry-menu {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+}
+.journal-entry-menu > button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+.journal-entry article:hover .journal-entry-menu > button,
+.journal-entry article:focus-within .journal-entry-menu > button,
+.journal-entry-menu > button[aria-expanded='true'] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .journal-entry-menu > button {
+    opacity: 1;
+  }
+}
+.journal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.journal-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.journal-editor textarea {
+  resize: vertical;
+  width: 100%;
+  min-height: 72px;
+}
+.journal-editor-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--leaf-space-2);
+  align-items: end;
+  justify-content: space-between;
+}
+.journal-editor-footer .calendar-field {
+  flex: 0 1 150px;
+  margin-bottom: 0;
+}
+/* The actions block never shrinks below its widest button, so it wraps under
+   the date in narrow forms instead of squeezing labels onto two lines. */
+.journal-editor-footer .journal-editor-actions {
+  flex: 1 1 0;
+  min-width: min-content;
+  justify-content: flex-end;
+}
+.journal-editor-footer .journal-editor-actions > button {
+  white-space: nowrap;
+}
+.journal-editor .journal-hint {
+  margin: 0;
+  padding: 0;
+}
+.journal-editor-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+/* R2: inline project composer between the toolbar and the feed; no modal,
+   scroll lock or focus trap. The feed's scroll container is not scrolled by
+   opening it. The composer takes its content height (an open task picker has
+   capped results below) while the feed keeps at least 6rem; only when the
+   journal pane is too short for both does the composer shrink and scroll
+   inside itself. */
+.journal-composer {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-width: 960px;
+  overflow: auto;
+  margin: var(--leaf-space-2) 0;
+  padding: var(--leaf-space-3) var(--leaf-space-4);
+  border: 1px solid var(--leaf-border);
+  border-radius: 10px;
+  background: var(--leaf-surface-muted);
+}
+@media (max-width: 600px) {
+  .journal-composer {
+    padding: var(--leaf-space-2);
+  }
+}
+.journal-picker-results {
+  max-height: 200px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.journal-composer .journal-picker-results {
+  max-height: min(200px, 20vh);
+}
+.journal-picker-results [aria-selected='true'] {
+  background: var(--surface-hover, #edf6f0);
+}
+.journal-picker-results button {
+  text-align: start;
+}
+.task-journal .journal-feed {
+  padding: 0.5rem 0;
+}
+/* The project feed never collapses under an open composer (spec 5.7). */
+.project-journal .journal-feed {
+  min-height: 6rem;
+}
+.journal-conflict {
+  border-inline-start: 3px solid #ad7d37;
+  padding: 0.5rem;
+}
+.journal-header-search {
+  margin: 0;
+  font-size: 0;
+}
+.journal-header-search input {
+  font-size: 14px;
+  margin: 0;
+  height: 38px;
+  width: 240px;
+}
+.journal-controls {
+  height: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  padding: 4px 0;
+  align-items: center;
+  border: 0;
+}
+.journal-controls button {
+  padding: 5px 10px;
+}
+.journal-period {
+  position: relative;
+}
+.journal-period-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 15;
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  padding: 12px;
+  background: white;
+  border: 1px solid var(--leaf-border);
+  box-shadow: 0 4px 14px #0002;
+  border-radius: 8px;
+}
+.journal-period-popover label {
+  margin: 0;
+}
+.journal-feed {
+  position: relative;
+}
+.journal-loading {
+  position: absolute;
+  top: 0;
+  right: 1rem;
+  z-index: 1;
+  background: var(--leaf-surface-muted);
+  font-size: 12px;
+}
+.journal-notice {
+  margin: 0;
+  font-size: 12px;
+}

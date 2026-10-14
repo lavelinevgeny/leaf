@@ -18,7 +18,17 @@
 
 Один агент реализует небольшое изменение, второй проверяет независимым взглядом тесты, безопасность и соответствие референсам. Можно менять роли. Не закреплять модель навсегда за видом работы.
 
-Для параллельной работы — отдельная ветка и worktree; рабочие каталоги/временные файлы не коммитятся. Один writer на schema, lockfile, shared contracts и scheduling behavior. Перед merge второй агент перечитывает актуальные файлы, а не опирается на свой старый контекст. Не коммитить чужие незавершённые изменения.
+Параллельная работа — по правилам раздела «Ветки и worktree»; рабочие каталоги/временные файлы не коммитятся. Один writer на schema, lockfile, shared contracts и scheduling behavior. Перед merge второй агент перечитывает актуальные файлы, а не опирается на свой старый контекст. Не коммитить чужие незавершённые изменения.
+
+## Ветки и worktree
+
+По умолчанию агенты работают последовательно в основном checkout владельца. Перед началом задачи `git status` должен быть чистым, затем создаётся новая ветка от актуального `main` с префиксом вида `feat/`, `fix/` или `docs/`. Если в checkout есть незакоммиченные изменения владельца или активна чужая ветка, сначала спросить владельца; не переключать ветку поверх чужой работы. Агент не коммитит прямо в `main`. Владелец проверяет результат в том же каталоге, без перехода в другой.
+
+Ревью не требует отдельного каталога: ревьюер читает точный коммит через `git diff`/`git show` и пишет отчёт. Тесты кандидата запускаются в основном checkout после того, как реализующий агент закончил, а не одновременно с ним.
+
+Linked worktree — исключение только для действительно одновременной работы нескольких агентов и только с согласия владельца. Worktree создавать внутри checkout в `.tmp/<задача>`: каталог игнорируется Git и не входит в Docker context. Не использовать системный `/tmp`: Claude блокирует чтение вне рабочих каталогов, и каждая команда там требует подтверждения владельца. Не использовать `.worktrees/` и `worktrees/`: их отклоняет workspace guard. В чужом worktree использовать абсолютные пути или Read/Grep, а не `cd <dir> && …` в составной команде; не удалять каталоги через `rm -rf` с путём из переменной. Завершённые worktree убирать через `git worktree remove`. Ограничение: workspace guard проверяет и ignored `.tmp/`, поэтому `preflight` в owner checkout с живыми worktree даёт известный FAIL PERSONAL_HOME_PATH (служебный файл `.git` worktree); guard не ослаблять, gate публикации — ordinary clean clone.
+
+После слияния владельцем удалить влитую ветку (`git branch -d`) и созданные для неё worktree (`git worktree remove`, затем `git worktree prune`). В handoff агент перечисляет оставшиеся свои ветки и worktree; незавершённые не удаляются без решения владельца.
 
 ## Handoff
 
@@ -34,7 +44,7 @@
 
 Перед работой: `npm run doctor`. Перед подготовкой публикации: `npm run preflight`. Эти команды не меняют index, Git identity или remote. Preflight отдельно проверяет workspace secrets и полные изменённые staged blobs: рабочий файл и index могут различаться. Scanner policy для staged/history/commit message берётся из index; перед самым первым запуском подготовить проверенную `.gitleaks.toml` по BOOTSTRAP. Local kit tests используют временную синтетику, их можно выполнять без повторного согласования; для полного suite обязателен Gitleaks.
 
-Claude: shared settings включают strict sandbox (`enabled`, `failIfUnavailable`, запрет unsandboxed retry), запреты private reads и blockReadsOutsideWorkingDirectories. Сеть subprocess по умолчанию без разрешённых доменов. Проверить effective settings через `/sandbox` и `/permissions` в актуальном Claude Code; проверить synthetic denied files через Read и Bash/Node, отказ сети и разрешённое редактирование public files. Shared settings могут зависеть от managed policy и версии. Агентные `.env.example` также закрыты консервативным `.env.*` deny; public примеры для чтения можно размещать как `config/env.example`.
+Claude: shared settings включают strict sandbox (`enabled`, `failIfUnavailable`, запрет unsandboxed retry), запреты private reads и blockReadsOutsideWorkingDirectories. Сеть subprocess по умолчанию без разрешённых доменов. Проверить effective settings через `/sandbox` и `/permissions` в актуальном Claude Code; проверить synthetic denied files через Read и Bash/Node, отказ сети и разрешённое редактирование public files. Shared settings могут зависеть от managed policy и версии. Агентные `.env.example` также закрыты консервативным `.env.*` deny; public примеры для чтения можно размещать как `config/env.example`. Если Node или Gitleaks установлены в home, без личного исключения Claude не может запускать проверки и коммитить; настройка — раздел «Node и Gitleaks для Claude Code» в [BOOTSTRAP](BOOTSTRAP.md).
 
 Codex: credential-free template — [codex-permissions.json](../config/agents/codex-permissions.json). Он оставляет доступ к рабочему дереву и минимальным системным инструментам, запрещает private runtime paths и subprocess network. При запуске добавляется read-only доступ только к реальным исполняемым файлам Node и native Codex: npm/nvm может установить их вне системных каталогов, а сам Codex запускает свой sandbox helper внутри изоляции. Родительские каталоги инструмента и остальной home не открываются. Пути вычисляются в памяти, не записываются в repository config; неизвестная обёртка или путь в credential store приводят к отказу.
 
