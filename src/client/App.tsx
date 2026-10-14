@@ -864,7 +864,13 @@ export function App() {
     setPanelTab('details');
     setPanelHistory([]);
     panelOrigin.current = task.id;
-    setContext({ parentId: task.parentId, afterId: task.id });
+    // C31: selecting a row never moves the quick input; an untouched one returns to the end.
+    const draft = quickDrafts[task.projectId];
+    if (!draft || !hasQuickDraft(draft)) {
+      setQuickEditing(false);
+      quickOrigin.current = null;
+      setContext({ parentId: null });
+    }
     return !reselect;
   }
   function closePanel() {

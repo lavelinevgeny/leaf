@@ -824,11 +824,11 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Новая задача'), 'Задача A{Enter}');
-    await user.click(
-      await screen.findByRole('treeitem', { name: /Задача A,/ }),
-    );
+    (await screen.findByRole('treeitem', { name: /Задача A,/ })).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Черновик B');
-    await user.click(screen.getByRole('button', { name: 'Удалить ветку' }));
+    screen.getByRole('treeitem', { name: /Задача A,/ }).focus();
+    await user.keyboard('{Delete}');
     await screen.findByText('В проекте пока нет задач.');
     expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик B');
     await user.click(screen.getByLabelText('Новая задача'));
@@ -913,8 +913,10 @@ describe('client HTTP interactions', () => {
     tree.tasks = [task(1, 'Задача A'), task(2, 'Задача B', null, 1)];
     await open();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
+    screen.getByRole('treeitem', { name: /Задача B,/ }).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Черновик корня');
+    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
     tree = {
       ...tree,
       tasks: [task(1, 'Задача A'), task(2, 'Задача B', id(1))],
@@ -940,12 +942,43 @@ describe('client HTTP interactions', () => {
       parentId: null,
     });
   });
+  it('keeps the quick input in place when a row is selected (C31)', async () => {
+    tree.tasks = [task(1, 'Задача A'), task(2, 'Задача B', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    const follows = (name: RegExp) =>
+      !!(
+        screen
+          .getByRole('treeitem', { name })
+          .compareDocumentPosition(screen.getByLabelText('Новая задача')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+    await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    expect(screen.getByText('Родитель: Корень проекта')).toBeInTheDocument();
+    expect(follows(/Задача B,/)).toBe(true);
+    screen.getByRole('treeitem', { name: /Задача A,/ }).focus();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    expect(follows(/Задача B,/)).toBe(false);
+    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
+    expect(screen.getByText('Родитель: Корень проекта')).toBeInTheDocument();
+    expect(follows(/Задача B,/)).toBe(true);
+    screen.getByRole('treeitem', { name: /Задача A,/ }).focus();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    await user.type(screen.getByLabelText('Новая задача'), 'Черновик');
+    await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
+    expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик');
+    expect(commands).toHaveLength(0);
+  });
   it('retains a surviving quick parent when its child anchor is deleted', async () => {
     tree.tasks = [task(1, 'Родитель A'), task(2, 'Ребёнок A', id(1))];
     await open();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('treeitem', { name: /Ребёнок A,/ }));
+    screen.getByRole('treeitem', { name: /Ребёнок A,/ }).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Сосед ребёнка');
+    await user.click(screen.getByRole('treeitem', { name: /Ребёнок A,/ }));
     await user.click(screen.getByRole('button', { name: 'Удалить ветку' }));
     await waitFor(() =>
       expect(
@@ -979,7 +1012,8 @@ describe('client HTTP interactions', () => {
     };
     await open();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('treeitem', { name: /Ребёнок A,/ }));
+    screen.getByRole('treeitem', { name: /Ребёнок A,/ }).focus();
+    await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Сосед ребёнка');
     tree = {
       ...tree,
