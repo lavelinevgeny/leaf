@@ -6,6 +6,8 @@ import {
   render,
   screen,
   within,
+  act,
+  waitFor,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState, type ComponentProps } from 'react';
@@ -233,7 +235,10 @@ it('resets to the pinned task/source/incoming baseline after an unrelated newer 
   expect(screen.getByLabelText('Separate journal draft')).toHaveValue(
     'Journal draft',
   );
-  await user.click(screen.getByRole('button', { name: 'После окончания' }));
+  await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
   expect(
     screen.getByRole('button', { name: 'Убрать предшественника: A' }),
   ).toBeVisible();
@@ -275,4 +280,146 @@ it('keeps a newer established baseline after an older frozen acknowledgement and
     'New saved baseline',
   );
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+});
+
+it('saves title source and graph incoming draft in exactly one task.edit', async () => {
+  const tree = initial();
+  tree.tasks.push(task(2, { title: 'Predecessor' }));
+  const onSave = vi.fn(async () => null),
+    onDependency = vi.fn(),
+    user = userEvent.setup();
+  render(
+    <Harness
+      tree={tree}
+      tasks={tree.tasks}
+      task={tree.tasks[0]!}
+      onSave={onSave}
+      onDependency={onDependency}
+    />,
+  );
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.clear(screen.getByLabelText('Название задачи'));
+  await user.type(screen.getByLabelText('Название задачи'), 'Edited');
+  fireEvent.change(screen.getByLabelText('Длительность, рабочих дней'), {
+    target: { value: '3' },
+  });
+  fireEvent.blur(screen.getByLabelText('Длительность, рабочих дней'));
+  await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
+  await user.click(screen.getByRole('option', { name: /Predecessor/ }));
+  await user.keyboard('{Escape}');
+  expect(onSave).not.toHaveBeenCalled();
+  expect(onDependency).not.toHaveBeenCalled();
+  expect(screen.getByRole('tab', { name: 'Зависимости' })).toHaveTextContent(
+    'Зависимости',
+  );
+  expect(screen.getByText('Не сохранено')).toBeVisible();
+  expect(
+    screen.getByRole('tab', { name: 'Зависимости' }),
+  ).not.toHaveTextContent('(1)');
+  expect(
+    screen.getByRole('tab', { name: 'Зависимости' }),
+  ).toHaveAccessibleDescription('Входящие связи: Не сохранено');
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  expect(onSave).toHaveBeenCalledExactlyOnceWith({
+    title: 'Edited',
+    durationDays: 3,
+    predecessorIds: [task(2).id],
+  });
+});
+
+it('keeps newer incoming draft and current tree after a frozen acknowledgement of the sent graph snapshot', async () => {
+  const tree = initial();
+  tree.tasks.push(task(2, { title: 'A' }), task(3, { title: 'B' }));
+  const frozen = {
+    ...tree,
+    project: { ...tree.project, revision: 1 },
+    dependencies: [
+      {
+        id: task(90).id,
+        projectId: tree.project.id,
+        predecessorId: task(2).id,
+        successorId: task(1).id,
+      },
+    ],
+  };
+  let acknowledge!: (tree: typeof frozen) => void;
+  const onSave = vi.fn(
+      () =>
+        new Promise<typeof frozen>((resolve) => {
+          acknowledge = resolve;
+        }),
+    ),
+    user = userEvent.setup();
+  const p = { tree, tasks: tree.tasks, task: tree.tasks[0]!, onSave };
+  const view = render(<Harness {...p} />);
+  await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
+  await user.click(screen.getByRole('option', { name: /^A/ }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  // This component boundary fixture simulates a newer caller draft; App keeps actual busy/uncertain inputs locked.
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
+  await user.click(screen.getByRole('option', { name: /^B/ }));
+  await user.keyboard('{Escape}');
+  const newer = {
+    ...frozen,
+    project: { ...tree.project, revision: 2 },
+    tasks: tree.tasks.map((t) =>
+      t.id === task(3).id ? { ...t, title: 'B newer' } : t,
+    ),
+  };
+  view.rerender(
+    <Harness {...p} tree={newer} tasks={newer.tasks} task={newer.tasks[0]!} />,
+  );
+  await act(async () => {
+    acknowledge(frozen);
+  });
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
+  );
+  expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
+  expect(screen.getByText('Не сохранено', { exact: true })).toBeVisible();
+  expect(
+    screen.getByRole('button', { name: 'Открыть: B newer' }),
+  ).toBeVisible();
+  expect(screen.getByRole('tab', { name: 'Зависимости' })).toHaveTextContent(
+    '(1)',
+  );
+  expect(
+    screen.getByRole('tab', { name: 'Зависимости' }),
+  ).toHaveAccessibleDescription('(1) Входящие связи: Не сохранено');
+  await user.click(screen.getByRole('button', { name: 'Сбросить изменения' }));
+  expect(screen.queryByText('Не сохранено', { exact: true })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Открыть: B newer' })).toBeNull();
+  expect(onSave).toHaveBeenCalledExactlyOnceWith({
+    predecessorIds: [task(2).id],
+  });
+});
+it('labels only scheduling edits as saved-plan analysis and keeps hard locks on incoming', async () => {
+  const user = userEvent.setup();
+  const view = render(<Harness />);
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' draft');
+  await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+  expect(screen.queryByText('По сохранённому плану')).toBeNull();
+  await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
+  expect(screen.getByText('По сохранённому плану')).toBeVisible();
+  for (const lock of [
+    { busy: true },
+    { locked: true },
+    { removed: true },
+    { conflict: true },
+  ]) {
+    view.rerender(<Harness {...lock} />);
+    expect(
+      screen.getByRole('button', { name: 'Добавить предшественника' }),
+    ).toBeDisabled();
+  }
 });

@@ -19,6 +19,8 @@ export async function send(
   origin: string,
   tree: ProjectTree,
   command: Command,
+  expectedStatus = 200,
+  expectedCode?: string,
 ): Promise<ProjectTree> {
   const response = await page.request.post(
     `${origin}/api/projects/${tree.project.id}/commands`,
@@ -32,8 +34,11 @@ export async function send(
       },
     },
   );
-  expect(response.status()).toBe(200);
-  return response.json();
+  expect(response.status()).toBe(expectedStatus);
+  if (expectedCode) expect((await response.json()).code).toBe(expectedCode);
+  return expectedStatus === 200
+    ? response.json()
+    : readTree(page, origin, tree.project.id);
 }
 export async function seedOptionalRuntime(
   page: Page,

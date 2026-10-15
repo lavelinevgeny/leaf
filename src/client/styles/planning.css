@@ -922,3 +922,38 @@
 .quick-schedule[hidden] {
   display: none;
 }
+
+.dependency-arrow.dependency-pending {
+  stroke-dasharray: 4 3;
+}
+.dependency-card.dependency-pending {
+  border-style: dashed;
+}
+.graph-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.graph-section-title button {
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.dependency-calculation {
+  margin-top: 16px;
+  border-top: 1px solid var(--leaf-border);
+  padding-top: 12px;
+}
+.dependency-calculation > summary {
+  cursor: pointer;
+}
+.dependency-draft-marker {
+  color: var(--leaf-accent);
+}
+
+.dependency-card.dependency-pending .dependency-open {
+  padding-block: 5px;
+}
+.dependency-card.dependency-pending small {
+  margin-top: 1px;
+  line-height: 1.1;
+}

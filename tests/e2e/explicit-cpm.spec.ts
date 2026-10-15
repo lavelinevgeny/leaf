@@ -143,7 +143,8 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
     page.locator('[data-dependency-edge="' + cd + '"]'),
   ).not.toHaveClass(/(^| )critical( |$)/);
   await page.getByRole('treeitem', { name: /^C,/ }).first().press('Enter');
-  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(page.getByText(/Резерв проекта: 2/)).toBeVisible();
   await page.keyboard.press('Escape');
   const undoReply = page.waitForResponse(
@@ -416,6 +417,8 @@ test('conditional unknown keeps partial copy while predecessor delay cascades re
   });
   await page.reload();
   await page.getByRole('treeitem', { name: /^C,/ }).press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(
     page
       .getByText(
@@ -464,6 +467,8 @@ test('conditional unknown keeps partial copy while predecessor delay cascades re
     /Предшественник/,
   );
   await page.getByRole('treeitem', { name: /^A,/ }).press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(
     page.getByText(/Предшественник заканчивается после явного начала/).first(),
   ).toHaveCount(0);
@@ -621,6 +626,8 @@ test('F03 tight and non-tight edges distinguish global and partial criticality a
   });
   await page.reload();
   await page.getByRole('treeitem', { name: /^B,/ }).press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(
     page.getByText(
       'Анализ датированной части; полный критический путь неизвестен',
@@ -691,6 +698,8 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
     constraintFloat: 0,
   });
   expect(done.schedule.criticalTaskIds).toEqual([by.C!]);
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(page.getByText(/Резерв проекта: 4/)).toBeVisible();
   await expect(page.getByText(/Резерв текущего размещения: 0/)).toBeVisible();
   await expect(
@@ -766,6 +775,8 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: /^A,/ })
     .press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(page.getByText(/Резерв проекта: 2/)).toBeVisible();
   await page.keyboard.press('Escape');
   const undo = page.waitForResponse(

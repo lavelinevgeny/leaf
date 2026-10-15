@@ -557,6 +557,8 @@ describe('client HTTP interactions', () => {
         { name: /Конфликт плана/ },
       ),
     );
+    await userEvent.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    await userEvent.click(screen.getByText('Расчёт', { exact: true }));
     expect(
       within(screen.getByRole('complementary', { name: 'Задача' })).getByText(
         'Предшественник заканчивается после явного начала.',
@@ -2469,7 +2471,10 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /^B,/ }));
-    await user.click(screen.getByRole('button', { name: 'После окончания' }));
+    await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Добавить предшественника' }),
+    );
     await user.type(
       screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
       'A',
@@ -2525,7 +2530,10 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         .filter(([url]) => String(url).endsWith('/commands'))
         .at(-1)?.[1]?.body,
     ).toBe(original);
-    await user.click(screen.getByRole('button', { name: 'После окончания' }));
+    await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Добавить предшественника' }),
+    );
     expect(
       screen.getByRole('button', { name: 'Убрать предшественника: A' }),
     ).toBeInTheDocument();
@@ -2750,7 +2758,7 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
   ).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
   expect(
-    screen.getByRole('button', { name: 'Добавить зависимость' }),
+    screen.getByRole('button', { name: 'Добавить последователя' }),
   ).toBeDisabled();
   expect(commands).toHaveLength(0);
 });

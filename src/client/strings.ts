@@ -1,4 +1,16 @@
 export const strings = {
+  addPredecessor: 'Добавить предшественника',
+  addSuccessor: 'Добавить последователя',
+  closeSuccessors: 'Закрыть выбор последователей',
+  removeSuccessor: 'Убрать последователя',
+  searchSuccessor: 'Поиск последователя',
+  dependencyUnsaved: 'Не сохранено',
+  incomingDraft: 'Входящие связи: Не сохранено',
+  dependencyRemoval: 'Ожидает удаления',
+  restoreDependency: 'Восстановить связь',
+  savedPlan: 'По сохранённому плану',
+  calculation: 'Расчёт',
+
   taskDates: 'Сроки задачи',
   clearAllSchedule: 'Очистить все сроки',
   repairSchedule: 'Исправить сроки',

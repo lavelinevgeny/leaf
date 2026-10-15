@@ -568,7 +568,7 @@ it('guards child and parent return and restores both branch scroll offsets', asy
   ).toHaveFocus();
   expect(commandCalls).toHaveLength(0);
 });
-it('routes dependency-neighbor selection through the guard while writes stay blocked', async () => {
+it('routes dependency-neighbor selection through the guard while incoming draft stays editable and outgoing writes stay blocked', async () => {
   tree.dependencies = [
     {
       id: id(90),
@@ -581,7 +581,15 @@ it('routes dependency-neighbor selection through the guard while writes stay blo
   await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
   expect(
     screen.getByRole('button', { name: 'Удалить связь: Работа C' }),
+  ).toBeEnabled();
+  expect(
+    screen.getByRole('button', { name: 'Добавить последователя' }),
   ).toBeDisabled();
+  expect(
+    within(screen.getByRole('tabpanel', { name: 'Зависимости' })).getByText(
+      'Сначала сохраните изменения задачи',
+    ),
+  ).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Открыть: Работа C' }));
   await user.click(screen.getByRole('button', { name: 'Не сохранять' }));
   expect(screen.getByRole('heading', { name: 'Работа C' })).toBeVisible();

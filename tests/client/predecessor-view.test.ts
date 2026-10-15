@@ -3,6 +3,7 @@ import {
   canonicalPredecessorIds,
   incomingPredecessorIds,
   predecessorCandidates,
+  successorCandidates,
 } from '../../src/client/predecessor-view.js';
 import {
   sameQuickDraft,
@@ -94,4 +95,34 @@ it('compares complete quick drafts, canonical predecessor sets and exact context
   expect(hasQuickDraft({ ...draft, title: '', predecessorIds: [] })).toBe(
     false,
   );
+});
+
+it('successor candidates exclude self duplicate summary foreign and cycles with ancestor search', () => {
+  const tree = optionalTreeFixture(),
+    p = task(10, { title: 'Branch' }),
+    a = task(1),
+    b = task(2),
+    c = task(3),
+    d = task(4, { parentId: p.id });
+  tree.tasks = [p, a, b, c, d, task(5, { projectId: 'foreign' })];
+  tree.dependencies = [
+    {
+      id: 'ab',
+      projectId: tree.project.id,
+      predecessorId: a.id,
+      successorId: b.id,
+    },
+    {
+      id: 'bc',
+      projectId: tree.project.id,
+      predecessorId: b.id,
+      successorId: c.id,
+    },
+  ];
+  expect(
+    successorCandidates(tree, b.id, '').map(({ task }) => task.id),
+  ).toEqual([d.id]);
+  expect(successorCandidates(tree, b.id, 'branch')).toEqual([
+    expect.objectContaining({ task: d, path: 'Branch' }),
+  ]);
 });

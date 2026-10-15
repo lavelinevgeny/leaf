@@ -299,3 +299,26 @@ it('Enter selects the first search result without submitting its enclosing form'
   expect(onAdd).toHaveBeenCalledExactlyOnceWith(tree.tasks[0]!.id);
   expect(submit).not.toHaveBeenCalled();
 });
+
+it('uses the successor direction for labels, endpoints and shared keyboard search', async () => {
+  const tree = optionalTreeFixture();
+  tree.tasks = [task(1, { title: 'A' }), task(2, { title: 'B' })];
+  const onAdd = vi.fn();
+  render(
+    <PredecessorPicker
+      tree={tree}
+      direction="successor"
+      predecessorId={tree.tasks[0]!.id}
+      selectedIds={[]}
+      disabled={false}
+      onAdd={onAdd}
+      onRemove={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByRole('dialog', { name: 'Добавить последователя' }),
+  ).toBeVisible();
+  await userEvent.type(screen.getByRole('searchbox'), 'B{Enter}');
+  expect(onAdd).toHaveBeenCalledExactlyOnceWith(tree.tasks[1]!.id);
+});

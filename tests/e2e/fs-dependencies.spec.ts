@@ -73,6 +73,12 @@ async function show(page: Page) {
   await page.reload();
   await page.getByRole('button', { name: 'Демо FS', exact: true }).click();
 }
+async function openIncoming(page: Page) {
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await panel(page)
+    .getByRole('button', { name: 'Добавить предшественника', exact: true })
+    .click();
+}
 async function choose(page: Page, title: string) {
   const search = picker(page).getByRole('searchbox');
   await expect(search).toBeFocused();
@@ -222,13 +228,14 @@ test('Details relation-only save adopts canonical weekday dates, clean baseline 
   );
   await show(page);
   await row(page, taskId(tree, 'B')).click();
-  await panel(page)
-    .getByRole('button', { name: 'После окончания', exact: true })
-    .click();
+  await openIncoming(page);
   await choose(page, 'A');
   await expect(panel(page)).toBeVisible();
   await expect(
-    panel(page).getByRole('button', { name: 'После окончания', exact: true }),
+    panel(page).getByRole('button', {
+      name: 'Добавить предшественника',
+      exact: true,
+    }),
   ).toBeFocused();
   await save(page);
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
@@ -239,6 +246,7 @@ test('Details relation-only save adopts canonical weekday dates, clean baseline 
     inputFinish: '2026-10-13',
     durationDays: null,
   });
+  await openTaskDates(page);
   await expect(page.getByLabel('Начало', { exact: true })).toHaveValue(
     '12.10.2026',
   );
@@ -256,6 +264,7 @@ test('Details relation-only save adopts canonical weekday dates, clean baseline 
   await page.screenshot({
     path: `/tmp/leaf-fs-${info.project.name}-details-fields.png`,
   });
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
   await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
   await expect(page.locator('[data-dependency-edge]')).toHaveCount(1);
   await panel(page)
@@ -312,9 +321,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   await finish.fill('12.10.2026');
   await finish.press('Tab');
   await page.getByRole('button', { name: 'Готово', exact: true }).click();
-  await panel(page)
-    .getByRole('button', { name: 'После окончания', exact: true })
-    .click();
+  await openIncoming(page);
   await choose(page, 'A');
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
   await save(page);
@@ -785,10 +792,9 @@ test('real stale 409 keeps Details source and IDs through reload and corrected r
   tree = await create(page, runtime, tree, 'B');
   await show(page);
   await row(page, taskId(tree, 'B')).click();
-  await panel(page)
-    .getByRole('button', { name: 'После окончания', exact: true })
-    .click();
+  await openIncoming(page);
   await choose(page, 'A');
+  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
   await page
     .getByRole('button', { name: /Добавить описание|Изменить описание/ })
     .click();
@@ -808,9 +814,10 @@ test('real stale 409 keeps Details source and IDs through reload and corrected r
   await expect(page.getByLabel('Описание', { exact: true })).toHaveValue(
     'Синтетический черновик',
   );
-  await expect(panel(page).locator('.predecessor-chip')).toHaveText(
-    'A обновлена',
-  );
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await expect(
+    panel(page).locator('[data-dependency-direction="incoming"] strong'),
+  ).toHaveText('A обновлена');
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).dependencies,
   ).toEqual([]);
@@ -864,7 +871,10 @@ test('source conflict rejects real save and dirty Details guards Gantt and graph
   await expect(page.getByLabel('Начало', { exact: true })).toHaveValue(
     '08.10.2026',
   );
-  await expect(panel(page).locator('.predecessor-chip')).toHaveText('A');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await expect(
+    panel(page).locator('[data-dependency-direction="incoming"] strong'),
+  ).toHaveText('A');
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
   await expect(
     row(page, taskId(tree, 'A')).getByRole('button', {
@@ -881,7 +891,7 @@ test('source conflict rejects real save and dirty Details guards Gantt and graph
   ).toBeDisabled();
   await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
   await expect(
-    page.getByRole('button', { name: 'Добавить зависимость', exact: true }),
+    page.getByRole('button', { name: 'Добавить последователя', exact: true }),
   ).toBeDisabled();
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
 });
@@ -923,9 +933,7 @@ for (const failure of ['done', 'cycle', 'calendar'] as const)
       });
     await show(page);
     await row(page, taskId(tree, 'B')).click();
-    await panel(page)
-      .getByRole('button', { name: 'После окончания', exact: true })
-      .click();
+    await openIncoming(page);
     await choose(page, 'A');
     if (failure === 'cycle') {
       tree = await send(page, runtime.origin, tree, {
@@ -955,7 +963,10 @@ for (const failure of ['done', 'cycle', 'calendar'] as const)
           ? 'DEPENDENCY_CYCLE'
           : 'CALENDAR_RANGE_EXCEEDED',
     );
-    await expect(panel(page).locator('.predecessor-chip')).toHaveText('A');
+    await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+    await expect(
+      panel(page).locator('[data-dependency-direction="incoming"] strong'),
+    ).toHaveText('A');
     await expect(
       page.getByRole('button', { name: 'Сбросить изменения', exact: true }),
     ).toBeVisible();
@@ -1311,6 +1322,8 @@ test('preexisting synthetic infeasible snapshot still shows local diagnostics wi
       /Предшественник заканчивается после явного начала/,
     );
   await row(page, taskId(tree, 'B')).click();
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(
     panel(page).getByText('Предшественник заканчивается после явного начала.', {
       exact: true,
@@ -1322,3 +1335,197 @@ test('preexisting synthetic infeasible snapshot still shows local diagnostics wi
   await expect(page.locator('.gantt-work.critical')).toHaveCount(0);
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(before);
 });
+
+test('C25 graph saves title source incoming in one revision and Undo; cycle envelope rolls back every field', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await project(page, runtime);
+  tree = await create(
+    page,
+    runtime,
+    tree,
+    'A',
+    null,
+    '2026-10-05',
+    '2026-10-06',
+  );
+  tree = await create(
+    page,
+    runtime,
+    tree,
+    'B',
+    null,
+    '2026-10-05',
+    '2026-10-05',
+  );
+  const a = taskId(tree, 'A'),
+    b = taskId(tree, 'B');
+  await show(page);
+  await row(page, b).click();
+  await panel(page)
+    .getByRole('button', { name: 'Изменить название', exact: true })
+    .click();
+  await page.getByLabel('Название задачи', { exact: true }).fill('B edited');
+  await page.getByLabel('Название задачи', { exact: true }).press('Enter');
+  await openTaskDates(page);
+  await page
+    .getByLabel('Длительность, рабочих дней', { exact: true })
+    .fill('1');
+  await page
+    .getByLabel('Длительность, рабочих дней', { exact: true })
+    .press('Tab');
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  await openIncoming(page);
+  await choose(page, 'A');
+  await expect(
+    panel(page).getByText('Не сохранено', { exact: true }),
+  ).toBeVisible();
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+  const reply = await save(page);
+  expect(reply.request().postDataJSON().command).toEqual({
+    type: 'task.edit',
+    taskId: b,
+    changes: { title: 'B edited', durationDays: 1, predecessorIds: [a] },
+  });
+  const saved = await readTree(page, runtime.origin, tree.project.id);
+  expect(saved.project.revision).toBe(tree.project.revision + 1);
+  expect(saved.tasks.find((t) => t.id === b)).toMatchObject({
+    title: 'B edited',
+    inputStart: '2026-10-07',
+    inputFinish: '2026-10-07',
+    durationDays: 1,
+  });
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
+    .click();
+  await expect(row(page, b)).toHaveText(/B/);
+  const undone = await readTree(page, runtime.origin, tree.project.id);
+  expect(undone.project.revision).toBe(saved.project.revision + 1);
+  expect(undone.tasks).toEqual(tree.tasks);
+  expect(undone.dependencies).toEqual(tree.dependencies);
+  expect(undone.schedule).toEqual(tree.schedule);
+  // Direct conflicting task.edit bypasses the UI candidate filter and verifies transactional rollback.
+  const reverse = await send(page, runtime.origin, undone, {
+    type: 'dependency.create',
+    predecessorId: b,
+    successorId: a,
+  });
+  const rejected = await send(
+    page,
+    runtime.origin,
+    reverse,
+    {
+      type: 'task.edit',
+      taskId: b,
+      changes: {
+        title: 'Rejected title',
+        description: 'Rejected description',
+        inputStart: '2026-10-08',
+        inputFinish: '2026-10-08',
+        durationDays: 1,
+        predecessorIds: [a],
+      },
+    },
+    400,
+    'DEPENDENCY_CYCLE',
+  );
+  expect(rejected).toEqual(reverse);
+});
+
+for (const direction of ['incoming', 'outgoing'] as const)
+  test(`graph ${direction} lost response exact retry resolves frozen ack and refreshes newer tree without another write`, async ({
+    page,
+    runtime,
+  }) => {
+    let tree = await project(page, runtime);
+    for (const name of ['A', 'B', 'C'])
+      tree = await create(page, runtime, tree, name);
+    const b = taskId(tree, 'B'),
+      c = taskId(tree, 'C');
+    await show(page);
+    await row(page, b).click();
+    let original: unknown, frozen: ProjectTree | undefined;
+    await page.route(
+      '**/api/projects/*/commands',
+      async (route) => {
+        original = route.request().postDataJSON();
+        const reply = await route.fetch();
+        expect(reply.status()).toBe(200);
+        frozen = await reply.json();
+        await route.abort('failed');
+      },
+      { times: 1 },
+    );
+    if (direction === 'incoming') {
+      await openIncoming(page);
+      await choose(page, 'A');
+      await panel(page)
+        .getByRole('button', { name: 'Сохранить', exact: true })
+        .click();
+    } else {
+      await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+      await panel(page)
+        .getByRole('button', { name: 'Добавить последователя', exact: true })
+        .click();
+      const successor = page.getByRole('dialog', {
+        name: 'Добавить последователя',
+        exact: true,
+      });
+      await successor.getByRole('searchbox').fill('C');
+      await successor.getByRole('searchbox').press('Enter');
+    }
+    await expect(
+      page.getByRole('button', { name: 'Повторить', exact: true }),
+    ).toBeVisible();
+    expect(frozen).toBeDefined();
+    expect(frozen!.project.revision).toBe(tree.project.revision + 1);
+    await expect(
+      panel(page).getByRole('button', {
+        name: 'Добавить предшественника',
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await expect(
+      panel(page).getByRole('button', {
+        name: 'Добавить последователя',
+        exact: true,
+      }),
+    ).toBeDisabled();
+    const latest = await send(page, runtime.origin, frozen!, {
+      type: 'task.edit',
+      taskId: c,
+      changes: { title: 'C newer' },
+    });
+    const retry = page.waitForResponse(
+      (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+    const response = await retry;
+    expect(response.status()).toBe(200);
+    expect(response.request().postDataJSON()).toEqual(original);
+    expect(await response.json()).toEqual(frozen);
+    expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(
+      latest,
+    );
+    await expect(row(page, c)).toContainText('C newer');
+    // Busy/uncertain locks intentionally prevent a new local draft until retry resolves.
+    await expect(
+      panel(page).getByRole('button', {
+        name: 'Добавить предшественника',
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await openIncoming(page);
+    await choose(page, direction === 'incoming' ? 'C newer' : 'A');
+    await expect(
+      panel(page).getByText('Не сохранено', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel(page).getByRole('button', { name: 'Сохранить', exact: true }),
+    ).toBeEnabled();
+    expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(
+      latest,
+    );
+  });

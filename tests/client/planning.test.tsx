@@ -254,7 +254,7 @@ function panelProps(
     task: tree.tasks[1]!,
     tasks: tree.tasks,
     removed: false,
-    tab: 'details' as const,
+    tab: 'dependencies' as const,
     onTab: vi.fn(),
     onDependency: vi.fn(async () => true),
     onNeighbor: vi.fn(),
@@ -314,7 +314,9 @@ function fsPanelFixture() {
   return { tree, ack };
 }
 async function choosePanelA(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'После окончания' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
   await user.type(screen.getByRole('searchbox'), 'A');
   await user.keyboard('{ArrowDown}{Enter}{Escape}');
 }
@@ -347,6 +349,7 @@ it('keeps a newer full panel draft dirty after deferred Save and reconciles its 
   const user = userEvent.setup();
   await choosePanelA(user);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  view.rerender(<TaskPanel {...p} tab="details" />);
   if (
     screen.queryByRole('button', {
       name: /Добавить описание|Изменить описание/,
@@ -366,7 +369,7 @@ it('keeps a newer full panel draft dirty after deferred Save and reconciles its 
   );
   expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
   expect(screen.getByText('Есть несохранённые изменения')).toBeInTheDocument();
-  view.rerender(<TaskPanel {...p} />);
+  view.rerender(<TaskPanel {...p} tab="details" />);
   expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик');
   onSave.mockImplementationOnce(async () => ack);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
@@ -386,6 +389,7 @@ it('handles global acknowledged replay without replacing newer edits, then expli
   const user = userEvent.setup();
   await choosePanelA(user);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  view.rerender(<TaskPanel {...p} tab="details" />);
   if (
     screen.queryByRole('button', {
       name: /Добавить описание|Изменить описание/,
@@ -403,6 +407,7 @@ it('handles global acknowledged replay without replacing newer edits, then expli
       task={ack.tasks[1]!}
       tree={ack}
       tasks={ack.tasks}
+      tab="details"
       saveAcknowledgement={ack}
     />,
   );
@@ -414,7 +419,12 @@ it('handles global acknowledged replay without replacing newer edits, then expli
   expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
   expect(screen.getByLabelText('Описание')).toHaveValue('');
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
-  await user.click(screen.getByRole('button', { name: 'После окончания' }));
+  view.rerender(
+    <TaskPanel {...p} task={ack.tasks[1]!} tree={ack} tasks={ack.tasks} />,
+  );
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
   expect(
     screen.getByRole('button', { name: 'Убрать предшественника: A' }),
   ).toBeInTheDocument();

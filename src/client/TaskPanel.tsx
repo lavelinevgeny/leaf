@@ -5,8 +5,6 @@ import {
   type SourceFields,
   type ProjectTree,
 } from '../shared/contracts.js';
-import { PredecessorPicker } from './PredecessorPicker.js';
-import { ControlIcon } from './ControlIcon.js';
 import {
   incomingPredecessorIds,
   canonicalPredecessorIds,
@@ -21,7 +19,6 @@ import { TaskPanelFooter } from './TaskPanelFooter.js';
 import { visiblePanelTab } from './task-panel-view.js';
 import { useTaskPanelLayout } from './use-task-panel-layout.js';
 import { sourceOf } from './planning-view.js';
-import { ScheduleStatus } from './ScheduleStatus.js';
 import { Dependencies } from './Dependencies.js';
 import type { Command } from '../shared/contracts.js';
 import { TaskTree, type TreeAction } from './TaskTree.js';
@@ -172,8 +169,6 @@ export function TaskPanel({
   const [baselineIncoming, setBaselineIncoming] = useState(() =>
     incomingPredecessorIds(tree, task.id),
   );
-  const [predecessorsOpen, setPredecessorsOpen] = useState(false);
-  const predecessorTrigger = useRef<HTMLButtonElement>(null);
   const currentDraft = useRef({
     details: draft,
     plan,
@@ -286,6 +281,9 @@ export function TaskPanel({
     planDirty ||
     rawDirty ||
     incomingDirty;
+  const savedDependencyCount = tree.dependencies.filter(
+    (edge) => edge.predecessorId === task.id || edge.successorId === task.id,
+  ).length;
   const summary = tasks.some((child) => child.parentId === task.id);
   useEffect(() => {
     onDirty(dirty);
@@ -550,6 +548,19 @@ export function TaskPanel({
             role="tab"
             id={`tab-${value}`}
             aria-controls={`panel-${value}`}
+            aria-label={
+              value === 'dependencies' ? strings.dependencies : undefined
+            }
+            aria-describedby={
+              value === 'dependencies'
+                ? [
+                    savedDependencyCount ? 'saved-dependency-count' : '',
+                    incomingDirty ? 'incoming-draft-marker' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                : undefined
+            }
             aria-selected={visibleTab === value}
             tabIndex={visibleTab === value ? 0 : -1}
             onClick={() => {
@@ -577,6 +588,20 @@ export function TaskPanel({
             }}
           >
             {value === 'details' ? strings.task : strings[value]}
+            {value === 'dependencies' && savedDependencyCount > 0 && (
+              <span id="saved-dependency-count"> ({savedDependencyCount})</span>
+            )}
+            {value === 'dependencies' && incomingDirty && (
+              <>
+                <span className="dependency-draft-marker" aria-hidden="true">
+                  {' '}
+                  •
+                </span>
+                <span id="incoming-draft-marker" hidden>
+                  {strings.incomingDraft}
+                </span>
+              </>
+            )}
           </button>
         ))}
       </div>
@@ -592,55 +617,6 @@ export function TaskPanel({
           </div>
         ) : visibleTab === 'details' ? (
           <div role="tabpanel" id="panel-details" aria-labelledby="tab-details">
-            <fieldset disabled={busy || locked}>
-              {summary ? (
-                <p className="field-hint">{strings.chooseLeaf}</p>
-              ) : (
-                <div className="panel-predecessors">
-                  <button
-                    ref={predecessorTrigger}
-                    type="button"
-                    aria-label={strings.afterFinish}
-                    aria-expanded={predecessorsOpen}
-                    disabled={removed || conflict}
-                    onClick={() => setPredecessorsOpen((open) => !open)}
-                  >
-                    <ControlIcon name="chain" /> {strings.afterFinish}
-                  </button>
-                  <div className="predecessor-chips">
-                    {canonicalPredecessorIds(incoming).map((id) => (
-                      <span className="predecessor-chip" key={id}>
-                        {tree.tasks.find((task) => task.id === id)?.title ??
-                          strings.removedPredecessor}
-                      </span>
-                    ))}
-                  </div>
-                  {predecessorsOpen && (
-                    <PredecessorPicker
-                      tree={tree}
-                      successorId={task.id}
-                      selectedIds={incoming}
-                      disabled={busy || locked || removed || conflict}
-                      onAdd={(id) => {
-                        setIncoming(canonicalPredecessorIds([...incoming, id]));
-                        setSaved(false);
-                      }}
-                      onRemove={(id) => {
-                        setIncoming(
-                          incoming.filter((selected) => selected !== id),
-                        );
-                        setSaved(false);
-                      }}
-                      onClose={() => {
-                        setPredecessorsOpen(false);
-                        predecessorTrigger.current?.focus();
-                      }}
-                    />
-                  )}
-                </div>
-              )}
-              <ScheduleStatus tree={tree} task={task} />
-            </fieldset>
             <section className="panel-description-section">
               {descriptionEditing ? (
                 <>
@@ -778,7 +754,19 @@ export function TaskPanel({
             <Dependencies
               task={task}
               tree={tree}
-              disabled={busy || locked || conflict || removed || dirty}
+              incomingIds={incoming}
+              onIncomingChange={(ids) => {
+                setIncoming(canonicalPredecessorIds(ids));
+                setSaved(false);
+              }}
+              taskDirty={dirty}
+              scheduleDirty={
+                planDirty ||
+                rawDirty ||
+                incomingDirty ||
+                draft.status !== baseline.status
+              }
+              disabled={busy || locked || conflict || removed}
               navigationDisabled={busy || locked || conflict || removed}
               onCommand={onDependency}
               onSelect={onNeighbor}
