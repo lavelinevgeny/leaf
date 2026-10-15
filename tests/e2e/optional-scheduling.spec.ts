@@ -1,3 +1,4 @@
+import { openTaskDates } from '../helpers/task-panel.js';
 import { test as base, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
@@ -55,8 +56,16 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
   ).toBeVisible();
   await expect(page.getByLabel('Начало', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue('');
+  await openTaskDates(page);
   await page.getByLabel('Начало', { exact: true }).fill('2026-10-05');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-06');
+  if (
+    await page
+      .getByRole('dialog', { name: 'Сроки задачи', exact: true })
+      .isVisible()
+  )
+    await page.getByRole('button', { name: 'Готово', exact: true }).click();
   await page
     .getByRole('button', { name: /Добавить описание|Изменить описание/ })
     .click();
@@ -94,6 +103,7 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).project.revision,
   ).toBe(tree.project.revision);
+  await openTaskDates(page);
   await page.getByLabel('Длительность, рабочих дней', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
@@ -252,7 +262,9 @@ test('unavailable original done must reopen, explicitly adopts equal source, und
       .getByText(/Прежний интервал недоступен; полный расчёт неизвестен/)
       .last(),
   ).toBeVisible();
-  await expect(page.getByLabel('Начало', { exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: /^Сроки задачи:/ }),
+  ).toBeDisabled();
   await page.getByLabel('Статус', { exact: true }).selectOption('doing');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();

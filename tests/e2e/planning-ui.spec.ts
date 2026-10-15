@@ -1,3 +1,4 @@
+import { openTaskDates } from '../helpers/task-panel.js';
 import { test, expect } from '@playwright/test';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 import {
@@ -132,9 +133,12 @@ test('project settings preserve dirty calendar draft, done requires return and p
     await page.getByLabel('Статус', { exact: true }).selectOption('done');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Начало', { exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: /^Сроки задачи:/ }),
+    ).toBeDisabled();
     await page.getByLabel('Статус', { exact: true }).selectOption('doing');
     await expect(page.getByLabel('Начало', { exact: true })).toBeEnabled();
+    await openTaskDates(page);
     await page.getByLabel('Начало', { exact: true }).fill('2026-10-06');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
@@ -875,6 +879,7 @@ test('C27 uses changed all-days calendar while panel C18 and right duration choi
       durationDays: 3,
     });
     await page.getByRole('treeitem', { name: /Работа A,/ }).click();
+    await openTaskDates(page);
     await page.getByLabel('Начало', { exact: true }).fill('2026-10-05');
     await page.getByLabel('Начало', { exact: true }).press('Tab');
     await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue(

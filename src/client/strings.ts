@@ -1,4 +1,8 @@
 export const strings = {
+  taskDates: 'Сроки задачи',
+  clearAllSchedule: 'Очистить все сроки',
+  repairSchedule: 'Исправить сроки',
+  summaryScheduleUnknown: 'Сводные сроки не определены',
   removedPredecessor: 'Задача удалена',
   afterFinish: 'После окончания',
   newTaskPredecessors: 'После окончания новой задачи',

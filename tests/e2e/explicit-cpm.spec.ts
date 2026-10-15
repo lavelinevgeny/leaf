@@ -1,3 +1,4 @@
+import { openTaskDates } from '../helpers/task-panel.js';
 import { test as base, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
@@ -93,6 +94,7 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
   const b = page.getByRole('treeitem', { name: /^B,/ }).first();
   await b.focus();
   await b.press('Enter');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-11');
   const saved = page.waitForResponse(
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
@@ -294,6 +296,7 @@ test('deep update and presentation actions preserve authoritative analysis and k
   await expect(
     page.getByRole('complementary', { name: 'Задача', exact: true }),
   ).toBeVisible();
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-08');
   const saved = page.waitForResponse(
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
@@ -498,6 +501,7 @@ test('lost committed response retries the exact envelope and frozen revision wit
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: /^C,/ })
     .press('Enter');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-08');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(

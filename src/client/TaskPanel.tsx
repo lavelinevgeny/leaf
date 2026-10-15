@@ -11,7 +11,11 @@ import {
   incomingPredecessorIds,
   canonicalPredecessorIds,
 } from './predecessor-view.js';
-import { PlanFields } from './PlanFields.js';
+import type { PlanFieldError } from './PlanFields.js';
+import {
+  TaskPanelSchedule,
+  type TaskPanelScheduleHandle,
+} from './TaskPanelSchedule.js';
 import { TaskPanelHeader } from './TaskPanelHeader.js';
 import { TaskPanelFooter } from './TaskPanelFooter.js';
 import { visiblePanelTab } from './task-panel-view.js';
@@ -135,6 +139,32 @@ export function TaskPanel({
   const [baselinePlan, setBaselinePlan] = useState<SourceFields>(() =>
     sourceOf(task),
   );
+  const scheduleEditor = useRef<TaskPanelScheduleHandle>(null);
+  const [planError, setPlanError] = useState<PlanFieldError | null>(null);
+  const planErrorRef = useRef<PlanFieldError | null>(null);
+  function reportPlanError(error: PlanFieldError | null) {
+    planErrorRef.current = error;
+    setPlanError(error);
+  }
+  const [rawDirty, setRawDirty] = useState(false);
+  const rawDirtyRef = useRef(false);
+  const rawVersion = useRef(0);
+  const [resetKey, setResetKey] = useState(0);
+  function updateRaw(dirty: boolean) {
+    rawDirtyRef.current = dirty;
+    setRawDirty(dirty);
+  }
+  function clearFields() {
+    updateRaw(false);
+    reportPlanError(null);
+    setPlanValid(true);
+    setResetKey((key) => key + 1);
+  }
+  function updatePlan(next: SourceFields) {
+    currentDraft.current.plan = next;
+    setPlan(next);
+    setSaved(false);
+  }
   const [saved, setSaved] = useState(false);
   const [incoming, setIncoming] = useState(() =>
     incomingPredecessorIds(tree, task.id),
@@ -144,15 +174,29 @@ export function TaskPanel({
   );
   const [predecessorsOpen, setPredecessorsOpen] = useState(false);
   const predecessorTrigger = useRef<HTMLButtonElement>(null);
-  const currentDraft = useRef({ details: draft, plan, incoming });
-  currentDraft.current = { details: draft, plan, incoming };
+  const currentDraft = useRef({
+    details: draft,
+    plan,
+    incoming,
+    rawVersion: rawVersion.current,
+  });
+  currentDraft.current = {
+    details: draft,
+    plan,
+    incoming,
+    rawVersion: rawVersion.current,
+  };
   const acknowledgedRevision = useRef(tree.project.revision);
   const submitted = useRef<typeof currentDraft.current | null>(null);
   const saveResult = useRef<((saved: boolean) => void) | null>(null);
   const [returnedAcknowledgement, setReturnedAcknowledgement] = useState<{
     tree: ProjectTree;
   } | null>(null);
-  const draftKey = (value: typeof currentDraft.current) =>
+  const draftKey = (value: {
+    details: Draft;
+    plan: SourceFields;
+    incoming: string[];
+  }) =>
     JSON.stringify({
       details: value.details,
       plan: value.plan,
@@ -194,6 +238,8 @@ export function TaskPanel({
     if (
       !conflict &&
       !divergent &&
+      !rawDirtyRef.current &&
+      rawVersion.current === sent.rawVersion &&
       draftKey(currentDraft.current) === draftKey(sent)
     ) {
       setDraft(details);
@@ -238,6 +284,7 @@ export function TaskPanel({
   const dirty =
     JSON.stringify(draft) !== JSON.stringify(baseline) ||
     planDirty ||
+    rawDirty ||
     incomingDirty;
   const summary = tasks.some((child) => child.parentId === task.id);
   useEffect(() => {
@@ -275,30 +322,37 @@ export function TaskPanel({
       (locked && !retry) ||
       removed ||
       conflict ||
-      !draft.title.trim() ||
-      !planValid
+      (!retry && !draft.title.trim())
     ) {
       focusInvalid();
       return false;
     }
-    const fields = { ...draft, title: draft.title.trim() };
-    if (!summary && planDirty && !sourceFieldsSchema.safeParse(plan).success) {
+    if (!retry && !scheduleEditor.current?.finishInput()) {
       focusInvalid();
       return false;
     }
+    const source = currentDraft.current.plan;
+    if (!retry && !summary && !sourceFieldsSchema.safeParse(source).success) {
+      focusInvalid();
+      return false;
+    }
+    const fields = { ...draft, title: draft.title.trim() };
     const changes: Extract<Command, { type: 'task.edit' }>['changes'] = {};
     for (const key of ['title', 'description', 'status'] as const)
       if (fields[key] !== baseline[key])
         Object.assign(changes, { [key]: fields[key] });
     if (!summary)
       for (const key of ['inputStart', 'inputFinish', 'durationDays'] as const)
-        if (plan[key] !== baselinePlan[key] || (canAdopt && !dirty))
-          Object.assign(changes, { [key]: plan[key] });
+        if (source[key] !== baselinePlan[key] || (canAdopt && !dirty))
+          Object.assign(changes, { [key]: source[key] });
     if (!summary && incomingDirty)
       changes.predecessorIds = canonicalPredecessorIds(incoming);
     // An exact replay retains this original submitted draft, including post-send changes.
     if (!retry || !submitted.current)
-      submitted.current = structuredClone(currentDraft.current);
+      submitted.current = structuredClone({
+        ...currentDraft.current,
+        rawVersion: rawVersion.current,
+      });
     const confirmed = new Promise<boolean>((resolve) => {
       saveResult.current = resolve;
     });
@@ -312,6 +366,8 @@ export function TaskPanel({
     return confirmed;
   }
   function reset() {
+    clearFields();
+    rawVersion.current++;
     setDraft({ ...baseline });
     setPlan({ ...baselinePlan });
     setIncoming([...baselineIncoming]);
@@ -320,6 +376,7 @@ export function TaskPanel({
     onDirty(false);
   }
   function focusInvalid() {
+    if (draft.title.trim()) scheduleEditor.current?.finishInput();
     onTab('details');
     requestAnimationFrame(() => {
       if (!draft.title.trim()) {
@@ -334,9 +391,9 @@ export function TaskPanel({
             )
             ?.click();
       } else
-        document
-          .querySelector<HTMLElement>('#panel-details [aria-invalid="true"]')
-          ?.focus();
+        scheduleEditor.current?.focusField(
+          planErrorRef.current?.field ?? 'inputStart',
+        );
     });
   }
   useEffect(() => {
@@ -377,6 +434,7 @@ export function TaskPanel({
     >
       <form
         id="task-panel-edit"
+        noValidate
         className="panel-edit-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -384,6 +442,39 @@ export function TaskPanel({
         }}
       >
         <TaskPanelHeader
+          schedule={
+            <TaskPanelSchedule
+              ref={scheduleEditor}
+              plan={plan}
+              project={tree.project}
+              summary={summary}
+              computed={tree.schedule.summaries[task.id]}
+              error={planError}
+              resetKey={resetKey}
+              disabledReason={
+                removed
+                  ? strings.taskRemoved
+                  : busy
+                    ? strings.saving
+                    : locked
+                      ? strings.loading
+                      : conflict
+                        ? strings.resolveTaskConflict
+                        : task.status === 'done' && draft.status === 'done'
+                          ? strings.doneHint
+                          : null
+              }
+              onChange={updatePlan}
+              onValidityChange={setPlanValid}
+              onErrorChange={reportPlanError}
+              onRawChange={updateRaw}
+              onEdit={() => {
+                rawVersion.current++;
+                setSaved(false);
+              }}
+              onResetFields={clearFields}
+            />
+          }
           title={draft.title}
           status={draft.status}
           onTitle={(title) => update('title', title)}
@@ -502,29 +593,6 @@ export function TaskPanel({
         ) : visibleTab === 'details' ? (
           <div role="tabpanel" id="panel-details" aria-labelledby="tab-details">
             <fieldset disabled={busy || locked}>
-              <PlanFields
-                timezone={tree.project.timezone}
-                task={{
-                  ...task,
-                  status:
-                    task.status === 'done' && draft.status === 'done'
-                      ? 'done'
-                      : 'doing',
-                }}
-                plan={plan}
-                computed={
-                  tree.schedule.tasks[task.id] ??
-                  tree.schedule.summaries[task.id]
-                }
-                calendar={tree.project.calendarType}
-                summary={summary}
-                disabled={removed}
-                onValidityChange={setPlanValid}
-                onChange={(next) => {
-                  setPlan(next);
-                  setSaved(false);
-                }}
-              />
               {summary ? (
                 <p className="field-hint">{strings.chooseLeaf}</p>
               ) : (
@@ -732,12 +800,13 @@ export function TaskPanel({
               ? strings.cannotSaveRemovedTask
               : conflict
                 ? strings.resolveTaskConflict
-                : !draft.title.trim()
+                : !retry && !draft.title.trim()
                   ? strings.titleRequired
-                  : !planValid ||
-                      (!summary &&
-                        planDirty &&
-                        !sourceFieldsSchema.safeParse(plan).success)
+                  : !retry &&
+                      (!planValid ||
+                        (!summary &&
+                          planDirty &&
+                          !sourceFieldsSchema.safeParse(plan).success))
                     ? strings.planInputError
                     : locked && !retry
                       ? strings.loading

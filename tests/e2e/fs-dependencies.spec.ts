@@ -1,3 +1,4 @@
+import { openTaskDates } from '../helpers/task-panel.js';
 import {
   test as base,
   expect,
@@ -303,12 +304,14 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   );
   await show(page);
   await row(page, taskId(tree, 'B')).click();
+  await openTaskDates(page);
   const start = panel(page).getByLabel('Начало', { exact: true });
   const finish = panel(page).getByLabel('Окончание', { exact: true });
   await start.fill('09.10.2026');
   await start.press('Tab');
   await finish.fill('12.10.2026');
   await finish.press('Tab');
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
   await panel(page)
     .getByRole('button', { name: 'После окончания', exact: true })
     .click();
@@ -853,6 +856,7 @@ test('source conflict rejects real save and dirty Details guards Gantt and graph
   });
   await show(page);
   await row(page, taskId(tree, 'B')).click();
+  await openTaskDates(page);
   await page.getByLabel('Начало', { exact: true }).fill('2026-10-08');
   await page.getByLabel('Начало', { exact: true }).press('Tab');
   const rejected = await save(page, 400);
@@ -1109,10 +1113,13 @@ test('parent critical branch changes in one edit and exact undo survives restart
       }),
     ).toBeVisible();
   await row(page, taskId(tree, 'A')).click();
+  await openTaskDates(page);
   await page.getByLabel('Начало', { exact: true }).fill('2026-10-07');
   await page.getByLabel('Начало', { exact: true }).press('Tab');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-08');
   await page.getByLabel('Окончание', { exact: true }).press('Tab');
+  await openTaskDates(page);
   await page.getByLabel('Длительность, дней', { exact: true }).fill('');
   await save(page);
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();

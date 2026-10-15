@@ -1,3 +1,4 @@
+import { openTaskDates } from '../helpers/task-panel.js';
 import { test, expect } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
@@ -53,13 +54,16 @@ test('linked edits stay local until one atomic save, then undo and restart resto
       exact: true,
     });
     await expect(start).toHaveValue('05.10.2026');
+    await openTaskDates(page);
     await duration.fill('3');
     await expect(finish).toHaveValue('06.10.2026');
     await duration.press('Enter');
     await expect(finish).toHaveValue('07.10.2026');
+    await openTaskDates(page);
     await start.fill('09.10.2026');
     await start.press('Tab');
     await expect(finish).toHaveValue('13.10.2026');
+    await openTaskDates(page);
     await finish.fill('14.10.2026');
     await finish.press('Enter');
     await expect(duration).toHaveValue('4');
@@ -132,13 +136,16 @@ test('duration-only stays undated, finish anchors the start, and clearing remain
     const duration = page.getByLabel('Длительность, рабочих дней', {
       exact: true,
     });
+    await openTaskDates(page);
     await duration.fill('6');
     await duration.press('Enter');
     await expect(start).toHaveValue('');
     await expect(finish).toHaveValue('');
+    await openTaskDates(page);
     await finish.fill('12.10.2026');
     await finish.press('Enter');
     await expect(start).toHaveValue('05.10.2026');
+    await openTaskDates(page);
     await start.fill('');
     await start.press('Enter');
     await expect(start).toHaveValue('');
@@ -152,8 +159,10 @@ test('duration-only stays undated, finish anchors the start, and clearing remain
       durationDays: 6,
     });
     expect(saved.schedule.tasks[id]!.startDate).toBeNull();
+    await openTaskDates(page);
     await finish.fill('');
     await finish.press('Enter');
+    await openTaskDates(page);
     await duration.fill('');
     await duration.press('Enter');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
@@ -186,6 +195,7 @@ test('invalid edits block save until discard; native calendar and all-days use t
     await page.getByRole('treeitem', { name: /Работа A,/ }).click();
     const start = page.getByLabel('Начало', { exact: true });
     const finish = page.getByLabel('Окончание', { exact: true });
+    await openTaskDates(page);
     await finish.fill('03.10.2026');
     await finish.press('Tab');
     await expect(page.getByRole('alert')).toBeVisible();
@@ -201,6 +211,7 @@ test('invalid edits block save until discard; native calendar and all-days use t
       .click();
     await expect(finish).toHaveValue('06.10.2026');
     await expect(page.getByRole('alert')).toHaveCount(0);
+    await openTaskDates(page);
     await page
       .getByLabel('Календарь: Окончание', { exact: true })
       .fill('2026-10-09');
@@ -217,6 +228,7 @@ test('invalid edits block save until discard; native calendar and all-days use t
     await page.reload();
     await page.getByRole('treeitem', { name: /Работа A,/ }).click();
     const duration = page.getByLabel('Длительность, дней', { exact: true });
+    await openTaskDates(page);
     await duration.fill('6');
     await duration.press('Enter');
     await expect(finish).toHaveValue('10.10.2026');
@@ -227,6 +239,120 @@ test('invalid edits block save until discard; native calendar and all-days use t
     expect(saved.tasks.find((task) => task.title === 'Работа A')).toMatchObject(
       { inputStart: '2026-10-05', inputFinish: '2026-10-10', durationDays: 6 },
     );
+  } finally {
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
+  }
+});
+
+test('persistent editor keeps invalid raw across tabs and layout changes, native calendar Escape closes its own layer, and retry stays exact', async ({
+  page,
+}) => {
+  const runtime = await syntheticRuntime();
+  try {
+    const before = await seedOptionalRuntime(page, runtime);
+    await page.goto(runtime.origin);
+    await page.getByRole('treeitem', { name: /Работа A,/ }).click();
+    await openTaskDates(page);
+    const popup = page.getByRole('dialog', {
+      name: 'Сроки задачи',
+      exact: true,
+    });
+    const start = page.getByLabel('Начало', { exact: true });
+    const finish = page.getByLabel('Окончание', { exact: true });
+    await start.fill('31.02.2026');
+    await start.press('Escape');
+    await expect(popup).toBeHidden();
+    await expect(
+      page.getByRole('complementary', { name: 'Задача', exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole('tablist', { name: 'Задача', exact: true })
+      .getByRole('tab', { name: 'Журнал', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Исправить сроки', exact: true })
+      .click();
+    await expect(start).toBeFocused();
+    await expect(start).toHaveValue('31.02.2026');
+    await expect(start).toHaveAttribute('aria-invalid', 'true');
+    const originalInput = await start.elementHandle();
+    await page.setViewportSize({ width: 375, height: 200 });
+    await expect(page.locator('.task-panel')).toHaveAttribute(
+      'data-panel-scroll-owner',
+      '',
+    );
+    expect(
+      await start.evaluate(
+        (node, original) => node === original,
+        originalInput,
+      ),
+    ).toBe(true);
+    await expect(start).toHaveValue('31.02.2026');
+    await expect(popup).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator('.task-panel')).not.toHaveAttribute(
+      'data-panel-scroll-owner',
+    );
+    await expect(
+      page.locator('.task-panel [data-panel-scroll-owner]'),
+    ).toHaveCount(1);
+    expect(
+      await start.evaluate(
+        (node, original) => node === original,
+        originalInput,
+      ),
+    ).toBe(true);
+    await page
+      .getByRole('button', { name: 'Очистить все сроки', exact: true })
+      .click();
+    await expect(start).toHaveValue('');
+    await expect(finish).toHaveValue('');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    const picker = page.getByLabel('Календарь: Начало', { exact: true });
+    await picker.click();
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeVisible();
+    await expect(
+      page.getByRole('complementary', { name: 'Задача', exact: true }),
+    ).toBeVisible();
+    await start.fill('09.10.2026');
+    const duration = page.getByLabel('Длительность, рабочих дней', {
+      exact: true,
+    });
+    await duration.fill('2');
+    await duration.press('Enter');
+    await expect(finish).toHaveValue('12.10.2026');
+    const envelopes: unknown[] = [];
+    await page.route('**/api/projects/*/commands', async (route) => {
+      envelopes.push(route.request().postDataJSON());
+      if (envelopes.length === 1) {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        await route.abort('failed');
+      } else await route.continue();
+    });
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: 'Повторить сохранение', exact: true }),
+    ).toBeVisible();
+    await expect(duration).toBeDisabled();
+    await page
+      .getByRole('button', { name: 'Повторить сохранение', exact: true })
+      .click();
+    await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
+    expect(envelopes).toHaveLength(2);
+    expect(envelopes[1]).toEqual(envelopes[0]);
+    const after = await readTree(page, runtime.origin, before.project.id);
+    expect(after.project.revision).toBe(before.project.revision + 1);
+    expect(after.tasks.find((t) => t.title === 'Работа A')).toMatchObject({
+      inputStart: '2026-10-09',
+      inputFinish: '2026-10-12',
+      durationDays: 2,
+    });
   } finally {
     try {
       await page.context().close();

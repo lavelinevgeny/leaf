@@ -1,4 +1,11 @@
-import { useId, useState } from 'react';
+import {
+  useId,
+  useState,
+  useRef,
+  useLayoutEffect,
+  useImperativeHandle,
+  type Ref,
+} from 'react';
 import { calendarDateSchema } from '../shared/contracts.js';
 import { strings } from './strings.js';
 
@@ -14,7 +21,13 @@ function displayDate(value: string | null): string {
   if (!calendarDateSchema.safeParse(value).success) return value;
   return `${value.slice(8)}.${value.slice(5, 7)}.${value.slice(0, 4)}`;
 }
+export interface CalendarDateInputHandle {
+  commit: () => void;
+  focus: () => void;
+}
 interface Props {
+  ref?: Ref<CalendarDateInputHandle>;
+  resetKey?: number | undefined;
   label: string;
   value: string | null;
   disabled?: boolean;
@@ -26,6 +39,8 @@ interface Props {
   onCommit?: (value: string | null) => void;
 }
 export function CalendarDateInput({
+  ref,
+  resetKey,
   label,
   value,
   disabled,
@@ -39,6 +54,28 @@ export function CalendarDateInput({
   const id = useId();
   const [focused, setFocused] = useState(false);
   const [raw, setRaw] = useState('');
+  const input = useRef<HTMLInputElement>(null);
+  const edited = useRef(false);
+  const current = useRef(value);
+  current.current = value;
+  const buffer = useRef('');
+  useLayoutEffect(() => {
+    edited.current = false;
+    buffer.current = displayDate(current.current);
+    setRaw(buffer.current);
+    setFocused(false);
+  }, [resetKey]);
+  function commit() {
+    if (!edited.current) return;
+    edited.current = false;
+    const next = inputDate(buffer.current);
+    // A replaced parent value discards an obsolete focused buffer.
+    if (next === current.current) onCommit?.(next);
+  }
+  useImperativeHandle(ref, () => ({
+    commit,
+    focus: () => input.current?.focus(),
+  }));
   return (
     <div className="calendar-field">
       <label htmlFor={id}>{label}</label>
@@ -46,6 +83,7 @@ export function CalendarDateInput({
         className={`calendar-input${highlighted ? ' plan-recalculated' : ''}`}
       >
         <input
+          ref={input}
           id={id}
           type="text"
           inputMode="numeric"
@@ -56,18 +94,19 @@ export function CalendarDateInput({
           aria-invalid={invalid || undefined}
           aria-describedby={descriptionId}
           onFocus={() => {
-            setRaw(displayDate(value));
+            buffer.current = displayDate(value);
+            setRaw(buffer.current);
             setFocused(true);
           }}
           onChange={(event) => {
+            edited.current = true;
+            buffer.current = event.target.value;
             setRaw(event.target.value);
             onChange?.(inputDate(event.target.value));
           }}
-          onBlur={(event) => {
+          onBlur={() => {
             setFocused(false);
-            const next = inputDate(event.target.value);
-            // Discard/reload must not recommit a text buffer replaced by its parent.
-            if (next === value) onCommit?.(next);
+            commit();
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {

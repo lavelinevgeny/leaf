@@ -1,3 +1,4 @@
+import { openTaskDates } from '../helpers/task-panel.js';
 import {
   test as base,
   expect,
@@ -107,12 +108,16 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await page
     .getByRole('combobox', { name: 'Статус', exact: true })
     .selectOption('doing');
+  await openTaskDates(page);
   await page.getByLabel('Начало', { exact: true }).fill('2026-10-07');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-09');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   await expect(row(page, 'Задача B1')).toHaveAccessibleName(/В работе/);
+  await openTaskDates(page);
   await page.getByLabel('Начало', { exact: true }).fill('');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();

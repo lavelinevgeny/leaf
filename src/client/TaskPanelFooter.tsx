@@ -72,7 +72,9 @@ export function TaskPanelFooter({
           !busy &&
           !retry && (
             <button type="button" className="quiet" onClick={onRepair}>
-              {strings.repairTask}
+              {disabledReason === strings.planInputError
+                ? strings.repairSchedule
+                : strings.repairTask}
             </button>
           )}
       </div>

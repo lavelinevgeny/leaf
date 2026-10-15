@@ -12,6 +12,7 @@ interface Props {
   onClose: () => void;
   back: ReactNode;
   actions?: ReactNode;
+  schedule: ReactNode;
   journalTitle?: string | undefined;
 }
 export function TaskPanelHeader({
@@ -24,6 +25,7 @@ export function TaskPanelHeader({
   onClose,
   back,
   actions,
+  schedule,
   journalTitle,
 }: Props) {
   const [editing, setEditing] = useState(false);
@@ -108,6 +110,7 @@ export function TaskPanelHeader({
           ))}
         </select>
       </label>
+      {schedule}
       {journalTitle !== undefined && journalTitle !== title && (
         <p className="field-hint">
           {strings.journalTaskTitle}: {journalTitle}

@@ -1,4 +1,13 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useLayoutEffect,
+  useImperativeHandle,
+  type Ref,
+} from 'react';
+import { sourceFieldsSchema } from '../shared/contracts.js';
 import type {
   Project,
   ProjectTree,
@@ -6,10 +15,24 @@ import type {
   SourceFields,
 } from '../shared/contracts.js';
 import { completeSourceEdit } from '../domain/planning.js';
-import { CalendarDateInput } from './CalendarDateInput.js';
+import {
+  CalendarDateInput,
+  type CalendarDateInputHandle,
+} from './CalendarDateInput.js';
 import { strings } from './strings.js';
 import { useProjectToday } from './use-project-today.js';
+export type PlanFieldError = { field: keyof SourceFields; message: string };
+export type PlanFieldsHandle = {
+  finishInput: () => boolean;
+  focusField: (field: keyof SourceFields) => void;
+};
 interface Props {
+  ref?: Ref<PlanFieldsHandle>;
+  resetKey?: number;
+  externalError?: PlanFieldError | null;
+  onErrorChange?: (error: PlanFieldError | null) => void;
+  onRawChange?: (dirty: boolean) => void;
+  onEdit?: () => void;
   task: Pick<Task, 'status'>;
   plan: SourceFields;
   computed?:
@@ -24,6 +47,12 @@ interface Props {
   compact?: boolean;
 }
 export function PlanFields({
+  ref,
+  resetKey,
+  externalError,
+  onErrorChange,
+  onRawChange,
+  onEdit,
   task,
   plan,
   computed,
@@ -38,6 +67,17 @@ export function PlanFields({
   const today = useProjectToday(timezone ?? 'UTC');
   const hintId = useId();
   const errorId = useId();
+  const latest = useRef(plan);
+  latest.current = plan;
+  const start = useRef<CalendarDateInputHandle>(null);
+  const finish = useRef<CalendarDateInputHandle>(null);
+  const duration = useRef<HTMLInputElement>(null);
+  const errorRef = useRef<PlanFieldError | null>(null);
+  function report(value: PlanFieldError | null) {
+    errorRef.current = value;
+    onErrorChange?.(value);
+    onValidityChange?.(!value);
+  }
   const pending = useRef<Partial<SourceFields>>({});
   const [error, setError] = useState<{
     source: string;
@@ -46,10 +86,35 @@ export function PlanFields({
   } | null>(null);
   const [flash, setFlash] = useState<(keyof SourceFields)[]>([]);
   const [announcement, setAnnouncement] = useState('');
-  const activeError = error?.source === JSON.stringify(plan) ? error : null;
+  const activeError =
+    (error?.source === JSON.stringify(plan) ? error : null) ??
+    externalError ??
+    null;
+  errorRef.current = activeError;
   useEffect(() => {
     onValidityChange?.(!activeError);
   }, [activeError, onValidityChange]);
+  useLayoutEffect(() => {
+    if (resetKey === undefined) return;
+    pending.current = {};
+    setError(null);
+    report(null);
+    onRawChange?.(false);
+  }, [resetKey]);
+  useImperativeHandle(ref, () => ({
+    finishInput() {
+      start.current?.commit();
+      finish.current?.commit();
+      if (Object.hasOwn(pending.current, 'durationDays'))
+        commit('durationDays', latest.current.durationDays);
+      return !errorRef.current;
+    },
+    focusField(field) {
+      if (field === 'inputStart') start.current?.focus();
+      else if (field === 'inputFinish') finish.current?.focus();
+      else duration.current?.focus();
+    },
+  }));
   useEffect(() => {
     if (!flash.length) return;
     const timer = window.setTimeout(() => setFlash([]), 1800);
@@ -57,24 +122,32 @@ export function PlanFields({
   }, [flash]);
   function change(field: keyof SourceFields, value: string | number | null) {
     Object.assign(pending.current, { [field]: value });
+    onRawChange?.(true);
+    onEdit?.();
+    report(null);
     setError(null);
     setFlash([]);
     setAnnouncement('');
-    onChange({ ...plan, [field]: value });
+    latest.current = { ...latest.current, [field]: value };
+    onChange(latest.current);
   }
   function commit(field: keyof SourceFields, value: string | number | null) {
     if (!Object.hasOwn(pending.current, field)) return;
     if (pending.current[field] !== value) return;
     delete pending.current[field];
-    const source = { ...plan, [field]: value };
+    const source = { ...latest.current, [field]: value };
     try {
       const next = completeSourceEdit(source, field, calendar);
+      if (!sourceFieldsSchema.safeParse(next).success)
+        throw new Error(strings.planInputError);
       const changed = (Object.keys(next) as (keyof SourceFields)[]).filter(
         (key) => key !== field && next[key] !== source[key],
       );
+      latest.current = next;
       onChange(next);
       setError(null);
-      onValidityChange?.(true);
+      report(null);
+      onRawChange?.(Object.keys(pending.current).length > 0);
       setFlash(changed);
       setAnnouncement(
         changed.length
@@ -82,14 +155,31 @@ export function PlanFields({
           : '',
       );
     } catch (failure) {
-      setError({
+      const parsed = sourceFieldsSchema.safeParse(source);
+      const invalidField = parsed.success
+        ? field
+        : parsed.error.issues[0]?.path[0];
+      const addressed =
+        invalidField === 'inputStart' ||
+        invalidField === 'inputFinish' ||
+        invalidField === 'durationDays'
+          ? invalidField
+          : field;
+      const label =
+        addressed === 'inputStart'
+          ? strings.start
+          : addressed === 'inputFinish'
+            ? strings.finish
+            : strings.durationLabel;
+      const failureError = {
         source: JSON.stringify(source),
-        field,
-        message:
-          failure instanceof Error ? failure.message : strings.planInputError,
-      });
+        field: addressed,
+        message: `${label}: ${failure instanceof Error ? failure.message : strings.planInputError}`,
+      };
+      setError(failureError);
+      report(failureError);
+      onRawChange?.(true);
       onChange(source);
-      onValidityChange?.(false);
     }
   }
   if (summary)
@@ -125,6 +215,8 @@ export function PlanFields({
           {(['inputStart', 'inputFinish'] as const).map((field) => (
             <CalendarDateInput
               key={field}
+              ref={field === 'inputStart' ? start : finish}
+              resetKey={resetKey}
               label={field === 'inputStart' ? strings.start : strings.finish}
               value={plan[field]}
               descriptionId={
@@ -144,6 +236,7 @@ export function PlanFields({
           {strings.durationLabel}
           <span className="duration-input">
             <input
+              ref={duration}
               aria-label={`${strings.durationLabel}, ${units}`}
               aria-describedby={
                 activeError?.field === 'durationDays'

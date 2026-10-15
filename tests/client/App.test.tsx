@@ -933,6 +933,7 @@ describe('client HTTP interactions', () => {
       );
     await user.clear(screen.getByLabelText('Название задачи'));
     await user.type(screen.getByLabelText('Название задачи'), 'Работа revised');
+    await user.click(screen.getByRole('button', { name: /^Сроки задачи:/ }));
     await user.type(screen.getByLabelText('Длительность, рабочих дней'), '9');
     let first: CommandEnvelope | undefined;
     fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
@@ -1420,7 +1421,10 @@ describe('client HTTP interactions', () => {
     screen.getByLabelText('Название задачи').focus();
     await user.tab();
     expect(screen.getByLabelText('Статус')).toHaveFocus();
-    expect(screen.getByLabelText('Начало')).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /^Сроки задачи:/ }),
+    ).toBeDisabled();
+    expect(screen.queryByLabelText('Начало')).toBeNull();
   });
   it('confirms preserving dated work and uses the same tree in subtasks', async () => {
     tree.tasks = [{ ...task(1, 'Задача A'), inputStart: '2026-10-07' }];
