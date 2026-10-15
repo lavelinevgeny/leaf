@@ -116,9 +116,11 @@ it('loads the inactive project before opening its menu and renames only that pro
   finishLoad(new Response(JSON.stringify({ ...tree, project: other })));
   fetchMock.mockImplementation(normalRead);
   await screen.findByRole('heading', { name: other.title });
-  expect(
-    screen.getByRole('button', { name: 'Настройки проекта' }),
-  ).toHaveFocus();
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Настройки проекта' }),
+    ).toHaveFocus(),
+  );
   expect(fetchMock.mock.calls.some(([, init]) => init?.method !== 'GET')).toBe(
     false,
   );
@@ -161,22 +163,35 @@ it('loads the inactive project before opening its menu and renames only that pro
 it('keeps failed inactive-menu loading recoverable without opening the previous project menu', async () => {
   render(<App />);
   await screen.findByRole('heading', { name: project.title });
-  fetchMock.mockImplementationOnce(() =>
-    Promise.reject(new TypeError('synthetic offline')),
+  const normalRead = fetchMock.getMockImplementation()! as (
+    url: string,
+  ) => Promise<Response>;
+  // Fail only the inactive project's tree load: a background request of the
+  // current project must not consume the synthetic network failure.
+  fetchMock.mockImplementation((url: string) =>
+    url === `/api/projects/${other.id}/tree`
+      ? Promise.reject(new TypeError('synthetic offline'))
+      : normalRead(url),
   );
   await userEvent.click(otherOpener());
   expect(await screen.findByText(/Нет связи с сервером/)).toBeVisible();
   expect(
     screen.queryByRole('button', { name: 'Настройки проекта' }),
   ).toBeNull();
-  fetchMock.mockImplementationOnce(() =>
-    Promise.resolve(new Response(JSON.stringify({ ...tree, project: other }))),
+  fetchMock.mockImplementation((url: string) =>
+    url === `/api/projects/${other.id}/tree`
+      ? Promise.resolve(
+          new Response(JSON.stringify({ ...tree, project: other })),
+        )
+      : normalRead(url),
   );
   await userEvent.click(screen.getByRole('button', { name: 'Повторить' }));
   await screen.findByRole('heading', { name: other.title });
-  expect(
-    screen.getByRole('button', { name: 'Настройки проекта' }),
-  ).toHaveFocus();
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Настройки проекта' }),
+    ).toHaveFocus(),
+  );
 });
 it('refuses an inactive project menu while the current settings draft is dirty', async () => {
   await openSettings();
@@ -190,7 +205,11 @@ it('refuses an inactive project menu while the current settings draft is dirty',
   expect(screen.getByLabelText('Часовой пояс проекта')).toHaveValue(
     'UTC/invalid',
   );
-  expect(fetchMock.mock.calls).toHaveLength(requests);
+  // Background reads of the current project may still arrive; the refused
+  // switch must neither write nor request the inactive project.
+  const later = fetchMock.mock.calls.slice(requests);
+  expect(later.some(([, init]) => init?.method !== 'GET')).toBe(false);
+  expect(later.some(([url]) => String(url).includes(other.id))).toBe(false);
 });
 it('mounts forms on demand and returns keyboard menu focus without writes', async () => {
   render(<App />);
@@ -206,7 +225,12 @@ it('mounts forms on demand and returns keyboard menu focus without writes', asyn
   ).toHaveFocus();
   await userEvent.keyboard('{Escape}');
   expect(opener).toHaveFocus();
-  expect(fetchMock.mock.calls).toHaveLength(requests);
+  // Background reads may still arrive after the heading; only writes count.
+  expect(
+    fetchMock.mock.calls
+      .slice(requests)
+      .some(([, init]) => init?.method !== 'GET'),
+  ).toBe(false);
 });
 it('contains Tab, preserves dirty Escape draft and explicitly discards it', async () => {
   const opener = await openSettings();
@@ -361,7 +385,9 @@ it('guards project switching and task selection while settings are dirty without
     screen.getByRole('button', { name: /Другой демо-проект/ }),
   );
   expect(screen.getByRole('heading', { name: project.title })).toBeVisible();
-  expect(fetchMock.mock.calls).toHaveLength(requests);
+  const later = fetchMock.mock.calls.slice(requests);
+  expect(later.some(([, init]) => init?.method !== 'GET')).toBe(false);
+  expect(later.some(([url]) => String(url).includes(other.id))).toBe(false);
 });
 it('closes stale clean settings when switching projects', async () => {
   await openSettings();
