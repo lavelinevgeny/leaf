@@ -15,6 +15,7 @@ import { PlanFields } from './PlanFields.js';
 import { TaskPanelHeader } from './TaskPanelHeader.js';
 import { TaskPanelFooter } from './TaskPanelFooter.js';
 import { visiblePanelTab } from './task-panel-view.js';
+import { useTaskPanelLayout } from './use-task-panel-layout.js';
 import { sourceOf } from './planning-view.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
 import { Dependencies } from './Dependencies.js';
@@ -98,6 +99,7 @@ export function TaskPanel({
   onJournal,
 }: Props) {
   const visibleTab = visiblePanelTab(tab);
+  const layout = useTaskPanelLayout(tab);
   const [descriptionEditing, setDescriptionEditing] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [subtaskOpen, setSubtaskOpen] = useState(
@@ -291,7 +293,9 @@ export function TaskPanel({
   }
   return (
     <aside
-      className="task-panel"
+      ref={layout.panel}
+      className={`task-panel${layout.shellScroll ? ' task-panel--scroll-shell' : ''}`}
+      data-panel-scroll-owner={layout.shellScroll ? '' : undefined}
       aria-label={strings.task}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
@@ -371,7 +375,11 @@ export function TaskPanel({
           </button>
         ))}
       </div>
-      <div className="panel-content">
+      <div
+        ref={layout.content}
+        className="panel-content"
+        data-panel-scroll-owner={layout.shellScroll ? undefined : ''}
+      >
         {removed && <p role="status">{strings.taskRemoved}</p>}
         {visibleTab === 'journal' ? (
           <div role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
