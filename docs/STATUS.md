@@ -1,6 +1,15 @@
 # Статус разработки
 
 
+## Карточка задачи D22 — Task 4, исправление review round 1, 2026-10-16
+
+Spec review `6a0f6e0` выявил Important S4-SPEC-I1: фиксированный SVG viewBox шириной 320 центрировал рёбра внутри более широкого графа. Их endpoints расходились с HTML-карточками на 59,5 CSS px, наконечники скрывались под карточками. Root SVG теперь использует те же CSS pixels, что и HTML-карточки; marker tip привязан к границе карточки. Маршруты, real/draft IDs, incoming draft, API и CPM не менялись.
+
+Новый actual-server browser test строит независимые A→C, B→C, C→D/E, измеряет экранные path endpoints через CTM против реальных card bounds и проверяет отсутствие участков внутри непрозрачных карточек. Наконечник подтверждается пикселями настоящего browser screenshot выше/ниже тонкого shaft, а не SVG attributes. RED: оба desktop projects получили 59,5 px вместо <1. GREEN: 1440×900, 1280×800 и geometry-only resize до 375 px внутри обоих проектов — 2/2 cases; по четыре рёбра, max endpoint error 0 px, 0 covered samples, arrowhead brightness ≤165,67 при threshold <220 и фоне около249. Синтетический снимок просмотрен вручную.
+
+PASS: typecheck/lint/production build (существующее chunk >500 kB предупреждение)/format:check; unit 43 файла / 836 tests, integration 27 / 384; check:kit 72 Markdown / 427 links и git diff --check. Scoped staged scan и enabled hooks фиксируются в отчёте исправления. Полный 108-case browser suite не повторяется для этой SVG-правки; покрывающий geometry test выполнялся после production build. S4-SPEC-M1 (focus после outgoing success) явно перенесён controller в Task 6 вместе с S2-M1 и этим commit не исправляется. Следующий шаг — scoped независимый re-review точного fix SHA; Task 5 не начат. Geometry-only 375 px не заменяет итоговую keyboard/low-height/200% приёмку Task 6; S4–S6 и первый релиз остаются незавершёнными.
+
+
 ## Карточка задачи D22 — Task 4, кандидат, 2026-10-16
 
 Входящие FS редактируются только во вкладке «Зависимости» поверх настоящего графа. TaskPanel сохраняет прежнее владение единым RAM draft, nullable source, baseline/sent snapshot и acknowledgement; нижнее «Сохранить» отправляет одну task.edit с изменёнными полями и predecessorIds. Новые рёбра помечены «Не сохранено», удалённые сохранённые рёбра остаются с восстановлением; потерянный endpoint после нового tree показывается без crash и недоступен для перехода. Счётчик вкладки отражает только сохранённые incident edges, отдельное доступное описание сообщает о draft. Каждая стрелка представляет собственную FS-связь.

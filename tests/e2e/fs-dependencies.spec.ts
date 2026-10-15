@@ -1529,3 +1529,142 @@ for (const direction of ['incoming', 'outgoing'] as const)
       latest,
     );
   });
+
+test('fan-in and fan-out arrows meet their real cards with visible arrowheads', async ({
+  page,
+  runtime,
+}, info) => {
+  let tree = await project(page, runtime);
+  for (const title of ['A', 'B', 'C', 'D', 'E'])
+    tree = await create(page, runtime, tree, title);
+  const links = [
+    ['A', 'C'],
+    ['B', 'C'],
+    ['C', 'D'],
+    ['C', 'E'],
+  ] as const;
+  for (const [from, to] of links)
+    tree = await send(page, runtime.origin, tree, {
+      type: 'dependency.create',
+      predecessorId: taskId(tree, from),
+      successorId: taskId(tree, to),
+    });
+  const edges = links.map(([from, to]) => ({
+    from,
+    to,
+    id: tree.dependencies.find(
+      (edge) =>
+        edge.predecessorId === taskId(tree, from) &&
+        edge.successorId === taskId(tree, to),
+    )!.id,
+  }));
+  await show(page);
+  await row(page, taskId(tree, 'C')).click();
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  const graph = panel(page).locator('.dependency-graph');
+  await expect(graph.locator('[data-dependency-edge]')).toHaveCount(4);
+  for (const viewport of [page.viewportSize()!, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    const screenshot = await graph.screenshot({
+      path: `/tmp/leaf-task4-geometry-${info.project.name}-${viewport.width}.png`,
+    });
+    const geometry = await graph.evaluate((element, edges) => {
+      const graph = element.getBoundingClientRect();
+      function card(title: string) {
+        const button = [...element.querySelectorAll('button')].find(
+          (button) => button.getAttribute('aria-label') === `Открыть: ${title}`,
+        )!;
+        const rect = button
+          .closest('.dependency-card')!
+          .getBoundingClientRect();
+        return {
+          left: rect.left - graph.left,
+          right: rect.right - graph.left,
+          top: rect.top - graph.top,
+          bottom: rect.bottom - graph.top,
+        };
+      }
+      const cards = ['A', 'B', 'C', 'D', 'E'].map(card);
+      return edges.map((edge) => {
+        const path = element.querySelector<SVGPathElement>(
+          `[data-dependency-edge="${edge.id}"]`,
+        )!;
+        const length = path.getTotalLength();
+        function point(distance: number) {
+          const local = path.getPointAtLength(distance);
+          const screen = new DOMPoint(local.x, local.y).matrixTransform(
+            path.getScreenCTM()!,
+          );
+          return { x: screen.x - graph.left, y: screen.y - graph.top };
+        }
+        const samples = Array.from({ length: 65 }, (_, index) =>
+          point((length * index) / 64),
+        );
+        return {
+          label: `${edge.from} → ${edge.to}`,
+          source: card(edge.from),
+          target: card(edge.to),
+          start: point(0),
+          end: point(length),
+          coveredSamples: samples.filter((point) =>
+            cards.some(
+              (card) =>
+                point.x > card.left + 1 &&
+                point.x < card.right - 1 &&
+                point.y > card.top + 1 &&
+                point.y < card.bottom - 1,
+            ),
+          ),
+        };
+      });
+    }, edges);
+    for (const edge of geometry) {
+      expect(
+        Math.abs(edge.start.x - edge.source.left),
+        edge.label,
+      ).toBeLessThan(1);
+      expect(Math.abs(edge.end.x - edge.target.left), edge.label).toBeLessThan(
+        1,
+      );
+      expect(edge.start.y, edge.label).toBeGreaterThan(edge.source.top + 8);
+      expect(edge.start.y, edge.label).toBeLessThan(edge.source.bottom - 8);
+      expect(edge.end.y, edge.label).toBeGreaterThan(edge.target.top + 8);
+      expect(edge.end.y, edge.label).toBeLessThan(edge.target.bottom - 8);
+      expect(edge.coveredSamples, edge.label).toEqual([]);
+    }
+    // Decode the actual browser screenshot in canvas: paint above and below
+    // the thin shaft proves a visible arrowhead outside the opaque target card.
+    const arrowheadPixels = await page.evaluate(
+      async ({ png, ends }) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(png)], { type: 'image/png' }),
+        );
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext('2d')!;
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return ends.map((end) =>
+          [-2, 2].map((dy) => {
+            const [r, g, b] = context.getImageData(
+              Math.floor(end.x - 6),
+              Math.floor(end.y + dy),
+              1,
+              1,
+            ).data;
+            return (r! + g! + b!) / 3;
+          }),
+        );
+      },
+      { png: [...screenshot], ends: geometry.map((edge) => edge.end) },
+    );
+    console.info(
+      `FS geometry ${info.project.name}/${viewport.width}: ${geometry.length} edges, max endpoint error ${Math.max(...geometry.flatMap((edge) => [Math.abs(edge.start.x - edge.source.left), Math.abs(edge.end.x - edge.target.left)]))} CSS px, ${geometry.reduce((count, edge) => count + edge.coveredSamples.length, 0)} covered samples, max arrowhead brightness ${Math.max(...arrowheadPixels.flat())}`,
+    );
+    for (const [index, pixels] of arrowheadPixels.entries())
+      for (const brightness of pixels)
+        expect(brightness, geometry[index]!.label).toBeLessThan(220);
+  }
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+});

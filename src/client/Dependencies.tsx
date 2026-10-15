@@ -253,17 +253,13 @@ export function Dependencies({
         )}
       </div>
       <div className="dependency-graph" style={{ height }}>
-        <svg
-          viewBox={`0 0 320 ${height}`}
-          width="100%"
-          height={height}
-          aria-label={strings.dependencies}
-        >
+        {/* SVG user units match the HTML cards in CSS pixels at every width. */}
+        <svg width="100%" height={height} aria-label={strings.dependencies}>
           <defs>
             <marker
               id={`${marker}-dep`}
               viewBox="0 0 8 8"
-              refX="7"
+              refX="8"
               refY="4"
               markerWidth="6"
               markerHeight="6"
