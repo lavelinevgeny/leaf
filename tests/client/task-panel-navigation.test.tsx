@@ -737,3 +737,148 @@ it('explains all four ordering boundaries for the only root task and cancels wit
   expect(trigger).toHaveFocus();
   expect(commandCalls).toHaveLength(0);
 });
+
+it.each(['Сохранить', 'Не сохранять'])(
+  'adopts an unknown history target after remount with matching URL and fresh identity: %s',
+  async (decision) => {
+    const user = await openDirty();
+    const firstId = window.history.state.leaf.visitId as string;
+    await leave(user);
+    await user.click(screen.getByRole('button', { name: 'Не сохранять' }));
+    await screen.findByRole('heading', { name: 'Работа C' });
+    cleanup();
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Работа C' });
+    const previousId = window.history.state.leaf.visitId as string;
+    await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+    await user.clear(screen.getByLabelText('Название задачи'));
+    await user.type(screen.getByLabelText('Название задачи'), 'Черновик C');
+    const previousUrl = window.location.search;
+    await travel('back');
+    await screen.findByRole('dialog', {
+      name: 'Несохранённые изменения задачи',
+    });
+    expect(window.location.search).toBe(previousUrl);
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: decision,
+      }),
+    );
+    await screen.findByRole('heading', { name: 'Работа A' });
+    expect(new URLSearchParams(window.location.search).get('task')).toBe(id(1));
+    expect(window.history.state.leaf.visitId).not.toBe(previousId);
+    expect(window.history.state.leaf.visitId).not.toBe(firstId);
+    expect(Object.keys(window.history.state)).toEqual(['leaf']);
+    expect(Object.keys(window.history.state.leaf).sort()).toEqual([
+      'version',
+      'visitId',
+    ]);
+    expect(commandCalls).toHaveLength(decision === 'Сохранить' ? 1 : 0);
+    await travel('forward');
+    await screen.findByRole('heading', {
+      name: decision === 'Сохранить' ? 'Черновик C' : 'Работа C',
+    });
+    expect(new URLSearchParams(window.location.search).get('task')).toBe(id(2));
+    // The old forward entry was not in the new RAM epoch either.
+    expect(window.history.state.leaf.visitId).not.toBe(previousId);
+    await travel('back');
+    await screen.findByRole('heading', { name: 'Работа A' });
+    expect(new URLSearchParams(window.location.search).get('task')).toBe(id(1));
+    const acceptedUrl = window.location.search;
+    cleanup();
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Работа A' });
+    expect(window.location.search).toBe(acceptedUrl);
+    expect(commandCalls).toHaveLength(decision === 'Сохранить' ? 1 : 0);
+  },
+);
+it('keeps UI and URL on unknown-history cancellation and never treats repeated IDs as index zero travel', async () => {
+  const user = await openDirty();
+  await leave(user);
+  await user.click(screen.getByRole('button', { name: 'Не сохранять' }));
+  await screen.findByRole('heading', { name: 'Работа C' });
+  cleanup();
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Работа C' });
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' изменена');
+  const oldUrl = window.location.search;
+  await travel('back');
+  await user.click(
+    await screen.findByRole('button', { name: 'Продолжить редактирование' }),
+  );
+  expect(screen.getByLabelText('Название задачи')).toHaveValue(
+    'Работа C изменена',
+  );
+  expect(window.location.search).toBe(oldUrl);
+  expect(commandCalls).toHaveLength(0);
+  await user.click(screen.getByRole('button', { name: 'Сбросить изменения' }));
+  const repeatedId = window.history.state.leaf.visitId as string;
+  await travel('forward');
+  await screen.findByRole('heading', { name: 'Работа C' });
+  expect(window.history.state.leaf.visitId).not.toBe(repeatedId);
+  expect(window.location.search).toBe(oldUrl);
+  if (!screen.queryByLabelText('Название задачи'))
+    await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' снова');
+  await travel('back');
+  await screen.findByRole('dialog', { name: 'Несохранённые изменения задачи' });
+  await user.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
+  expect(screen.getByLabelText('Название задачи')).toHaveValue(
+    'Работа C снова',
+  );
+  expect(window.location.search).toBe(oldUrl);
+  expect(commandCalls).toHaveLength(0);
+});
+it('rebases unknown cancellation before later guards can trust old numeric indices', async () => {
+  const user = await openDirty([
+    task(1, 'Работа A'),
+    task(2, 'Работа C', null, 1),
+    task(3, 'Работа D', null, 2),
+  ]);
+  await leave(user);
+  await user.click(screen.getByRole('button', { name: 'Не сохранять' }));
+  await screen.findByRole('heading', { name: 'Работа C' });
+  cleanup();
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Работа C' });
+  await user.click(screen.getByRole('treeitem', { name: /^Работа D,/ }));
+  await screen.findByRole('heading', { name: 'Работа D' });
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' изменена');
+  const priorUrl = window.location.search;
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      window.addEventListener('popstate', () => resolve(), { once: true });
+      window.history.go(-2);
+    });
+  });
+  await screen.findByRole('dialog', { name: 'Несохранённые изменения задачи' });
+  expect(window.location.search).toBe(priorUrl);
+  await user.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
+  expect(screen.getByLabelText('Название задачи')).toHaveValue(
+    'Работа D изменена',
+  );
+  await user.click(screen.getByRole('button', { name: 'Сбросить изменения' }));
+  const movement = vi.spyOn(window.history, 'go');
+  await travel('forward');
+  await screen.findByRole('heading', { name: 'Работа C' });
+  const middleUrl = window.location.search;
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' изменена');
+  await travel('back');
+  await screen.findByRole('dialog', { name: 'Несохранённые изменения задачи' });
+  await waitFor(() => expect(window.location.search).toBe(middleUrl));
+  await user.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
+  expect(screen.getByLabelText('Название задачи')).toHaveValue(
+    'Работа C изменена',
+  );
+  expect(commandCalls).toHaveLength(0);
+  expect(movement).not.toHaveBeenCalled();
+});

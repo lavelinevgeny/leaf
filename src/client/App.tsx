@@ -1511,6 +1511,32 @@ export function App() {
   }
   const lastCapture = useRef(captureVisit);
   lastCapture.current = captureVisit;
+  function adoptUnrememberedVisit(
+    visit: WorkspaceVisit,
+    snapshot?: SessionVisit,
+  ): SessionVisit {
+    // Reload loses the RAM indices. Adopt this actual browser entry as a new
+    // local origin; no history delta can be inferred from an unfamiliar ID.
+    const id = crypto.randomUUID();
+    const saved: SessionVisit = {
+      ...(snapshot ?? {
+        collapsed: new Set(),
+        filter: emptyTaskFilter,
+        showGantt: true,
+        query: {},
+        timeline: undefined,
+        scroll: { id: null, date: null, offset: 0, top: 0, left: 0 },
+        origin: null,
+      }),
+      visit,
+      index: 0,
+    };
+    visits.current.clear();
+    visits.current.set(id, saved);
+    visitId.current = id;
+    writeWorkspaceVisit(visit, id, 'replace');
+    return saved;
+  }
   const navHandler = useRef<(event: PopStateEvent) => void>(() => {});
   navHandler.current = (event) => {
     if (suppressedPop.current) {
@@ -1520,7 +1546,11 @@ export function App() {
     const targetId = (
       event.state as { leaf?: { version?: number; visitId?: string } } | null
     )?.leaf?.visitId;
-    const target = targetId ? visits.current.get(targetId) : undefined;
+    // Repeated IDs cannot establish a distinct physical entry or target index.
+    const target =
+      targetId && targetId !== visitId.current
+        ? visits.current.get(targetId)
+        : undefined;
     const old = visitId.current
       ? visits.current.get(visitId.current)
       : undefined;
@@ -1532,22 +1562,15 @@ export function App() {
         suppressedPop.current = true;
         window.history.go(old.index - target.index);
       } else if (old && visitId.current)
-        writeWorkspaceVisit(old.visit, visitId.current, 'replace');
+        adoptUnrememberedVisit(
+          old.visit,
+          visits.current.get(visitId.current) ?? old,
+        );
       if (dirtyRef.current && parsed)
         requestTaskNavigation(() => {
           if (old && target) window.history.go(target.index - old.index);
           else {
-            const saved: SessionVisit = target ?? {
-              visit: parsed,
-              index: old?.index ?? 0,
-              collapsed: new Set(),
-              filter: emptyTaskFilter,
-              showGantt: true,
-              query: {},
-              timeline: undefined,
-              scroll: { id: null, date: null, offset: 0, top: 0, left: 0 },
-              origin: null,
-            };
+            const saved = adoptUnrememberedVisit(parsed);
             restorationApplied.current = false;
             restoringVisit.current = saved;
             if (treeRef.current?.project.id !== parsed.projectId)
@@ -1564,18 +1587,8 @@ export function App() {
       target?.visit ?? parseWorkspaceUrl(new URL(window.location.href));
     if (!parsed) return;
     restorationApplied.current = false;
-    restoringVisit.current = target ?? {
-      visit: parsed,
-      index: (old?.index ?? 0) + 1,
-      collapsed: new Set(),
-      filter: emptyTaskFilter,
-      showGantt: true,
-      query: {},
-      timeline: undefined,
-      scroll: { id: null, date: null, offset: 0, top: 0, left: 0 },
-      origin: null,
-    };
-    visitId.current = targetId ?? crypto.randomUUID();
+    restoringVisit.current = target ?? adoptUnrememberedVisit(parsed);
+    if (targetId && target) visitId.current = targetId;
     if (tree?.project.id !== parsed.projectId)
       void loadProject(parsed.projectId);
     else restoreWorkspace(restoringVisit.current, tree);
