@@ -225,10 +225,151 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+async function editTaskDescription(user: ReturnType<typeof userEvent.setup>) {
+  const action = screen.queryByRole('button', {
+    name: /Добавить описание|Изменить описание/,
+  });
+  if (action) await user.click(action);
+}
+async function openPanelQuick(user: ReturnType<typeof userEvent.setup>) {
+  const add = screen.queryByRole('button', { name: 'Добавить подзадачу' });
+  if (add && !add.hasAttribute('disabled')) {
+    await user.click(add);
+    await waitFor(() =>
+      expect(document.getElementById('quick-subtask')).toHaveFocus(),
+    );
+  }
+}
 async function open() {
   render(<App />);
   await screen.findByRole('heading', { name: project.title });
 }
+
+it.each([
+  'new draft',
+  'clean',
+  'divergent current task',
+  'current read fails',
+] as const)(
+  'acknowledges a frozen task replay below coherent read-side revision: %s',
+  async (variant) => {
+    tree.project.revision = 6;
+    tree.tasks = [task(1, 'Работа A'), task(2, 'Сосед')];
+    const frozen: ProjectTree = {
+      ...structuredClone(tree),
+      project: { ...tree.project, revision: 7 },
+      tasks: [
+        { ...tree.tasks[0]!, title: 'Работа отправлена' },
+        tree.tasks[1]!,
+      ],
+      canUndo: true,
+    };
+    const commandEnvelopes: CommandEnvelope[] = [];
+    const baseFetch = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/commands') && init?.method === 'POST') {
+        commandEnvelopes.push(JSON.parse(String(init.body)) as CommandEnvelope);
+        return commandEnvelopes.length === 1
+          ? Promise.reject(new TypeError('synthetic lost response'))
+          : json(frozen);
+      }
+      return baseFetch(url, init);
+    });
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^Работа A,/ }));
+    await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+    fireEvent.change(screen.getByLabelText('Название задачи'), {
+      target: { value: 'Работа отправлена' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await screen.findByText(/Нет связи с сервером/);
+    if (variant === 'new draft')
+      fireEvent.change(screen.getByLabelText('Название задачи'), {
+        target: { value: 'Новый локальный черновик' },
+      });
+    tree = {
+      ...structuredClone(frozen),
+      project: { ...frozen.project, revision: 8 },
+      tasks: [
+        {
+          ...frozen.tasks[0]!,
+          description:
+            variant === 'divergent current task' ? 'Серверное изменение' : '',
+        },
+        { ...frozen.tasks[1]!, title: 'Сервер revision 8' },
+      ],
+    };
+    await user.click(
+      within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
+        'tab',
+        { name: 'Журнал' },
+      ),
+    );
+    fireEvent(window, new Event('focus'));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/tree'))
+          .length,
+      ).toBeGreaterThan(1),
+    );
+    // Coherent metadata from a real GET is visible while the planning baseline stays pinned.
+    await waitFor(() =>
+      expect(screen.queryByText('Загрузка журнала…')).not.toBeInTheDocument(),
+    );
+    if (variant === 'current read fails') {
+      const readFetch = fetchMock.getMockImplementation()! as (
+        url: string,
+        init?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+        url.endsWith('/tree')
+          ? Promise.reject(new TypeError('synthetic read failure'))
+          : readFetch(url, init),
+      );
+    }
+    await user.click(
+      screen.getByRole('button', { name: 'Повторить сохранение' }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Повторить сохранение' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(commandEnvelopes).toHaveLength(2);
+    expect(commandEnvelopes[1]).toEqual(commandEnvelopes[0]);
+    expect(commandEnvelopes[1]!.operationId).toBe(
+      commandEnvelopes[0]!.operationId,
+    );
+    expect(commandEnvelopes[0]!.expectedRevision).toBe(6);
+    if (variant !== 'current read fails')
+      expect(
+        await screen.findByRole('treeitem', { name: /^Сервер revision 8,/ }),
+      ).toBeVisible();
+    if (variant === 'new draft') {
+      expect(screen.getByLabelText('Название задачи')).toHaveValue(
+        'Новый локальный черновик',
+      );
+      expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled();
+    } else if (variant === 'clean') {
+      expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+      expect(
+        screen.queryByRole('button', { name: 'Повторить' }),
+      ).not.toBeInTheDocument();
+      expect(commandEnvelopes).toHaveLength(2);
+    } else {
+      expect(
+        screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+      ).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+      expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
+    }
+  },
+);
 
 describe('client HTTP interactions', () => {
   it.each(['before commit', 'suspended'] as const)(
@@ -422,11 +563,16 @@ describe('client HTTP interactions', () => {
     await user.tab();
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     await user.type(panel.getByLabelText('Новая задача'), 'Ребёнок');
     await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
-    await user.clear(panel.getByLabelText('Длительность, рабочих дней'));
+    await user.clear(
+      within(
+        panel.getByRole('dialog', { name: 'Сроки задачи' }),
+      ).getByLabelText('Длительность, рабочих дней'),
+    );
     await user.tab();
     fetchMock.mockImplementationOnce(() =>
       Promise.reject(new TypeError('synthetic offline')),
@@ -436,10 +582,16 @@ describe('client HTTP interactions', () => {
     const firstBody = fetchMock.mock.calls
       .filter(([url]) => String(url).endsWith('/commands'))
       .at(-1)?.[1]?.body;
-    expect(panel.getByLabelText('Длительность, рабочих дней')).toHaveValue(
-      null,
-    );
-    expect(panel.getByLabelText('Длительность, рабочих дней')).toBeDisabled();
+    expect(
+      within(
+        panel.getByRole('dialog', { name: 'Сроки задачи' }),
+      ).getByLabelText('Длительность, рабочих дней'),
+    ).toHaveValue(null);
+    expect(
+      within(
+        panel.getByRole('dialog', { name: 'Сроки задачи' }),
+      ).getByLabelText('Длительность, рабочих дней'),
+    ).toBeDisabled();
     await user.click(panel.getByRole('button', { name: 'Повторить' }));
     await waitFor(() =>
       expect(panel.getByLabelText('Новая задача')).toHaveValue(''),
@@ -455,7 +607,11 @@ describe('client HTTP interactions', () => {
       inputFinish: null,
     });
     await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
-    expect(panel.getByLabelText('Длительность, рабочих дней')).toHaveValue(1);
+    expect(
+      within(
+        panel.getByRole('dialog', { name: 'Сроки задачи' }),
+      ).getByLabelText('Длительность, рабочих дней'),
+    ).toHaveValue(1);
     await user.keyboard('{Escape}');
     await user.click(panel.getByRole('button', { name: 'Закрыть панель' }));
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
@@ -493,7 +649,8 @@ describe('client HTTP interactions', () => {
     const mainInput = screen.getByLabelText('Новая задача');
     await user.type(mainInput, 'Главный черновик');
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     const input = panel.getByLabelText('Новая задача');
     await user.type(input, 'Новая работа');
@@ -517,7 +674,7 @@ describe('client HTTP interactions', () => {
     expect(
       panel.getByRole('treeitem', { name: /^Новая работа,/ }),
     ).toHaveAttribute('aria-level', '2');
-    expect(panel.getByRole('tab', { name: 'Подзадачи' })).toHaveAttribute(
+    expect(panel.getByRole('tab', { name: 'Задача' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
@@ -534,11 +691,13 @@ describe('client HTTP interactions', () => {
     const mainTree = within(screen.getByRole('tree', { name: 'Задачи' }));
     await user.click(mainTree.getByRole('button', { name: 'Свернуть Этап' }));
     await user.click(mainTree.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     let panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     await user.type(panel.getByLabelText('Новая задача'), 'Черновик этапа');
     await user.click(panel.getByRole('treeitem', { name: /^Ребёнок,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     await user.click(panel.getByRole('treeitem', { name: /^Внук,/ }));
     await user.click(screen.getByRole('button', { name: 'Назад: Ребёнок' }));
@@ -570,7 +729,8 @@ describe('client HTTP interactions', () => {
     const mainInput = screen.getByLabelText('Новая задача');
     await user.type(mainInput, 'Главный черновик');
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     expect(panel.getByText('Подзадач пока нет.')).toBeInTheDocument();
     fetchMock.mockImplementationOnce(() =>
@@ -600,7 +760,8 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     panel.getByRole('treeitem', { name: /^Ребёнок,/ }).focus();
     await user.keyboard('{Delete}');
@@ -619,21 +780,26 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     await user.type(panel.getByLabelText('Новая задача'), 'Черновик ветки');
     panel.getByRole('treeitem', { name: /^Ребёнок,/ }).focus();
     await user.keyboard('{Shift>}{Insert}{/Shift}');
     expect(panel.getByLabelText('Новая задача')).toHaveFocus();
     expect(panel.getByText('Родитель: Ребёнок')).toBeInTheDocument();
-    await user.click(panel.getByRole('tab', { name: 'Детали' }));
+    await user.click(panel.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
+    await editTaskDescription(user);
     await user.type(panel.getByLabelText('Описание'), 'Черновик деталей');
-    await user.click(panel.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(panel.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик ветки');
     expect(panel.getByLabelText('Новая задача')).toBeDisabled();
     await user.click(panel.getByRole('treeitem', { name: /^Ребёнок,/ }));
     expect(panel.getByRole('heading', { name: 'Этап' })).toBeInTheDocument();
-    await user.click(panel.getByRole('tab', { name: 'Детали' }));
+    await user.click(panel.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     expect(panel.getByLabelText('Описание')).toHaveValue('Черновик деталей');
     expect(commands).toHaveLength(0);
   });
@@ -643,7 +809,8 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     let resolve!: (response: Response) => void;
     fetchMock.mockImplementationOnce(
@@ -676,7 +843,8 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     await user.click(
       within(screen.getByRole('tree', { name: 'Подзадачи' })).getByRole(
         'treeitem',
@@ -704,7 +872,8 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     fetchMock.mockImplementationOnce(() =>
       json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
@@ -729,6 +898,10 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Работа A,/ }));
+    if (screen.queryByRole('button', { name: 'Изменить название' }))
+      await user.click(
+        screen.getByRole('button', { name: 'Изменить название' }),
+      );
     await user.clear(screen.getByLabelText('Название задачи'));
     await user.type(screen.getByLabelText('Название задачи'), 'Работа revised');
     await user.type(screen.getByLabelText('Длительность, рабочих дней'), '9');
@@ -1116,7 +1289,7 @@ describe('client HTTP interactions', () => {
     expect(
       screen.getByRole('complementary', { name: 'Задача' }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Название задачи')).toHaveValue('Уровень 2');
+    expect(screen.getByRole('heading', { name: 'Уровень 2' })).toBeVisible();
     await user.keyboard('{Escape}');
     expect(
       screen.queryByRole('complementary', { name: 'Задача' }),
@@ -1128,6 +1301,10 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    if (screen.queryByRole('button', { name: 'Изменить название' }))
+      await user.click(
+        screen.getByRole('button', { name: 'Изменить название' }),
+      );
     await user.clear(screen.getByLabelText('Название задачи'));
     await user.type(screen.getByLabelText('Название задачи'), 'Новое название');
     await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
@@ -1162,6 +1339,7 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await editTaskDescription(user);
     await user.type(screen.getByLabelText('Описание'), 'Черновик');
     fetchMock.mockImplementationOnce(() =>
       json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
@@ -1200,6 +1378,7 @@ describe('client HTTP interactions', () => {
     await screen.findByRole('treeitem', { name: /Ребёнок,/ });
     expect(commands[0]?.command).toMatchObject({ parentId: id(1) });
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await user.click(screen.getByRole('button', { name: 'Изменить название' }));
     screen.getByLabelText('Название задачи').focus();
     await user.tab();
     expect(screen.getByLabelText('Статус')).toHaveFocus();
@@ -1213,14 +1392,22 @@ describe('client HTTP interactions', () => {
     await user.click(
       screen.getByRole('button', { name: 'Добавить подзадачу' }),
     );
-    await user.type(screen.getByLabelText('Новая задача'), 'Подзадача{Enter}');
-    await screen.findByRole('treeitem', { name: /Подзадача,/ });
+    await user.type(
+      within(
+        screen.getByRole('complementary', { name: 'Задача' }),
+      ).getByLabelText('Новая задача'),
+      'Подзадача{Enter}',
+    );
+    await within(
+      screen.getByRole('complementary', { name: 'Задача' }),
+    ).findByRole('treeitem', { name: /Подзадача,/ });
     expect(window.confirm).toHaveBeenCalledWith(
       expect.stringContaining('сохранить'),
     );
     expect(commands[0]?.command).toMatchObject({ preserveWork: true });
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     expect(
       within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
         'tree',
@@ -1273,6 +1460,7 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await editTaskDescription(user);
     await user.type(screen.getByLabelText('Описание'), 'Черновик');
     let resolve!: (value: Response) => void;
     const response = new Promise<Response>((done) => {
@@ -1301,6 +1489,7 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await editTaskDescription(user);
     await user.type(screen.getByLabelText('Описание'), 'Черновик');
     fetchMock.mockImplementationOnce(() =>
       json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
@@ -1316,7 +1505,7 @@ describe('client HTTP interactions', () => {
     expect(screen.getByLabelText('Описание')).toHaveValue('Черновик');
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
     await user.click(
-      screen.getByRole('button', { name: 'Отбросить изменения' }),
+      screen.getByRole('button', { name: 'Сбросить изменения' }),
     );
     await user.keyboard('{Escape}');
     expect(screen.getByLabelText('Новая задача')).toHaveFocus();
@@ -1327,6 +1516,7 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await editTaskDescription(user);
     await user.type(screen.getByLabelText('Описание'), 'Черновик');
     fetchMock.mockImplementationOnce(() =>
       json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
@@ -1400,9 +1590,18 @@ describe('client HTTP interactions', () => {
       screen.getByRole('button', { name: 'Добавить подзадачу' }),
     );
     vi.mocked(window.confirm).mockReturnValueOnce(false);
-    await user.type(screen.getByLabelText('Новая задача'), 'Ребёнок{Enter}');
+    await user.type(
+      within(
+        screen.getByRole('complementary', { name: 'Задача' }),
+      ).getByLabelText('Новая задача'),
+      'Ребёнок{Enter}',
+    );
     expect(commands).toHaveLength(0);
-    expect(screen.getByLabelText('Новая задача')).toHaveValue('Ребёнок');
+    expect(
+      within(
+        screen.getByRole('complementary', { name: 'Задача' }),
+      ).getByLabelText('Новая задача'),
+    ).toHaveValue('Ребёнок');
   });
   it('creates and renames a project through HTTP without invented controls', async () => {
     fetchMock.mockImplementationOnce(() =>
@@ -1452,7 +1651,8 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
-    await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+    await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    await openPanelQuick(user);
     const childRow = within(
       screen.getByRole('complementary', { name: 'Задача' }),
     ).getByRole('treeitem', { name: /Ребёнок A,/ });
@@ -1487,6 +1687,7 @@ describe('client HTTP interactions', () => {
     expect(quick).not.toHaveFocus();
     await user.clear(quick);
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await editTaskDescription(user);
     await user.type(screen.getByLabelText('Описание'), 'Черновик');
     fetchMock.mockImplementationOnce(() =>
       json(
@@ -1507,8 +1708,13 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    if (screen.queryByRole('button', { name: 'Изменить название' }))
+      await user.click(
+        screen.getByRole('button', { name: 'Изменить название' }),
+      );
     await user.clear(screen.getByLabelText('Название задачи'));
     await user.type(screen.getByLabelText('Название задачи'), 'Задача A1');
+    await editTaskDescription(user);
     await user.type(
       screen.getByLabelText('Описание'),
       'Синтетическое описание',
@@ -1557,6 +1763,7 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await editTaskDescription(user);
     await user.type(screen.getByLabelText('Описание'), 'Черновик');
     await user.click(
       screen.getByRole('button', { name: /Другой демо-проект/ }),
@@ -1567,7 +1774,7 @@ describe('client HTTP interactions', () => {
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/tree')),
     ).toHaveLength(1);
     await user.click(
-      screen.getByRole('button', { name: 'Отбросить изменения' }),
+      screen.getByRole('button', { name: 'Сбросить изменения' }),
     );
     fetchMock.mockImplementationOnce(() =>
       json({
@@ -1666,6 +1873,7 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
+    await editTaskDescription(user);
     await user.type(
       screen.getByLabelText('Описание'),
       'Черновик после конфликта',
@@ -1721,18 +1929,21 @@ describe('client HTTP interactions', () => {
     await screen.findByText('Сохранено');
     expect(commands[0]?.expectedRevision).toBe(8);
   });
-  it('closes the clean panel for child and sibling actions and exposes the focused quick editor', async () => {
+  it('opens the scoped child composer and the main sibling composer with their correct parents', async () => {
     tree.tasks = [task(1, 'Задача A')];
     await open();
     const user = userEvent.setup();
     for (const name of ['Добавить подзадачу', 'Добавить соседнюю задачу']) {
       await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
       await user.click(screen.getByRole('button', { name }));
-      expect(
-        screen.queryByRole('complementary', { name: 'Задача' }),
-      ).not.toBeInTheDocument();
+      const child = name === 'Добавить подзадачу';
+      expect(!!screen.queryByRole('complementary', { name: 'Задача' })).toBe(
+        child,
+      );
       await waitFor(() =>
-        expect(screen.getByLabelText('Новая задача')).toHaveFocus(),
+        expect(
+          document.getElementById(child ? 'quick-subtask' : 'quick-task'),
+        ).toHaveFocus(),
       );
       expect(
         screen.getByText(
@@ -1783,7 +1994,9 @@ describe('client HTTP interactions', () => {
             screen.getByRole('button', { name: 'Добавить подзадачу' }),
           );
           await user.type(
-            screen.getByLabelText('Новая задача'),
+            within(
+              screen.getByRole('complementary', { name: 'Задача' }),
+            ).getByLabelText('Новая задача'),
             'Новый ребёнок{Enter}',
           );
         } else {
@@ -1846,9 +2059,11 @@ describe('client HTTP interactions', () => {
           expect(commands).toEqual([]);
           expect(tree).toEqual(before);
           if (action === 'create')
-            expect(screen.getByLabelText('Новая задача')).toHaveValue(
-              'Новый ребёнок',
-            );
+            expect(
+              within(
+                screen.getByRole('complementary', { name: 'Задача' }),
+              ).getByLabelText('Новая задача'),
+            ).toHaveValue('Новый ребёнок');
         },
       );
       it.each(['empty', 'summary'] as const)(
@@ -1890,7 +2105,34 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       let scope = screen;
       if (entry === 'subtask') {
         await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
-        await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+        await user.click(screen.getByRole('tab', { name: 'Задача' }));
+        if (
+          screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
+          !screen
+            .getByRole('button', { name: 'Добавить подзадачу' })
+            .hasAttribute('disabled')
+        )
+          await user.click(
+            screen.getByRole('button', { name: 'Добавить подзадачу' }),
+          );
+        if (
+          screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
+          !screen
+            .getByRole('button', { name: 'Добавить подзадачу' })
+            .hasAttribute('disabled')
+        )
+          await user.click(
+            screen.getByRole('button', { name: 'Добавить подзадачу' }),
+          );
+        if (
+          screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
+          !screen
+            .getByRole('button', { name: 'Добавить подзадачу' })
+            .hasAttribute('disabled')
+        )
+          await user.click(
+            screen.getByRole('button', { name: 'Добавить подзадачу' }),
+          );
         scope = within(
           screen.getByRole('complementary', { name: 'Задача' }),
         ) as typeof screen;
@@ -2313,7 +2555,16 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
   await open();
   const user = userEvent.setup();
   await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
-  await user.click(screen.getByRole('tab', { name: 'Подзадачи' }));
+  await user.click(screen.getByRole('tab', { name: 'Задача' }));
+  if (
+    screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
+    !screen
+      .getByRole('button', { name: 'Добавить подзадачу' })
+      .hasAttribute('disabled')
+  )
+    await user.click(
+      screen.getByRole('button', { name: 'Добавить подзадачу' }),
+    );
   const panel = within(screen.getByRole('complementary', { name: 'Задача' })),
     row = panel.getByRole('treeitem', { name: /^B,/ });
   await user.hover(row);
@@ -2327,7 +2578,26 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
   ).not.toBeInTheDocument();
   expect(row).toHaveFocus();
   await user.click(row);
-  await user.click(screen.getByRole('tab', { name: 'Детали' }));
+  await user.click(screen.getByRole('tab', { name: 'Задача' }));
+  if (
+    screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
+    !screen
+      .getByRole('button', { name: 'Добавить подзадачу' })
+      .hasAttribute('disabled')
+  )
+    await user.click(
+      screen.getByRole('button', { name: 'Добавить подзадачу' }),
+    );
+  if (
+    screen.queryByRole('button', {
+      name: /Добавить описание|Изменить описание/,
+    })
+  )
+    await user.click(
+      screen.getByRole('button', {
+        name: /Добавить описание|Изменить описание/,
+      }),
+    );
   await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
   const mainRow = within(
     screen.getByRole('tree', { name: 'Задачи' }),
@@ -2392,6 +2662,9 @@ it('dispatches additive left resize without a duration choice and respects dirty
     ).toHaveFocus(),
   );
   await userEvent.click(screen.getByRole('treeitem', { name: /Left work,/ }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Добавить описание' }),
+  );
   await userEvent.type(screen.getByLabelText('Описание'), 'dirty synthetic');
   expect(
     screen.queryByRole('button', { name: 'Изменить начало: Left work' }),

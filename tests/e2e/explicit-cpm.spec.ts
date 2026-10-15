@@ -120,7 +120,7 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
   )!.id;
   expect(after.schedule.criticalDependencyIds).toEqual([ab]);
   await page
-    .getByLabel('Название задачи', { exact: true })
+    .getByRole('button', { name: 'Изменить название', exact: true })
     .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: '/tmp/leaf-task7-' + info.project.name + '-panel.png',
@@ -141,7 +141,7 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
     page.locator('[data-dependency-edge="' + cd + '"]'),
   ).not.toHaveClass(/(^| )critical( |$)/);
   await page.getByRole('treeitem', { name: /^C,/ }).first().press('Enter');
-  await page.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
   await expect(page.getByText(/Резерв проекта: 2/)).toBeVisible();
   await page.keyboard.press('Escape');
   const undoReply = page.waitForResponse(

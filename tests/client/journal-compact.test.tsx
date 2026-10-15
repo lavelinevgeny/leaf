@@ -45,6 +45,9 @@ it('Q01 refused row quick actions keep focus on the action button', async () => 
     screen.getAllByRole('treeitem', { name: /^Работа 1,/ })[0]!,
   );
   const panel = await screen.findByRole('complementary', { name: 'Задача' });
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Изменить название' }),
+  );
   fireEvent.change(within(panel).getByLabelText('Название задачи'), {
     target: { value: 'Несохранённое название' },
   });

@@ -337,7 +337,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
   await expect(panel.getByLabel('Текст записи')).toHaveValue(
     'Отдельный task черновик\n',
   );
-  await panel.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
   await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
   await expect(panel.getByLabel('Текст записи')).toHaveValue(
     'Отдельный task черновик\n',

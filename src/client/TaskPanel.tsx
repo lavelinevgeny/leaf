@@ -12,13 +12,16 @@ import {
   canonicalPredecessorIds,
 } from './predecessor-view.js';
 import { PlanFields } from './PlanFields.js';
+import { TaskPanelHeader } from './TaskPanelHeader.js';
+import { TaskPanelFooter } from './TaskPanelFooter.js';
+import { visiblePanelTab } from './task-panel-view.js';
 import { sourceOf } from './planning-view.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
 import { Dependencies } from './Dependencies.js';
 import type { Command } from '../shared/contracts.js';
 import { TaskTree, type TreeAction } from './TaskTree.js';
 import { subtreeIds } from './tree-view.js';
-import { statusLabels, strings } from './strings.js';
+import { strings } from './strings.js';
 
 type Draft = Pick<Task, 'title' | 'description' | 'status'>;
 const draftOf = (task: Task): Draft => ({
@@ -56,6 +59,7 @@ interface Props {
   locked: boolean;
   feedback: ReactNode;
   subtaskInput?: ReactNode;
+  subtaskDraftActive?: boolean;
   journalContent?: ReactNode;
   journalTitle?: string | undefined;
   onJournal?:
@@ -88,11 +92,33 @@ export function TaskPanel({
   locked,
   feedback,
   subtaskInput,
+  subtaskDraftActive = false,
   journalContent,
   journalTitle,
   onJournal,
 }: Props) {
-  const keyboardTabChange = useRef(false);
+  const visibleTab = visiblePanelTab(tab);
+  const [descriptionEditing, setDescriptionEditing] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [subtaskOpen, setSubtaskOpen] = useState(
+    tab === 'subtasks' || subtaskDraftActive,
+  );
+  useEffect(() => {
+    if (tab === 'subtasks' || subtaskDraftActive) setSubtaskOpen(true);
+  }, [tab, subtaskDraftActive]);
+  const descriptionEditor = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (descriptionEditing) descriptionEditor.current?.focus();
+  }, [descriptionEditing]);
+  const latestTree = useRef(tree);
+  latestTree.current = tree;
+  useEffect(() => {
+    const editor = descriptionEditor.current;
+    if (editor) {
+      editor.style.height = 'auto';
+      editor.style.height = `${editor.scrollHeight}px`;
+    }
+  });
   const [draft, setDraft] = useState<Draft>(() => draftOf(task));
   const [baseline, setBaseline] = useState<Draft>(() => draftOf(task));
   const [plan, setPlan] = useState<SourceFields>(() => sourceOf(task));
@@ -112,6 +138,9 @@ export function TaskPanel({
   currentDraft.current = { details: draft, plan, incoming };
   const acknowledgedRevision = useRef(tree.project.revision);
   const submitted = useRef<typeof currentDraft.current | null>(null);
+  const [returnedAcknowledgement, setReturnedAcknowledgement] = useState<{
+    tree: ProjectTree;
+  } | null>(null);
   const draftKey = (value: typeof currentDraft.current) =>
     JSON.stringify({
       details: value.details,
@@ -123,6 +152,10 @@ export function TaskPanel({
     const canonical = ack.tasks.find((item) => item.id === task.id);
     if (!sent || !canonical || ack.project.id !== task.projectId) return;
     submitted.current = null;
+    if (ack.project.revision < acknowledgedRevision.current) {
+      setSaved(false);
+      return;
+    }
     acknowledgedRevision.current = ack.project.revision;
     const details = draftOf(canonical),
       source = sourceOf(canonical),
@@ -130,7 +163,21 @@ export function TaskPanel({
     setBaseline(details);
     setBaselinePlan(source);
     setBaselineIncoming(ids);
-    if (draftKey(currentDraft.current) === draftKey(sent)) {
+    const current = latestTree.current;
+    const newerTask = current.tasks.find((item) => item.id === task.id);
+    const divergent =
+      current.project.revision > ack.project.revision &&
+      (!newerTask ||
+        draftKey({
+          details: draftOf(newerTask),
+          plan: sourceOf(newerTask),
+          incoming: incomingPredecessorIds(current, task.id),
+        }) !== draftKey({ details, plan: source, incoming: ids }));
+    if (
+      !conflict &&
+      !divergent &&
+      draftKey(currentDraft.current) === draftKey(sent)
+    ) {
       setDraft(details);
       setPlan(source);
       setIncoming(ids);
@@ -143,6 +190,9 @@ export function TaskPanel({
   useEffect(() => {
     if (saveAcknowledgement) reconcile(saveAcknowledgement);
   }, [saveAcknowledgement]);
+  useEffect(() => {
+    if (returnedAcknowledgement) reconcile(returnedAcknowledgement.tree);
+  }, [returnedAcknowledgement]);
   const [planValid, setPlanValid] = useState(true);
   const [moveParent, setMoveParent] = useState(task.parentId ?? '');
   const previousParent = useRef(task.parentId);
@@ -189,6 +239,8 @@ export function TaskPanel({
     if (
       !dirty &&
       !busy &&
+      !conflict &&
+      !retry &&
       tree.project.revision >= acknowledgedRevision.current
     ) {
       const fresh = draftOf(task);
@@ -199,14 +251,24 @@ export function TaskPanel({
       const ids = incomingPredecessorIds(tree, task.id);
       setIncoming(ids);
       setBaselineIncoming(ids);
+      acknowledgedRevision.current = tree.project.revision;
     }
-  }, [task, tree, dirty, busy]);
+    // A tree observed during editing never becomes a new baseline merely because
+    // Reset cleared dirty. Only a fresh clean read or a matched acknowledgement does.
+  }, [task, tree]);
   function update<K extends keyof Draft>(field: K, value: Draft[K]) {
     setDraft((previous) => ({ ...previous, [field]: value }));
     setSaved(false);
   }
   async function save() {
-    if (busy || removed || conflict || !draft.title.trim() || !planValid)
+    if (
+      busy ||
+      (locked && !retry) ||
+      removed ||
+      conflict ||
+      !draft.title.trim() ||
+      !planValid
+    )
       return;
     const fields = { ...draft, title: draft.title.trim() };
     if (!summary && planDirty && !sourceFieldsSchema.safeParse(plan).success)
@@ -225,7 +287,7 @@ export function TaskPanel({
     if (!retry || !submitted.current)
       submitted.current = structuredClone(currentDraft.current);
     const ack = await onSave(changes);
-    if (ack) reconcile(ack);
+    if (ack) setReturnedAcknowledgement({ tree: ack });
   }
   return (
     <aside
@@ -239,288 +301,283 @@ export function TaskPanel({
         }
       }}
     >
-      <header className="panel-header">
-        {backTask && (
+      <form
+        id="task-panel-edit"
+        className="panel-edit-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <TaskPanelHeader
+          title={draft.title}
+          status={draft.status}
+          onTitle={(title) => update('title', title)}
+          onStatus={(status) => update('status', status)}
+          disabled={busy || locked}
+          closeDisabled={busy || locked}
+          onClose={onClose}
+          journalTitle={visibleTab === 'journal' ? journalTitle : undefined}
+          back={
+            backTask && (
+              <button
+                type="button"
+                className="quiet panel-back"
+                aria-label={`${strings.back}: ${backTask.title}`}
+                disabled={busy || locked || dirty}
+                onClick={onBack}
+              >
+                ←
+              </button>
+            )
+          }
+        />
+      </form>
+      <div className="panel-tabs" role="tablist" aria-label={strings.task}>
+        {(['details', 'dependencies', 'journal'] as const).map((value) => (
           <button
             type="button"
-            className="quiet panel-back"
-            aria-label={`${strings.back}: ${backTask.title}`}
-            disabled={busy || locked || dirty}
-            onClick={onBack}
+            key={value}
+            role="tab"
+            id={`tab-${value}`}
+            aria-controls={`panel-${value}`}
+            aria-selected={visibleTab === value}
+            tabIndex={visibleTab === value ? 0 : -1}
+            onClick={() => {
+              onTab(value);
+            }}
+            onKeyDown={(event) => {
+              if (
+                ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
+              ) {
+                event.preventDefault();
+                const tabs = ['details', 'dependencies', 'journal'] as const;
+                const next =
+                  tabs[
+                    event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? 2
+                        : (tabs.indexOf(visibleTab) +
+                            (event.key === 'ArrowRight' ? 1 : 2)) %
+                          3
+                  ]!;
+                onTab(next);
+                document.getElementById(`tab-${next}`)?.focus();
+              }
+            }}
           >
-            ←
+            {value === 'details' ? strings.task : strings[value]}
           </button>
-        )}
-        <h2>
-          {tab === 'journal'
-            ? (journalTitle ?? 'Загрузка задачи…')
-            : task.title}
-        </h2>
-        <button
-          type="button"
-          aria-label={strings.close}
-          disabled={busy || locked}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </header>
-      <div className="panel-tabs" role="tablist" aria-label={strings.task}>
-        {(['details', 'subtasks', 'dependencies', 'journal'] as const).map(
-          (value) => (
-            <button
-              type="button"
-              key={value}
-              role="tab"
-              id={`tab-${value}`}
-              aria-controls={`panel-${value}`}
-              aria-selected={tab === value}
-              tabIndex={tab === value ? 0 : -1}
-              onClick={() => {
-                keyboardTabChange.current = false;
-                onTab(value);
-              }}
-              onKeyDown={(event) => {
-                if (
-                  ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
-                ) {
-                  event.preventDefault();
-                  const tabs = [
-                    'details',
-                    'subtasks',
-                    'dependencies',
-                    'journal',
-                  ] as const;
-                  const next =
-                    tabs[
-                      event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? 3
-                          : (tabs.indexOf(tab) +
-                              (event.key === 'ArrowRight' ? 1 : 3)) %
-                            4
-                    ]!;
-                  keyboardTabChange.current = true;
-                  onTab(next);
-                  document.getElementById(`tab-${next}`)?.focus();
-                }
-              }}
-            >
-              {strings[value]}
-            </button>
-          ),
-        )}
+        ))}
       </div>
       <div className="panel-content">
-        {feedback}
         {removed && <p role="status">{strings.taskRemoved}</p>}
-        {tab === 'journal' ? (
+        {visibleTab === 'journal' ? (
           <div role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
             {journalContent}
           </div>
-        ) : tab === 'details' ? (
+        ) : visibleTab === 'details' ? (
           <div role="tabpanel" id="panel-details" aria-labelledby="tab-details">
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void save();
-              }}
-            >
-              <fieldset disabled={busy || locked}>
-                <label>
-                  {strings.title}
-                  <input
-                    autoFocus={!keyboardTabChange.current}
-                    value={draft.title}
-                    maxLength={300}
-                    onChange={(event) => update('title', event.target.value)}
-                  />
-                </label>
-                <label>
-                  {strings.status}
-                  <select
-                    aria-label={strings.status}
-                    value={draft.status}
-                    onChange={(event) =>
-                      update('status', event.target.value as Task['status'])
-                    }
+            <fieldset disabled={busy || locked}>
+              <PlanFields
+                timezone={tree.project.timezone}
+                task={{
+                  ...task,
+                  status:
+                    task.status === 'done' && draft.status === 'done'
+                      ? 'done'
+                      : 'doing',
+                }}
+                plan={plan}
+                computed={
+                  tree.schedule.tasks[task.id] ??
+                  tree.schedule.summaries[task.id]
+                }
+                calendar={tree.project.calendarType}
+                summary={summary}
+                disabled={removed}
+                onValidityChange={setPlanValid}
+                onChange={(next) => {
+                  setPlan(next);
+                  setSaved(false);
+                }}
+              />
+              {summary ? (
+                <p className="field-hint">{strings.chooseLeaf}</p>
+              ) : (
+                <div className="panel-predecessors">
+                  <button
+                    ref={predecessorTrigger}
+                    type="button"
+                    aria-label={strings.afterFinish}
+                    aria-expanded={predecessorsOpen}
+                    disabled={removed || conflict}
+                    onClick={() => setPredecessorsOpen((open) => !open)}
                   >
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
+                    <ControlIcon name="chain" /> {strings.afterFinish}
+                  </button>
+                  <div className="predecessor-chips">
+                    {canonicalPredecessorIds(incoming).map((id) => (
+                      <span className="predecessor-chip" key={id}>
+                        {tree.tasks.find((task) => task.id === id)?.title ??
+                          strings.removedPredecessor}
+                      </span>
                     ))}
-                  </select>
-                </label>
-                <PlanFields
-                  timezone={tree.project.timezone}
-                  task={{
-                    ...task,
-                    status:
-                      task.status === 'done' && draft.status === 'done'
-                        ? 'done'
-                        : 'doing',
-                  }}
-                  plan={plan}
-                  computed={
-                    tree.schedule.tasks[task.id] ??
-                    tree.schedule.summaries[task.id]
-                  }
-                  calendar={tree.project.calendarType}
-                  summary={summary}
-                  disabled={removed}
-                  onValidityChange={setPlanValid}
-                  onChange={(next) => {
-                    setPlan(next);
-                    setSaved(false);
-                  }}
-                />
-                {summary ? (
-                  <p className="field-hint">{strings.chooseLeaf}</p>
-                ) : (
-                  <div className="panel-predecessors">
-                    <button
-                      ref={predecessorTrigger}
-                      type="button"
-                      aria-label={strings.afterFinish}
-                      aria-expanded={predecessorsOpen}
-                      disabled={removed || conflict}
-                      onClick={() => setPredecessorsOpen((open) => !open)}
-                    >
-                      <ControlIcon name="chain" /> {strings.afterFinish}
-                    </button>
-                    <div className="predecessor-chips">
-                      {canonicalPredecessorIds(incoming).map((id) => (
-                        <span className="predecessor-chip" key={id}>
-                          {tree.tasks.find((task) => task.id === id)?.title ??
-                            strings.removedPredecessor}
-                        </span>
-                      ))}
-                    </div>
-                    {predecessorsOpen && (
-                      <PredecessorPicker
-                        tree={tree}
-                        successorId={task.id}
-                        selectedIds={incoming}
-                        disabled={busy || locked || removed || conflict}
-                        onAdd={(id) => {
-                          setIncoming(
-                            canonicalPredecessorIds([...incoming, id]),
-                          );
-                          setSaved(false);
-                        }}
-                        onRemove={(id) => {
-                          setIncoming(
-                            incoming.filter((selected) => selected !== id),
-                          );
-                          setSaved(false);
-                        }}
-                        onClose={() => {
-                          setPredecessorsOpen(false);
-                          predecessorTrigger.current?.focus();
-                        }}
-                      />
-                    )}
                   </div>
-                )}
-                <ScheduleStatus tree={tree} task={task} />
-                <label>
-                  {strings.description}
-                  <textarea
-                    aria-label={strings.description}
-                    value={draft.description}
-                    maxLength={10000}
-                    rows={6}
-                    onChange={(event) =>
-                      update('description', event.target.value)
-                    }
-                  />
-                </label>
-              </fieldset>
-              <div className="save-controls">
-                <button
-                  type="submit"
-                  className="primary"
-                  disabled={
-                    busy ||
-                    removed ||
-                    conflict ||
-                    !planValid ||
-                    (locked && !retry) ||
-                    (!dirty && !retry && !canAdopt) ||
-                    !draft.title.trim() ||
-                    (!summary &&
-                      planDirty &&
-                      !sourceFieldsSchema.safeParse(plan).success)
-                  }
-                >
-                  {busy
-                    ? strings.saving
-                    : retry
-                      ? strings.retrySave
-                      : strings.save}
-                </button>
-                <span role="status">
-                  {busy
-                    ? strings.saving
-                    : saved && !dirty
-                      ? strings.saved
-                      : dirty
-                        ? strings.dirty
-                        : ''}
-                </span>
-              </div>
-              {dirty && (
+                  {predecessorsOpen && (
+                    <PredecessorPicker
+                      tree={tree}
+                      successorId={task.id}
+                      selectedIds={incoming}
+                      disabled={busy || locked || removed || conflict}
+                      onAdd={(id) => {
+                        setIncoming(canonicalPredecessorIds([...incoming, id]));
+                        setSaved(false);
+                      }}
+                      onRemove={(id) => {
+                        setIncoming(
+                          incoming.filter((selected) => selected !== id),
+                        );
+                        setSaved(false);
+                      }}
+                      onClose={() => {
+                        setPredecessorsOpen(false);
+                        predecessorTrigger.current?.focus();
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+              <ScheduleStatus tree={tree} task={task} />
+            </fieldset>
+            <section className="panel-description-section">
+              {descriptionEditing ? (
+                <>
+                  <label>
+                    {strings.description}
+                    <textarea
+                      form="task-panel-edit"
+                      aria-label={strings.description}
+                      ref={descriptionEditor}
+                      disabled={busy || locked}
+                      value={draft.description}
+                      maxLength={10000}
+                      rows={1}
+                      onChange={(event) =>
+                        update('description', event.target.value)
+                      }
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="quiet"
+                    onClick={() => setDescriptionEditing(false)}
+                  >
+                    {strings.confirmSchedule}
+                  </button>
+                </>
+              ) : draft.description ? (
+                <>
+                  <p
+                    className={`panel-description${descriptionExpanded ? '' : ' is-collapsed'}`}
+                  >
+                    {draft.description}
+                  </p>
+                  <button
+                    type="button"
+                    className="quiet"
+                    onClick={() => setDescriptionExpanded((value) => !value)}
+                  >
+                    {descriptionExpanded
+                      ? strings.collapseDescription
+                      : strings.expandDescription}
+                  </button>
+                  <button
+                    type="button"
+                    className="quiet"
+                    disabled={busy || locked}
+                    onClick={() => setDescriptionEditing(true)}
+                  >
+                    {strings.editDescription}
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
                   className="quiet"
                   disabled={busy || locked}
-                  onClick={() => {
-                    const fresh = draftOf(task);
-                    setDraft(fresh);
-                    setBaseline(fresh);
-                    setPlan(sourceOf(task));
-                    setBaselinePlan(sourceOf(task));
-                    const ids = incomingPredecessorIds(tree, task.id);
-                    setIncoming(ids);
-                    setBaselineIncoming(ids);
-                    submitted.current = null;
-                    setSaved(false);
-                    onDirty(false);
-                  }}
+                  onClick={() => setDescriptionEditing(true)}
                 >
-                  {strings.discard}
+                  {strings.addDescription}
                 </button>
               )}
-            </form>
-          </div>
-        ) : tab === 'subtasks' ? (
-          <div
-            role="tabpanel"
-            id="panel-subtasks"
-            aria-labelledby="tab-subtasks"
-          >
-            {!summary && !removed && (
-              <p className="empty-state">{strings.emptySubtasks}</p>
-            )}
-            {!removed && (
-              <TaskTree
-                tasks={tasks}
-                rootId={task.id}
-                selectedId={task.id}
-                collapsed={collapsed}
-                onToggle={onToggle}
-                onSelect={onSelect}
-                onAction={onAction}
-                onJournal={onJournal}
-                label={strings.subtasks}
-                schedule={tree.schedule}
-                quickInputId="quick-subtask"
-                disabled={busy || locked || conflict || removed || dirty}
-              />
-            )}
-            {subtaskInput}
+            </section>
+            <section
+              className="panel-subtasks"
+              aria-labelledby="panel-subtasks-heading"
+            >
+              <h3 id="panel-subtasks-heading">
+                {strings.subtasks}{' '}
+                <span>
+                  ({tasks.filter((child) => child.parentId === task.id).length})
+                </span>
+              </h3>
+              {dirty && (
+                <p id="panel-subtasks-blocked" className="field-hint">
+                  {strings.saveTaskBeforeSubtask}
+                </p>
+              )}
+              {!subtaskOpen && subtaskInput && (
+                <button
+                  type="button"
+                  disabled={busy || locked || removed || dirty}
+                  aria-describedby={
+                    dirty ? 'panel-subtasks-blocked' : undefined
+                  }
+                  onClick={(event) => {
+                    const trigger = event.currentTarget;
+                    setSubtaskOpen(true);
+                    onTab('subtasks');
+                    requestAnimationFrame(() => {
+                      if (
+                        document.activeElement === document.body ||
+                        document.activeElement === trigger
+                      )
+                        document.getElementById('quick-subtask')?.focus();
+                    });
+                  }}
+                >
+                  {strings.addChild}
+                </button>
+              )}
+              {!summary && !removed && (
+                <p className="empty-state">{strings.emptySubtasks}</p>
+              )}
+              {!removed && (
+                <TaskTree
+                  tasks={tasks}
+                  rootId={task.id}
+                  selectedId={task.id}
+                  collapsed={collapsed}
+                  onToggle={onToggle}
+                  onSelect={onSelect}
+                  onAction={(action, child) => {
+                    if (action === 'child' || action === 'sibling') {
+                      setSubtaskOpen(true);
+                      onTab('subtasks');
+                    }
+                    return onAction(action, child);
+                  }}
+                  onJournal={onJournal}
+                  label={strings.subtasks}
+                  schedule={tree.schedule}
+                  quickInputId="quick-subtask"
+                  disabled={busy || locked || conflict || removed || dirty}
+                />
+              )}
+              {subtaskOpen && subtaskInput}
+            </section>
           </div>
         ) : (
           <div
@@ -539,13 +596,15 @@ export function TaskPanel({
           </div>
         )}
         <div className="task-actions">
-          <button
-            type="button"
-            disabled={busy || locked || removed || dirty}
-            onClick={() => onAction('child', task)}
-          >
-            {strings.addChild}
-          </button>
+          {visibleTab !== 'details' && (
+            <button
+              type="button"
+              disabled={busy || locked || removed || dirty}
+              onClick={() => onAction('child', task)}
+            >
+              {strings.addChild}
+            </button>
+          )}
           <button
             type="button"
             disabled={busy || locked || removed || dirty}
@@ -605,6 +664,64 @@ export function TaskPanel({
           {strings.delete}
         </button>
       </div>
+      <TaskPanelFooter
+        dirty={dirty}
+        busy={busy}
+        retry={retry}
+        saved={saved}
+        canAdopt={canAdopt}
+        disabledReason={
+          busy
+            ? strings.saving
+            : removed
+              ? strings.cannotSaveRemovedTask
+              : conflict
+                ? strings.resolveTaskConflict
+                : !draft.title.trim()
+                  ? strings.titleRequired
+                  : !planValid ||
+                      (!summary &&
+                        planDirty &&
+                        !sourceFieldsSchema.safeParse(plan).success)
+                    ? strings.planInputError
+                    : locked && !retry
+                      ? strings.loading
+                      : null
+        }
+        resetDisabled={busy || locked}
+        feedback={feedback}
+        onSave={() => void save()}
+        onReset={() => {
+          setDraft({ ...baseline });
+          setPlan({ ...baselinePlan });
+          setIncoming([...baselineIncoming]);
+          submitted.current = null;
+          setSaved(false);
+          onDirty(false);
+        }}
+        onRepair={() => {
+          onTab('details');
+          requestAnimationFrame(() => {
+            if (!draft.title.trim()) {
+              const titleInput = document.querySelector<HTMLElement>(
+                '.panel-title-editor input',
+              );
+              if (titleInput) titleInput.focus();
+              else
+                document
+                  .querySelector<HTMLButtonElement>(
+                    `.panel-header [aria-label="${strings.editTitle}"]`,
+                  )
+                  ?.click();
+            } else
+              document
+                .querySelector<HTMLElement>(
+                  '#panel-details [aria-invalid="true"]',
+                )
+                ?.focus();
+          });
+        }}
+      />
     </aside>
   );
 }

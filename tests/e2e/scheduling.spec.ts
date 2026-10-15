@@ -24,12 +24,16 @@ test('preserves duration-only work and dependencies on explicit child conversion
       .getByRole('button', { name: 'Добавить подзадачу', exact: true })
       .click();
     page.once('dialog', (dialog) => dialog.accept());
-    await page
+    const panel = page.getByRole('complementary', {
+      name: 'Задача',
+      exact: true,
+    });
+    await panel
       .getByLabel('Новая задача', { exact: true })
       .fill('Новый ребёнок');
-    await page.getByLabel('Новая задача', { exact: true }).press('Enter');
+    await panel.getByLabel('Новая задача', { exact: true }).press('Enter');
     await expect(
-      page.getByRole('treeitem', { name: /Новый ребёнок,/ }),
+      panel.getByRole('treeitem', { name: /Новый ребёнок,/ }),
     ).toBeVisible();
     const changed = await readTree(page, runtime.origin, tree.project.id);
     const own = changed.tasks.find(
@@ -42,7 +46,9 @@ test('preserves duration-only work and dependencies on explicit child conversion
       durationDays: null,
     });
     expect(changed.dependencies[0]!.successorId).toBe(own.id);
-    await page.keyboard.press('Escape');
+    await panel
+      .getByRole('button', { name: 'Закрыть панель', exact: true })
+      .click();
     await page
       .getByRole('button', { name: 'Отменить изменение плана' })
       .click();
@@ -81,6 +87,9 @@ test('unversioned real request cannot mutate an existing project and retry remai
     );
     expect(old.status()).toBe(426);
     await page.getByRole('treeitem', { name: /Работа C,/ }).click();
+    await page
+      .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+      .click();
     await page
       .getByLabel('Описание', { exact: true })
       .fill('Синтетический ответ потерян');

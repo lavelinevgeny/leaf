@@ -154,7 +154,15 @@ test('subtask draft creates child plus edge atomically, retaining the main draft
   const main = page.locator('#quick-task');
   await main.fill('Основной черновик');
   await row(page, taskId(tree, 'P')).click();
-  await page.getByRole('tab', { name: 'Подзадачи', exact: true }).click();
+  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
+  if (
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   const quick = panel(page).getByLabel('Новая задача', { exact: true });
   await quick.fill('Ребёнок');
   await quick.press('Alt+l');
@@ -237,7 +245,7 @@ test('Details relation-only save adopts canonical weekday dates, clean baseline 
     '13.10.2026',
   );
   await expect(
-    page.getByRole('button', { name: 'Отбросить изменения', exact: true }),
+    page.getByRole('button', { name: 'Сбросить изменения', exact: true }),
   ).toHaveCount(0);
   await panel(page)
     .locator('.panel-content')
@@ -318,7 +326,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   await expect(finish).toHaveValue('13.10.2026');
   await expect(
     panel(page).getByRole('button', {
-      name: 'Отбросить изменения',
+      name: 'Сбросить изменения',
       exact: true,
     }),
   ).toHaveCount(0);
@@ -364,7 +372,15 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     ganttRow.getByRole('button', { name: 'После окончания: B', exact: true }),
   ).toHaveCSS('opacity', '1');
   await row(page, taskId(tree, 'P')).click();
-  await page.getByRole('tab', { name: 'Подзадачи', exact: true }).click();
+  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
+  if (
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   const subtaskRow = panel(page)
     .getByRole('tree', { name: 'Подзадачи', exact: true })
     .locator(`[data-task-id="${taskId(tree, 'B')}"]`);
@@ -771,6 +787,9 @@ test('real stale 409 keeps Details source and IDs through reload and corrected r
     .click();
   await choose(page, 'A');
   await page
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
+  await page
     .getByLabel('Описание', { exact: true })
     .fill('Синтетический черновик');
   tree = await send(page, runtime.origin, tree, {
@@ -934,7 +953,7 @@ for (const failure of ['done', 'cycle', 'calendar'] as const)
     );
     await expect(panel(page).locator('.predecessor-chip')).toHaveText('A');
     await expect(
-      page.getByRole('button', { name: 'Отбросить изменения', exact: true }),
+      page.getByRole('button', { name: 'Сбросить изменения', exact: true }),
     ).toBeVisible();
     expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
   });

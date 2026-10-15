@@ -403,7 +403,7 @@ test('nested row menu, keyboard tabs and picker include done/summary/undated dup
   await panel.getByRole('tab', { name: 'Журнал', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(
-    panel.getByRole('tab', { name: 'Детали', exact: true }),
+    panel.getByRole('tab', { name: 'Задача', exact: true }),
   ).toBeFocused();
   await page.keyboard.press('End');
   await expect(
@@ -680,7 +680,8 @@ test('empty/loading/error/load-more retry and filtered success preserve long pla
       .evaluate((n) => n.scrollWidth <= n.clientWidth),
   ).toBe(true);
   const box = await panel.boundingBox();
-  expect(box!.width).toBeLessThanOrEqual(380);
+  expect(box!.width).toBeGreaterThanOrEqual(420);
+  expect(box!.width).toBeLessThanOrEqual(520);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

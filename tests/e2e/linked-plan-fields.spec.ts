@@ -197,7 +197,7 @@ test('invalid edits block save until discard; native calendar and all-days use t
       before,
     );
     await page
-      .getByRole('button', { name: 'Отбросить изменения', exact: true })
+      .getByRole('button', { name: 'Сбросить изменения', exact: true })
       .click();
     await expect(finish).toHaveValue('06.10.2026');
     await expect(page.getByRole('alert')).toHaveCount(0);

@@ -512,6 +512,9 @@ test('C27 FS rollback keeps source and focus; later start preserves successor an
     expect(changed.project.revision).toBe(tree.project.revision + 1);
     await page.getByRole('treeitem', { name: /Работа C,/ }).click();
     await page
+      .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+      .click();
+    await page
       .getByLabel('Описание', { exact: true })
       .fill('Синтетический черновик');
     await expect(left).toHaveCount(0);

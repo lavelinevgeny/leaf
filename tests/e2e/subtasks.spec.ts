@@ -53,7 +53,15 @@ async function seed(
   await main(page)
     .getByRole('treeitem', { name: /^Этап P,/ })
     .click();
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   return { tree, root };
 }
 
@@ -76,7 +84,15 @@ test('subtasks keep full depth under a main filter and return focus through nest
     .getByLabel('Новая задача', { exact: true })
     .fill('Черновик этапа');
   await subtree.getByRole('treeitem', { name: /^Группа 1,/ }).press('Enter');
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   await panel(page)
     .getByRole('treeitem', { name: /^Группа 2,/ })
     .press('Enter');
@@ -211,7 +227,15 @@ test('last-row deletion focuses scoped input and a removed selected task keeps d
   await panel(page)
     .getByRole('treeitem', { name: /^Группа 4,/ })
     .press('Enter');
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   page.once('dialog', (dialog) => dialog.accept());
   await panel(page)
     .getByRole('treeitem', { name: /^Глубокая работа,/ })
@@ -220,7 +244,18 @@ test('last-row deletion focuses scoped input and a removed selected task keeps d
   const input = panel(page).getByLabel('Новая задача', { exact: true });
   await expect(input).toBeFocused();
   await input.fill('Черновик удаляемой группы');
-  await panel(page).getByRole('tab', { name: 'Детали' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
+  await panel(page)
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
   await panel(page)
     .getByLabel('Описание', { exact: true })
     .fill('Черновик деталей');
@@ -239,7 +274,15 @@ test('last-row deletion focuses scoped input and a removed selected task keeps d
   await expect(panel(page).getByLabel('Описание', { exact: true })).toHaveValue(
     'Черновик деталей',
   );
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   await expect(panel(page).getByRole('tree')).toHaveCount(0);
   await expect(input).toHaveValue('Черновик удаляемой группы');
   await expect(input).toBeDisabled();

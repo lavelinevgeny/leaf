@@ -58,6 +58,9 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
   await page.getByLabel('Начало', { exact: true }).fill('2026-10-05');
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-06');
   await page
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
+  await page
     .getByLabel('Описание', { exact: true })
     .fill('Синтетический черновик');
   await expect(
@@ -173,6 +176,9 @@ test('dirty selected deletion retains readable tombstone then discards and resto
   const selectedId = tree.tasks.find((t) => t.title === 'Работа C')!.id;
   await page.getByRole('treeitem', { name: /Работа C,/ }).click();
   await page
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
+  await page
     .getByLabel('Описание', { exact: true })
     .fill('Синтетический черновик');
   const deleted = await page.request.post(
@@ -201,7 +207,7 @@ test('dirty selected deletion retains readable tombstone then discards and resto
   ).toBeDisabled();
   await expect(page.locator(`[data-gantt-row="${selectedId}"]`)).toHaveCount(0);
   await page
-    .getByRole('button', { name: 'Отбросить изменения', exact: true })
+    .getByRole('button', { name: 'Сбросить изменения', exact: true })
     .click();
   await page.keyboard.press('Escape');
   await expect(

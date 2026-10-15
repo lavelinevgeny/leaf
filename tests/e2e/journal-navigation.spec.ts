@@ -246,7 +246,10 @@ test('second client metadata rename/move/create keeps dirty planning baseline an
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  await panel
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
   await panel
     .getByLabel('Описание', { exact: true })
     .fill('Локальный плановый черновик');
@@ -441,7 +444,10 @@ test('dirty planning refuses Back without history displacement; project defaults
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  await panel
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
   await panel
     .getByLabel('Описание', { exact: true })
     .fill('Грязный план защищён');

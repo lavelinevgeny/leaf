@@ -321,7 +321,7 @@ h2 {
 }
 @media (min-width: 1001px) {
   .workspace-header.panel-visible {
-    padding-inline-end: 408px;
+    padding-inline-end: calc(var(--leaf-task-panel-width) + 28px);
   }
 }
 .project-title-line {
@@ -530,27 +530,35 @@ h2 {
   width: var(--leaf-task-panel-width);
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  max-height: 100dvh;
   background: white;
   border-left: 1px solid var(--leaf-border);
   box-shadow: -6px 0 18px #202a2605;
 }
 .panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 22px 20px 14px;
+  flex: 0 0 auto;
+  padding: 16px 20px 14px;
+}
+.panel-edit-form {
+  flex: 0 0 auto;
 }
 .panel-header h2 {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
-.panel-header button {
+.panel-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.panel-header-actions button {
   padding: 0 6px;
   border: 0;
   font-size: 24px;
 }
 .panel-tabs {
+  flex: 0 0 auto;
   display: flex;
   padding: 0 20px;
   gap: 14px;
@@ -568,8 +576,53 @@ h2 {
 }
 .panel-content {
   padding: 24px 20px;
-  overflow: auto;
-  flex: 1;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.panel-footer {
+  flex: 0 0 auto;
+  min-height: 4.5rem;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 12px 20px;
+  border-top: 1px solid var(--leaf-border);
+  font-size: 12px;
+}
+.panel-footer p {
+  margin-block: 6px;
+}
+.panel-title {
+  padding: 0;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  overflow-wrap: anywhere;
+  background: transparent;
+}
+.panel-status {
+  margin: 12px 0 0;
+}
+.panel-status select {
+  width: auto;
+  margin-left: 10px;
+}
+.panel-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.panel-description.is-collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.panel-description-section textarea {
+  resize: none;
+  overflow-y: hidden;
+}
+.panel-subtasks h3 {
+  font-size: 14px;
 }
 .task-panel .quick-add {
   margin: 18px 0;
@@ -655,7 +708,7 @@ h2 {
     right: 0;
     top: 0;
     bottom: 0;
-    width: min(380px, 100vw);
+    width: min(var(--leaf-task-panel-width), 100vw);
     z-index: 2;
     box-shadow: -8px 0 24px #202a2612;
   }

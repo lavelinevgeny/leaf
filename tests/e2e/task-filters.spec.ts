@@ -351,6 +351,9 @@ test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', 
   ).toBeFocused();
   await page.keyboard.press('Enter');
   await page
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
+  await page
     .getByLabel('Описание', { exact: true })
     .fill('Синтетический черновик');
   await search.fill('Готовая');
@@ -363,7 +366,7 @@ test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', 
     'Синтетический черновик',
   );
   await page
-    .getByRole('button', { name: 'Отбросить изменения', exact: true })
+    .getByRole('button', { name: 'Сбросить изменения', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
   await search.fill('Готовая');
@@ -379,7 +382,7 @@ test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', 
   await page.screenshot({
     path: `/tmp/leaf-s4-${info.project.name}-panel.png`,
   });
-  await page.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
   await search.fill('Монтаж A');
   await page.getByLabel('Статус', { exact: true }).selectOption('todo');
   const saved = page.waitForResponse(

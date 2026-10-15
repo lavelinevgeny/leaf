@@ -343,6 +343,7 @@ it('preserves selected dirty panel and quick draft when filtering hides the task
   const user = userEvent.setup();
   await user.type(screen.getByLabelText('Новая задача'), 'Быстрый черновик');
   await user.click(screen.getByRole('treeitem', { name: /Монтаж A,/ }));
+  await user.click(screen.getByRole('button', { name: 'Добавить описание' }));
   await user.type(screen.getByLabelText('Описание'), 'Черновик панели');
   const requests = fetchMock.mock.calls.length;
   await user.type(screen.getByRole('searchbox'), 'Готовая');
@@ -407,6 +408,7 @@ it('keeps query and dirty draft through conflict loading and disables only the l
   const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
   await user.type(search, 'Монтаж A');
   await user.click(screen.getByRole('treeitem', { name: /Монтаж A,/ }));
+  await user.click(screen.getByRole('button', { name: 'Добавить описание' }));
   await user.type(screen.getByLabelText('Описание'), 'Черновик');
   fetchMock.mockImplementationOnce(() =>
     Promise.resolve(
@@ -450,6 +452,7 @@ it('allows display filtering after an uncertain offline save without hiding the 
   await open();
   const user = userEvent.setup();
   await user.click(screen.getByRole('treeitem', { name: /Монтаж A,/ }));
+  await user.click(screen.getByRole('button', { name: 'Добавить описание' }));
   await user.type(screen.getByLabelText('Описание'), 'Черновик offline');
   fetchMock.mockImplementationOnce(() =>
     Promise.reject(new TypeError('synthetic offline')),

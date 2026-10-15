@@ -1,5 +1,6 @@
 .app-shell {
   position: relative;
+  --leaf-task-panel-width: 480px;
 }
 .workspace-content.planning-workspace {
   display: flex;
@@ -347,7 +348,6 @@
   top: 0;
   bottom: 0;
   z-index: 2;
-  width: min(380px, 100vw);
   box-shadow: -8px 0 24px #202a2612;
 }
 .task-panel .task-row {
@@ -367,9 +367,6 @@
 }
 .panel-back {
   margin-left: -8px;
-}
-.panel-header h2 {
-  flex: 1;
 }
 .dependency-section-label {
   display: flex;
@@ -482,9 +479,10 @@
   padding-top: 18px;
   margin-top: 16px;
 }
-@media (max-width: 1000px) {
+@media (max-width: 899px) {
   .task-panel {
     position: fixed;
+    width: 100vw;
   }
 }
 @media (max-width: 600px) {

@@ -38,6 +38,7 @@ import { api, ApiError } from './api.js';
 import { ProjectSidebar } from './ProjectSidebar.js';
 import { QuickAdd, type AddContext } from './QuickAdd.js';
 import { TaskPanel, type PanelTab } from './TaskPanel.js';
+import { visiblePanelTab } from './task-panel-view.js';
 import { focusTaskRow, type TreeAction } from './TaskTree.js';
 import { orderedChildren, subtreeIds } from './tree-view.js';
 import { strings } from './strings.js';
@@ -140,6 +141,11 @@ export function App() {
   const [restorationTick, setRestorationTick] = useState(0);
   const suppressedPop = useRef(false);
   const [session, setSession] = useState<AuthSession | null>(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const knownRevision = useRef<{ projectId: string; revision: number } | null>(
+    null,
+  );
   const [projects, setProjects] = useState<Project[]>([]);
   const [tree, setTree] = useState<ProjectTree | null>(null);
   const [durationChoice, setDurationChoice] = useState<{
@@ -285,6 +291,7 @@ export function App() {
   function expireSession() {
     ++loadSequence.current;
     journal.clearPrivateState();
+    knownRevision.current = null;
     setSession({
       authenticated: false,
       setupRequired: false,
@@ -346,6 +353,23 @@ export function App() {
         },
   );
   const journalLocked = journal.writing || !!journal.pending;
+  for (const feed of [journal.projectFeed, journal.taskFeed]) {
+    const metadata = feed?.metadata;
+    if (
+      metadata &&
+      metadata.projectId === currentProject.current &&
+      metadata.revision === feed?.page?.projectRevision
+    ) {
+      if (
+        knownRevision.current?.projectId !== metadata.projectId ||
+        knownRevision.current.revision < metadata.revision
+      )
+        knownRevision.current = {
+          projectId: metadata.projectId,
+          revision: metadata.revision,
+        };
+    }
+  }
   function openTaskJournal(task: Task, trigger: HTMLElement): boolean {
     if (journalLocked || (selected?.id !== task.id && !canNavigate()))
       return false;
@@ -644,13 +668,78 @@ export function App() {
     setNotice('');
     pendingRef.current = job;
     setPending(job);
+    const commandSession = sessionRef.current;
     try {
       const next =
         job.kind === 'command'
           ? await api.command(job.projectId, job.envelope)
           : await api.rename(job.projectId, job.envelope);
-      if (!apply(next))
-        throw new ApiError('STALE_SNAPSHOT', strings.staleSnapshot);
+      if (
+        currentProject.current !== job.projectId ||
+        next.project.id !== job.projectId ||
+        sessionRef.current !== commandSession ||
+        !commandSession?.authenticated ||
+        pendingRef.current !== job
+      )
+        return null;
+      // A validated success acknowledges this exact operation even when its frozen
+      // snapshot predates a revision already observed by a coherent journal read.
+      const floor = Math.max(
+        treeRef.current?.project.revision ?? 0,
+        knownRevision.current?.projectId === job.projectId
+          ? knownRevision.current.revision
+          : 0,
+      );
+      pendingRef.current = null;
+      setPending(null);
+      if (next.project.revision >= floor) {
+        apply(next);
+      } else {
+        try {
+          const current = await api.tree(job.projectId);
+          if (
+            currentProject.current !== job.projectId ||
+            sessionRef.current !== commandSession
+          )
+            return null;
+          const currentFloor = Math.max(
+            floor,
+            treeRef.current?.project.revision ?? 0,
+            knownRevision.current?.projectId === job.projectId
+              ? knownRevision.current.revision
+              : 0,
+          );
+          if (current.project.revision < currentFloor || !apply(current))
+            throw new ApiError('STALE_SNAPSHOT', strings.staleSnapshot);
+          if (job.kind === 'command' && job.panelTaskId) {
+            const savedTask = next.tasks.find(
+              (task) => task.id === job.panelTaskId,
+            );
+            const currentTask = current.tasks.find(
+              (task) => task.id === job.panelTaskId,
+            );
+            const editable = (task: Task | undefined, snapshot: ProjectTree) =>
+              task &&
+              JSON.stringify({
+                title: task.title,
+                description: task.description,
+                status: task.status,
+                inputStart: task.inputStart,
+                inputFinish: task.inputFinish,
+                durationDays: task.durationDays,
+                incoming: incomingPredecessorIds(snapshot, task.id),
+              });
+            if (editable(savedTask, next) !== editable(currentTask, current)) {
+              setConflict(true);
+              setError(new ApiError('STALE_SNAPSHOT', strings.staleSnapshot));
+            }
+          }
+        } catch (failure) {
+          // Read recovery cannot make an acknowledged write uncertain again.
+          setError(asError(failure));
+          setConflict(true);
+        }
+      }
       if (job.kind === 'command' && job.panelTaskId)
         setPanelAcknowledgement(next);
       if (
@@ -779,7 +868,9 @@ export function App() {
         restoreImmediate.trigger.dataset.quickInput ?? 'quick-task';
       const scope =
         inputId === 'quick-subtask'
-          ? document.getElementById('panel-subtasks')
+          ? document.querySelector<HTMLElement>(
+              '#panel-details .panel-subtasks',
+            )
           : document;
       if (!scope || !focusTaskRow(restoreImmediate.taskId, scope))
         (
@@ -1252,6 +1343,7 @@ export function App() {
     try {
       await api.logout();
       journal.clearPrivateState();
+      knownRevision.current = null;
       ++loadSequence.current;
       visits.current.clear();
       visitId.current = null;
@@ -1631,7 +1723,7 @@ export function App() {
   function subtaskAction(value: TreeAction, task: Task): boolean | void {
     const parentId = value === 'child' ? task.id : task.parentId;
     if (
-      panelTab === 'subtasks' &&
+      visiblePanelTab(panelTab) === 'details' &&
       (value === 'child' || value === 'sibling') &&
       parentId &&
       subtaskIds.has(parentId)
@@ -1644,7 +1736,12 @@ export function App() {
           ...(value === 'sibling' ? { afterId: task.id } : {}),
         },
       }));
-      document.getElementById('quick-subtask')?.focus();
+      const input = document.getElementById('quick-subtask');
+      if (input) input.focus();
+      else
+        requestAnimationFrame(() =>
+          document.getElementById('quick-subtask')?.focus(),
+        );
     } else return action(value, task);
   }
   return (
@@ -2041,9 +2138,13 @@ export function App() {
               setPanelHistory((previous) => previous.slice(0, -1));
               if (backVisit.focusId)
                 requestAnimationFrame(() => {
-                  const subtree = document.getElementById('panel-subtasks');
+                  const subtree = document.querySelector<HTMLElement>(
+                    '#panel-details .panel-subtasks',
+                  );
                   if (!subtree || !focusTaskRow(backVisit.focusId!, subtree))
-                    document.getElementById('quick-subtask')?.focus();
+                    requestAnimationFrame(() =>
+                      document.getElementById('quick-subtask')?.focus(),
+                    );
                 });
             }
           }}
@@ -2066,6 +2167,7 @@ export function App() {
           conflict={conflict}
           locked={journalLocked || !!pending || loading || projectDirty}
           feedback={projectControlsOpen ? null : errorView}
+          subtaskDraftActive={!!subtaskDraft && hasQuickDraft(subtaskDraft)}
           subtaskInput={
             <QuickAdd
               tree={tree}

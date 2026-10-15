@@ -219,6 +219,9 @@ it('blocks Back for a dirty planning baseline and restores the prior history pos
   render(<App />);
   await screen.findByRole('heading', { name: 'Демо-проект' });
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Изменить название' }),
+  );
   fireEvent.change(screen.getByLabelText('Название задачи'), {
     target: { value: 'Pinned own plan title' },
   });
@@ -383,11 +386,19 @@ it.each(['main', 'subtasks'])(
     let row: HTMLElement;
     if (scope === 'subtasks') {
       await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
-      await userEvent.click(screen.getByRole('tab', { name: 'Подзадачи' }));
-      row = within(document.getElementById('panel-subtasks')!).getByRole(
-        'treeitem',
-        { name: /Работа 2/ },
-      );
+      await userEvent.click(screen.getByRole('tab', { name: 'Задача' }));
+      if (
+        screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
+        !screen
+          .getByRole('button', { name: 'Добавить подзадачу' })
+          .hasAttribute('disabled')
+      )
+        await userEvent.click(
+          screen.getByRole('button', { name: 'Добавить подзадачу' }),
+        );
+      row = within(
+        document.querySelector<HTMLElement>('#panel-details .panel-subtasks')!,
+      ).getByRole('treeitem', { name: /Работа 2/ });
     } else row = screen.getByRole('treeitem', { name: /Работа 1/ });
     row.focus();
     fireEvent.keyDown(row, { key: 'Delete' });
@@ -431,6 +442,9 @@ it('dirty plan stays on its original title/source baseline while refreshed journ
   render(<App />);
   await screen.findByRole('treeitem', { name: /Работа 1/ });
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Изменить название' }),
+  );
   fireEvent.change(screen.getByLabelText('Название задачи'), {
     target: { value: 'Own plan title' },
   });

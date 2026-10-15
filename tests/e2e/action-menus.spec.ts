@@ -112,8 +112,18 @@ test('Q04 visible row actions keep rows exactly 38px in the main and subtask tre
   await expectRowHeights(main.locator('[role="treeitem"][data-task-id]'));
   await main.getByRole('treeitem', { name: /^Этап P,/ }).click();
   const panel = page.getByRole('complementary', { name: 'Задача' });
-  await panel.getByRole('tab', { name: 'Подзадачи' }).click();
-  await expectRowHeights(page.locator('#panel-subtasks [role="treeitem"]'));
+  await panel.getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
+  await expectRowHeights(
+    page.locator('#panel-details .panel-subtasks [role="treeitem"]'),
+  );
 });
 
 test('Q04 row actions fit 375px and 200% zoom without adding horizontal scroll', async ({
@@ -377,7 +387,15 @@ test('Q01 rows offer subtask and entry actions without a row menu', async ({
   await page.getByRole('button', { name: 'Гант', exact: true }).click();
   expect(await rowButtons(row)).toEqual(actions('Без дат'));
   await row.click();
-  await page.getByRole('tab', { name: 'Подзадачи', exact: true }).click();
+  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
+  if (
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   const subtaskRow = page
     .getByRole('tree', { name: 'Подзадачи', exact: true })
     .locator(`[data-task-id="${childId}"]`);

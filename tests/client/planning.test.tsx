@@ -342,18 +342,32 @@ it('keeps a newer full panel draft dirty after deferred Save and reconciles its 
         resolve = done;
       }),
   );
-  render(<TaskPanel {...panelProps(tree, onSave)} />);
+  const p = panelProps(tree, onSave);
+  const view = render(<TaskPanel {...p} />);
   const user = userEvent.setup();
   await choosePanelA(user);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  if (
+    screen.queryByRole('button', {
+      name: /Добавить описание|Изменить описание/,
+    })
+  )
+    await user.click(
+      screen.getByRole('button', {
+        name: /Добавить описание|Изменить описание/,
+      }),
+    );
   await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
+  view.rerender(<TaskPanel {...p} tab="journal" />);
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled();
   resolve(ack);
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
   );
-  expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик');
   expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
   expect(screen.getByText('Есть несохранённые изменения')).toBeInTheDocument();
+  view.rerender(<TaskPanel {...p} />);
+  expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик');
   onSave.mockImplementationOnce(async () => ack);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
   expect(onSave).toHaveBeenLastCalledWith({
@@ -372,6 +386,16 @@ it('handles global acknowledged replay without replacing newer edits, then expli
   const user = userEvent.setup();
   await choosePanelA(user);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  if (
+    screen.queryByRole('button', {
+      name: /Добавить описание|Изменить описание/,
+    })
+  )
+    await user.click(
+      screen.getByRole('button', {
+        name: /Добавить описание|Изменить описание/,
+      }),
+    );
   await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
   view.rerender(
     <TaskPanel
@@ -386,7 +410,7 @@ it('handles global acknowledged replay without replacing newer edits, then expli
     expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик'),
   );
   expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'Отбросить изменения' }));
+  await user.click(screen.getByRole('button', { name: 'Сбросить изменения' }));
   expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
   expect(screen.getByLabelText('Описание')).toHaveValue('');
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();

@@ -307,6 +307,9 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
     await sameGeometry(page, row, withCleanPanel);
     await expect(editor).toHaveValue('Synthetic dirty quick draft');
     expect(await editorHandle!.evaluate((node) => node.isConnected)).toBe(true);
+    await panel
+      .getByRole('button', { name: 'Добавить описание', exact: true })
+      .click();
     const description = panel.getByLabel('Описание', { exact: true });
     await description.fill('Synthetic unsaved panel draft');
     const descriptionHandle = await description.elementHandle();
