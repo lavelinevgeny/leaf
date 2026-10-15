@@ -5,19 +5,20 @@ import {
   useImperativeHandle,
   type Ref,
 } from 'react';
-import { flushSync } from 'react-dom';
 import type { Project, SourceFields } from '../shared/contracts.js';
 import {
   PlanFields,
   type PlanFieldsHandle,
   type PlanFieldError,
 } from './PlanFields.js';
-import { completeSourceEdit } from '../domain/planning.js';
 import { shiftDate } from './gantt-view.js';
 import { taskScheduleLabel } from './task-panel-view.js';
 import { useProjectToday } from './use-project-today.js';
 import { strings } from './strings.js';
-export type TaskPanelScheduleHandle = PlanFieldsHandle;
+export type TaskPanelScheduleHandle = Pick<
+  PlanFieldsHandle,
+  'finishInput' | 'focusField'
+>;
 interface Props {
   ref?: Ref<TaskPanelScheduleHandle>;
   plan: SourceFields;
@@ -112,21 +113,7 @@ export function TaskPanelSchedule({
       : strings.summaryScheduleUnknown
     : taskScheduleLabel(plan, project.calendarType);
   function preset(date: string) {
-    const source = { ...plan, inputStart: date };
-    onEdit();
-    flushSync(onResetFields);
-    try {
-      onChange(completeSourceEdit(source, 'inputStart', project.calendarType));
-    } catch (failure) {
-      onChange(source);
-      onRawChange(true);
-      onValidityChange(false);
-      onErrorChange({
-        field: 'inputStart',
-        message:
-          failure instanceof Error ? failure.message : strings.planInputError,
-      });
-    }
+    fields.current?.setStart(date);
   }
   return (
     <div className="panel-schedule">

@@ -49,7 +49,7 @@ it('completes dates and duration after blur or Enter, keeps clearing optional', 
   expect(finish).toHaveValue('12.10.2026');
   await user.tab();
   expect(finish).toHaveValue('13.10.2026');
-  expect(duration).toHaveValue(2);
+  expect(duration).toHaveValue('2');
   expect(screen.getByRole('status')).toHaveTextContent(
     'Пересчитано: Окончание',
   );
@@ -57,7 +57,7 @@ it('completes dates and duration after blur or Enter, keeps clearing optional', 
   fireEvent.change(finish, { target: { value: '14.10.2026' } });
   await user.keyboard('{Enter}');
   expect(start).toHaveValue('12.10.2026');
-  expect(duration).toHaveValue(3);
+  expect(duration).toHaveValue('3');
   expect(screen.getByRole('status')).toHaveTextContent(
     'Пересчитано: Длительность',
   );
@@ -69,7 +69,7 @@ it('completes dates and duration after blur or Enter, keeps clearing optional', 
   await user.click(duration);
   await user.clear(duration);
   await user.tab();
-  expect(duration).toHaveValue(null);
+  expect(duration).toHaveValue('');
   expect(finish).toHaveValue('15.10.2026');
   expect(onChange).toHaveBeenLastCalledWith({
     inputStart: '2026-10-12',
@@ -93,7 +93,7 @@ it('does not fill fields on focus or during unanchored duration input', async ()
   );
   await user.click(screen.getByLabelText('Окончание'));
   await user.tab();
-  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(null);
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue('');
   cleanup();
   render(<Editor source={task(1)} />);
   await user.type(screen.getByLabelText('Длительность, рабочих дней'), '6');
@@ -123,7 +123,7 @@ it('uses the finish anchor and calendar picker, and reports invalid input withou
   await user.tab();
   expect(screen.getByRole('alert')).toBeVisible();
   expect(screen.getByLabelText('Начало')).toHaveValue('09.10.2026');
-  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(3);
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue('3');
   expect(screen.getByLabelText('Окончание')).toHaveAttribute(
     'aria-invalid',
     'true',
@@ -137,7 +137,7 @@ it('uses the finish anchor and calendar picker, and reports invalid input withou
 it('labels all-days duration accurately and retains malformed date text until corrected', async () => {
   const user = userEvent.setup();
   render(<Editor calendar="all-days" />);
-  expect(screen.getByLabelText('Длительность, дней')).toHaveValue(2);
+  expect(screen.getByLabelText('Длительность, дней')).toHaveValue('2');
   await user.click(screen.getByLabelText('Начало'));
   fireEvent.change(screen.getByLabelText('Начало'), {
     target: { value: '31.02.2026' },
@@ -185,7 +185,7 @@ it.each([0, -1, 1.5, 1000001])(
     await user.click(duration);
     fireEvent.change(duration, { target: { value: String(value) } });
     await user.tab();
-    expect(duration).toHaveValue(value);
+    expect(duration).toHaveValue(String(value));
     expect(screen.getByRole('alert')).toBeVisible();
     expect(screen.getByLabelText('Начало')).toHaveValue('09.10.2026');
     expect(screen.getByLabelText('Окончание')).toHaveValue('12.10.2026');

@@ -225,7 +225,7 @@ it('resets to the pinned task/source/incoming baseline after an unrelated newer 
   expect(screen.getByRole('heading', { name: 'Работа A' })).toBeVisible();
   expect(screen.getByLabelText('Начало')).toHaveValue('05.10.2026');
   expect(screen.getByLabelText('Окончание')).toHaveValue('06.10.2026');
-  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(2);
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue('2');
   expect(screen.getByLabelText('Описание')).toHaveValue('');
   expect(screen.getByLabelText('Separate quick draft')).toHaveValue(
     'Branch draft',

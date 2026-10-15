@@ -361,3 +361,167 @@ test('persistent editor keeps invalid raw across tabs and layout changes, native
     }
   }
 });
+
+test('unfinished duration keyboard buffer survives Done, Escape, tabs and repair without saving null', async ({
+  page,
+}) => {
+  const runtime = await syntheticRuntime();
+  try {
+    let before = await seedOptionalRuntime(page, runtime);
+    const id = before.tasks.find((t) => t.title === 'Работа A')!.id;
+    before = await send(page, runtime.origin, before, {
+      type: 'task.edit',
+      taskId: id,
+      changes: {
+        inputStart: '2026-10-09',
+        inputFinish: '2026-10-12',
+        durationDays: 2,
+      },
+    });
+    await page.goto(runtime.origin);
+    await page.getByRole('treeitem', { name: /Работа A,/ }).click();
+    await openTaskDates(page);
+    const duration = page.getByLabel('Длительность, рабочих дней', {
+      exact: true,
+    });
+    await duration.fill('');
+    await duration.pressSequentially('1e');
+    await page.getByRole('button', { name: 'Готово', exact: true }).click();
+    await expect(
+      page.getByRole('dialog', { name: 'Сроки задачи', exact: true }),
+    ).toBeVisible();
+    await expect(duration).toHaveValue('1e');
+    await expect(duration).toHaveAttribute('aria-invalid', 'true');
+    await expect(
+      page.getByRole('button', { name: 'Сохранить', exact: true }),
+    ).toBeDisabled();
+    expect(await readTree(page, runtime.origin, before.project.id)).toEqual(
+      before,
+    );
+    await duration.focus();
+    await page.keyboard.press('Escape');
+    await page
+      .getByRole('tablist', { name: 'Задача', exact: true })
+      .getByRole('tab', { name: 'Журнал', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Исправить сроки', exact: true })
+      .click();
+    await expect(duration).toBeFocused();
+    await expect(duration).toHaveValue('1e');
+    await duration.press('Backspace');
+    await expect(duration).toHaveValue('1');
+    await duration.pressSequentially('e');
+    await expect(duration).toHaveValue('1e');
+    await page
+      .getByRole('dialog', { name: 'Сроки задачи', exact: true })
+      .getByRole('button', { name: 'Сегодня', exact: true })
+      .click();
+    await expect(duration).toHaveValue('1e');
+    await expect(duration).toHaveAttribute('aria-invalid', 'true');
+    await duration.fill('3');
+    await duration.press('Enter');
+    await expect(
+      page.getByRole('button', { name: 'Сохранить', exact: true }),
+    ).toBeEnabled();
+    await duration.fill('-');
+    await page.getByRole('button', { name: 'Готово', exact: true }).click();
+    await expect(duration).toHaveValue('-');
+    await expect(duration).toHaveAttribute('aria-invalid', 'true');
+    await duration.fill('');
+    await page.getByRole('button', { name: 'Готово', exact: true }).click();
+    await expect(
+      page.getByRole('dialog', { name: 'Сроки задачи', exact: true }),
+    ).toBeHidden();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
+    expect(
+      (await readTree(page, runtime.origin, before.project.id)).tasks.find(
+        (t) => t.id === id,
+      )!.durationDays,
+    ).toBeNull();
+  } finally {
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
+  }
+});
+
+test('cleared duration keeps an inverted finish invalid and presets repair the actual finish or duration', async ({
+  page,
+}) => {
+  const runtime = await syntheticRuntime();
+  try {
+    let before = await seedOptionalRuntime(page, runtime);
+    const id = before.tasks.find((t) => t.title === 'Работа A')!.id;
+    before = await send(page, runtime.origin, before, {
+      type: 'task.edit',
+      taskId: id,
+      changes: {
+        inputStart: '2026-10-09',
+        inputFinish: '2026-10-12',
+        durationDays: 2,
+      },
+    });
+    await page.goto(runtime.origin);
+    await page.getByRole('treeitem', { name: /Работа A,/ }).click();
+    await openTaskDates(page);
+    const finish = page.getByLabel('Окончание', { exact: true }),
+      duration = page.getByLabel('Длительность, рабочих дней', { exact: true });
+    await finish.fill('08.10.2026');
+    await finish.press('Tab');
+    await duration.fill('');
+    await page.getByRole('button', { name: 'Готово', exact: true }).click();
+    await expect(finish).toHaveValue('08.10.2026');
+    await expect(duration).toHaveValue('');
+    await expect(finish).toHaveAttribute('aria-invalid', 'true');
+    await expect(
+      page.getByRole('dialog', { name: 'Сроки задачи', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Сохранить', exact: true }),
+    ).toBeDisabled();
+    await finish.fill('31.02.2026');
+    await finish.press('Tab');
+    await page
+      .getByRole('dialog', { name: 'Сроки задачи', exact: true })
+      .getByRole('button', { name: 'Сегодня', exact: true })
+      .click();
+    await expect(finish).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('alert')).toContainText('Окончание:');
+    await finish.focus();
+    await page.keyboard.press('Escape');
+    await page
+      .getByRole('button', { name: 'Исправить сроки', exact: true })
+      .click();
+    await expect(finish).toBeFocused();
+    await page
+      .getByRole('button', { name: 'Очистить все сроки', exact: true })
+      .click();
+    await duration.fill('0');
+    await duration.press('Tab');
+    await page
+      .getByRole('dialog', { name: 'Сроки задачи', exact: true })
+      .getByRole('button', { name: 'Завтра', exact: true })
+      .click();
+    await expect(duration).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('alert')).toContainText('Длительность:');
+    await duration.focus();
+    await page.keyboard.press('Escape');
+    await page
+      .getByRole('button', { name: 'Исправить сроки', exact: true })
+      .click();
+    await expect(duration).toBeFocused();
+    expect(await readTree(page, runtime.origin, before.project.id)).toEqual(
+      before,
+    );
+  } finally {
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
+  }
+});

@@ -85,7 +85,7 @@ export function QuickAdd({
     onTitle('');
     onPlan(newTaskPlan());
     onPredecessors([]);
-    rejectedPlan.current = null;
+    resetFields();
     setValid(true);
   }
   function cancel() {
@@ -97,13 +97,27 @@ export function QuickAdd({
     onCancel?.();
   }
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleMounted, setScheduleMounted] = useState(false);
+  useEffect(() => {
+    if (scheduleOpen) setScheduleMounted(true);
+  }, [scheduleOpen]);
+  const [resetVersion, setResetVersion] = useState(0);
+  const rawVersion = useRef(0);
+  const sentRawVersion = useRef<number | null>(null);
+  function resetFields() {
+    rawVersion.current++;
+    sentRawVersion.current = null;
+    setResetVersion((version) => version + 1);
+    setValid(true);
+  }
+  function acknowledgeFields() {
+    const sent = sentRawVersion.current;
+    if (sent !== null && sent === rawVersion.current) resetFields();
+    else sentRawVersion.current = null;
+  }
   const [valid, setValid] = useState(true);
-  const rejectedPlan = useRef<string | null>(null);
   function validityChanged(nextValid: boolean) {
-    const source = JSON.stringify(plan);
-    if (!nextValid) rejectedPlan.current = source;
-    // Closing/reopening the fields must not dismiss the rejected source.
-    if (!nextValid || rejectedPlan.current !== source) setValid(nextValid);
+    setValid(nextValid);
   }
   const scheduleId = useId();
   const canSubmit = valid && sourceFieldsSchema.safeParse(plan).success;
@@ -125,13 +139,16 @@ export function QuickAdd({
   useEffect(() => {
     if (acknowledgement === previousAck.current) return;
     previousAck.current = acknowledgement;
+    acknowledgeFields();
     setPredecessorsOpen(false);
     setRestoreFocus(true);
   }, [acknowledgement]);
   async function submit() {
     if (!title.trim() || busy || blocked || !!submitBlockedReason || !canSubmit)
       return;
+    sentRawVersion.current = rawVersion.current;
     if (await onCreate(title, context, plan, predecessorIds)) {
+      acknowledgeFields();
       setRestoreFocus(true);
     }
   }
@@ -366,8 +383,13 @@ export function QuickAdd({
           }}
         />
       )}
-      {scheduleOpen && (
+      {(scheduleOpen || scheduleMounted) && (
         <QuickSchedule
+          open={scheduleOpen}
+          resetVersion={resetVersion}
+          onEdit={() => {
+            rawVersion.current++;
+          }}
           id={scheduleId}
           plan={plan}
           parentPlan={parentPlan}

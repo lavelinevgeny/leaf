@@ -599,7 +599,7 @@ describe('client HTTP interactions', () => {
       within(
         panel.getByRole('dialog', { name: 'Сроки задачи' }),
       ).getByLabelText('Длительность, рабочих дней'),
-    ).toHaveValue(null);
+    ).toHaveValue('');
     expect(
       within(
         panel.getByRole('dialog', { name: 'Сроки задачи' }),
@@ -624,16 +624,16 @@ describe('client HTTP interactions', () => {
       within(
         panel.getByRole('dialog', { name: 'Сроки задачи' }),
       ).getByLabelText('Длительность, рабочих дней'),
-    ).toHaveValue(1);
+    ).toHaveValue('1');
     await user.keyboard('{Escape}');
     await user.click(panel.getByRole('button', { name: 'Закрыть панель' }));
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
-    expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue(5);
+    expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue('5');
     await user.click(
       main.getByRole('button', { name: 'Отменить ввод задачи' }),
     );
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
-    expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue(1);
+    expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue('1');
   });
 
   it('accounts for a changed source draft without a title when leaving the page', async () => {
@@ -945,7 +945,9 @@ describe('client HTTP interactions', () => {
     expect(screen.getByLabelText('Название задачи')).toHaveValue(
       'Работа revised',
     );
-    expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(9);
+    expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(
+      '9',
+    );
     expect(screen.getByLabelText('Длительность, рабочих дней')).toBeDisabled();
     expect(
       screen.queryByText('Сохранено', { exact: true }),
@@ -967,7 +969,9 @@ describe('client HTTP interactions', () => {
       type: 'task.edit',
       changes: { title: 'Работа revised', durationDays: 9 },
     });
-    expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(9);
+    expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(
+      '9',
+    );
   });
   it('keeps quick intent on rejected stale reload and reconciles it only on a fresh conflict snapshot', async () => {
     tree = {
@@ -2297,7 +2301,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
           screen.getByRole('button', { name: 'Сроки новой задачи' }),
         ).toHaveAttribute('aria-expanded', 'true');
         expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(
-          3,
+          '3',
         );
       }
     },

@@ -14,7 +14,7 @@ import type {
   Task,
   SourceFields,
 } from '../shared/contracts.js';
-import { completeSourceEdit } from '../domain/planning.js';
+import { completeSourceEdit, validateSourceInput } from '../domain/planning.js';
 import {
   CalendarDateInput,
   type CalendarDateInputHandle,
@@ -25,6 +25,7 @@ export type PlanFieldError = { field: keyof SourceFields; message: string };
 export type PlanFieldsHandle = {
   finishInput: () => boolean;
   focusField: (field: keyof SourceFields) => void;
+  setStart: (date: string) => void;
 };
 interface Props {
   ref?: Ref<PlanFieldsHandle>;
@@ -73,6 +74,35 @@ export function PlanFields({
   const finish = useRef<CalendarDateInputHandle>(null);
   const duration = useRef<HTMLInputElement>(null);
   const errorRef = useRef<PlanFieldError | null>(null);
+  const previousError = useRef<PlanFieldError | null>(null);
+  const [durationDraft, setDurationDraft] = useState<{
+    raw: string;
+    source: number | null;
+  } | null>(null);
+  const durationBuffer = useRef(durationDraft);
+  durationBuffer.current = durationDraft;
+  function setDurationInput(value: typeof durationDraft) {
+    durationBuffer.current = value;
+    setDurationDraft(value);
+  }
+  function activeDuration() {
+    return durationBuffer.current?.source === latest.current.durationDays
+      ? durationBuffer.current
+      : null;
+  }
+  // Keep unfinished decimal/exponent text in RAM; an empty string alone is clear.
+  function durationNumber(raw: string): number | null | undefined {
+    const value = raw.trim();
+    if (!value) return null;
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value))
+      return undefined;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
+  }
+  function invalidDuration() {
+    const draft = activeDuration();
+    return draft !== null && durationNumber(draft.raw) === undefined;
+  }
   function report(value: PlanFieldError | null) {
     errorRef.current = value;
     onErrorChange?.(value);
@@ -97,6 +127,8 @@ export function PlanFields({
   useLayoutEffect(() => {
     if (resetKey === undefined) return;
     pending.current = {};
+    previousError.current = null;
+    setDurationInput(null);
     setError(null);
     report(null);
     onRawChange?.(false);
@@ -105,9 +137,24 @@ export function PlanFields({
     finishInput() {
       start.current?.commit();
       finish.current?.commit();
-      if (Object.hasOwn(pending.current, 'durationDays'))
-        commit('durationDays', latest.current.durationDays);
-      return !errorRef.current;
+      finishDuration();
+      if (errorRef.current) return false;
+      try {
+        validate(latest.current);
+        return true;
+      } catch (failure) {
+        fail(
+          latest.current,
+          previousError.current?.field ?? 'inputFinish',
+          failure,
+        );
+        return false;
+      }
+    },
+    setStart(date) {
+      change('inputStart', date);
+      commit('inputStart', date);
+      start.current?.reset();
     },
     focusField(field) {
       if (field === 'inputStart') start.current?.focus();
@@ -121,6 +168,7 @@ export function PlanFields({
     return () => window.clearTimeout(timer);
   }, [flash]);
   function change(field: keyof SourceFields, value: string | number | null) {
+    if (errorRef.current) previousError.current = errorRef.current;
     Object.assign(pending.current, { [field]: value });
     onRawChange?.(true);
     onEdit?.();
@@ -137,13 +185,16 @@ export function PlanFields({
     delete pending.current[field];
     const source = { ...latest.current, [field]: value };
     try {
+      if (invalidDuration())
+        throw new Error('Введите целое число от 1 до 1 000 000.');
       const next = completeSourceEdit(source, field, calendar);
-      if (!sourceFieldsSchema.safeParse(next).success)
-        throw new Error(strings.planInputError);
+      validate(next);
       const changed = (Object.keys(next) as (keyof SourceFields)[]).filter(
         (key) => key !== field && next[key] !== source[key],
       );
       latest.current = next;
+      if (field === 'durationDays') setDurationInput(null);
+      previousError.current = null;
       onChange(next);
       setError(null);
       report(null);
@@ -155,32 +206,74 @@ export function PlanFields({
           : '',
       );
     } catch (failure) {
-      const parsed = sourceFieldsSchema.safeParse(source);
-      const invalidField = parsed.success
-        ? field
-        : parsed.error.issues[0]?.path[0];
-      const addressed =
-        invalidField === 'inputStart' ||
-        invalidField === 'inputFinish' ||
-        invalidField === 'durationDays'
-          ? invalidField
-          : field;
-      const label =
-        addressed === 'inputStart'
-          ? strings.start
-          : addressed === 'inputFinish'
-            ? strings.finish
-            : strings.durationLabel;
-      const failureError = {
-        source: JSON.stringify(source),
-        field: addressed,
-        message: `${label}: ${failure instanceof Error ? failure.message : strings.planInputError}`,
-      };
-      setError(failureError);
-      report(failureError);
-      onRawChange?.(true);
+      fail(source, field, failure);
       onChange(source);
     }
+  }
+  function validate(source: SourceFields) {
+    if (!sourceFieldsSchema.safeParse(source).success)
+      throw new Error(strings.planInputError);
+    validateSourceInput(source, calendar);
+  }
+  function fail(
+    source: SourceFields,
+    field: keyof SourceFields,
+    failure: unknown,
+  ) {
+    const parsed = sourceFieldsSchema.safeParse(source);
+    const invalidField = invalidDuration()
+      ? 'durationDays'
+      : !parsed.success
+        ? parsed.error.issues[0]?.path[0]
+        : source[field] === null
+          ? (previousError.current?.field ?? field)
+          : field;
+    const addressed =
+      invalidField === 'inputStart' ||
+      invalidField === 'inputFinish' ||
+      invalidField === 'durationDays'
+        ? invalidField
+        : field;
+    const label =
+      addressed === 'inputStart'
+        ? strings.start
+        : addressed === 'inputFinish'
+          ? strings.finish
+          : strings.durationLabel;
+    const failureError = {
+      source: JSON.stringify(source),
+      field: addressed,
+      message: `${label}: ${failure instanceof Error ? failure.message : strings.planInputError}`,
+    };
+    setError(failureError);
+    report(failureError);
+    onRawChange?.(true);
+  }
+  function changeDuration(raw: string) {
+    const value = durationNumber(raw);
+    if (value === undefined) {
+      setDurationInput({ raw, source: latest.current.durationDays });
+      onEdit?.();
+      fail(
+        latest.current,
+        'durationDays',
+        new Error('Введите целое число от 1 до 1 000 000.'),
+      );
+    } else {
+      change('durationDays', value);
+      setDurationInput({ raw, source: value });
+    }
+  }
+  function finishDuration() {
+    if (invalidDuration()) {
+      fail(
+        latest.current,
+        'durationDays',
+        new Error('Введите целое число от 1 до 1 000 000.'),
+      );
+      return;
+    }
+    commit('durationDays', latest.current.durationDays);
   }
   if (summary)
     return (
@@ -247,23 +340,15 @@ export function PlanFields({
               className={
                 flash.includes('durationDays') ? 'plan-recalculated' : undefined
               }
-              type="number"
-              min={1}
-              max={1000000}
-              step={1}
-              value={plan.durationDays ?? ''}
-              onChange={(event) =>
-                change(
-                  'durationDays',
-                  event.target.value === '' ? null : Number(event.target.value),
-                )
+              type="text"
+              inputMode="decimal"
+              value={
+                durationDraft?.source === plan.durationDays
+                  ? durationDraft.raw
+                  : String(plan.durationDays ?? '')
               }
-              onBlur={(event) =>
-                commit(
-                  'durationDays',
-                  event.target.value === '' ? null : Number(event.target.value),
-                )
-              }
+              onChange={(event) => changeDuration(event.target.value)}
+              onBlur={finishDuration}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault();

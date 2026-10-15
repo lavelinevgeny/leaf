@@ -8,6 +8,9 @@ import { strings } from './strings.js';
 import { PlanFields } from './PlanFields.js';
 
 interface Props {
+  open: boolean;
+  resetVersion: number;
+  onEdit: () => void;
   id: string;
   plan: SourceFields;
   parentPlan: SourceFields | null;
@@ -20,6 +23,9 @@ interface Props {
   onClose: () => void;
 }
 export function QuickSchedule({
+  open,
+  resetVersion,
+  onEdit,
   id,
   plan,
   parentPlan,
@@ -36,9 +42,13 @@ export function QuickSchedule({
   closeRef.current = onClose;
   const today = useProjectToday(timezone);
   const [error, setError] = useState('');
+  const [resetKey, setResetKey] = useState(0);
+  useLayoutEffect(() => {
+    setError('');
+  }, [resetVersion]);
   useLayoutEffect(() => {
     const node = popup.current;
-    if (!node || !anchor) return;
+    if (!open || !node || !anchor) return;
     const position = () => {
       const rect = anchor.getBoundingClientRect();
       const width = Math.min(440, window.innerWidth - 24);
@@ -61,12 +71,15 @@ export function QuickSchedule({
     window.addEventListener('resize', position);
     window.addEventListener('scroll', position, true);
     return () => {
+      node.hidePopover?.();
       document.removeEventListener('pointerdown', dismiss);
       window.removeEventListener('resize', position);
       window.removeEventListener('scroll', position, true);
     };
-  }, [anchor]);
+  }, [anchor, open]);
   function preset(make: () => SourceFields, fallback?: SourceFields) {
+    onEdit();
+    setResetKey((key) => key + 1);
     try {
       onChange(make());
       setError('');
@@ -80,6 +93,8 @@ export function QuickSchedule({
   return (
     <div
       ref={popup}
+      hidden={!open}
+      inert={!open}
       id={id}
       popover={
         typeof HTMLElement.prototype.showPopover === 'function'
@@ -90,7 +105,8 @@ export function QuickSchedule({
       aria-label={strings.quickScheduleTitle}
       className="quick-schedule"
       onToggle={(event) => {
-        if ((event.nativeEvent as ToggleEvent).newState === 'closed') onClose();
+        if (open && (event.nativeEvent as ToggleEvent).newState === 'closed')
+          onClose();
       }}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
@@ -158,6 +174,8 @@ export function QuickSchedule({
         )}
       </div>
       <PlanFields
+        resetKey={resetKey + resetVersion}
+        onEdit={onEdit}
         compact
         task={{ status: 'todo' }}
         plan={plan}
@@ -181,6 +199,8 @@ export function QuickSchedule({
           type="button"
           disabled={disabled}
           onClick={() => {
+            onEdit();
+            setResetKey((key) => key + 1);
             onChange({
               inputStart: null,
               inputFinish: null,

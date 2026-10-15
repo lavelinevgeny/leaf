@@ -919,6 +919,6 @@
   max-height: calc(100dvh - 24px);
   overflow-y: auto;
 }
-.task-panel-schedule[hidden] {
+.quick-schedule[hidden] {
   display: none;
 }

@@ -24,6 +24,7 @@ function displayDate(value: string | null): string {
 export interface CalendarDateInputHandle {
   commit: () => void;
   focus: () => void;
+  reset: () => void;
 }
 interface Props {
   ref?: Ref<CalendarDateInputHandle>;
@@ -59,12 +60,13 @@ export function CalendarDateInput({
   const current = useRef(value);
   current.current = value;
   const buffer = useRef('');
-  useLayoutEffect(() => {
+  function resetInput() {
     edited.current = false;
     buffer.current = displayDate(current.current);
     setRaw(buffer.current);
     setFocused(false);
-  }, [resetKey]);
+  }
+  useLayoutEffect(resetInput, [resetKey]);
   function commit() {
     if (!edited.current) return;
     edited.current = false;
@@ -74,6 +76,7 @@ export function CalendarDateInput({
   }
   useImperativeHandle(ref, () => ({
     commit,
+    reset: resetInput,
     focus: () => input.current?.focus(),
   }));
   return (
@@ -99,6 +102,7 @@ export function CalendarDateInput({
             setFocused(true);
           }}
           onChange={(event) => {
+            setFocused(true);
             edited.current = true;
             buffer.current = event.target.value;
             setRaw(event.target.value);

@@ -225,7 +225,7 @@ it.each(['0', '1.5'])(
     await user.click(
       screen.getByRole('button', { name: 'Очистить все сроки' }),
     );
-    expect(field).toHaveValue(null);
+    expect(field).toHaveValue('');
     expect(screen.getByLabelText('Начало')).toHaveValue('');
     expect(screen.getByLabelText('Окончание')).toHaveValue('');
     expect(screen.queryByRole('alert')).toBeNull();
@@ -274,41 +274,49 @@ it('keeps done dates locked until explicit doing and supplies a deleted reason',
   expect(screen.getByRole('button', { name: /^Сроки задачи:/ })).toBeDisabled();
   expect(screen.getByLabelText('Начало')).toBeDisabled();
 });
-it('retries the sent operation despite newer invalid raw and preserves it after frozen acknowledgement', async () => {
-  const user = userEvent.setup(),
-    tree = panelTree();
-  let resolve!: (tree: ProjectTree | null) => void;
-  const onSave = vi.fn(
-    () =>
-      new Promise<ProjectTree | null>((r) => {
-        resolve = r;
-      }),
-  );
-  const view = render(<Panel tree={tree} onSave={onSave} />);
-  await openDates(user);
-  await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
-  await openDates(user);
-  fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
-  await act(async () => resolve(null));
-  const field = screen.getByLabelText('Начало');
-  await user.click(field);
-  fireEvent.change(field, { target: { value: '31.02.2026' } });
-  await user.tab();
-  expect(field).toHaveAttribute('aria-invalid', 'true');
-  view.rerender(<Panel tree={tree} onSave={onSave} retry locked />);
-  expect(field).toHaveAttribute('aria-invalid', 'true');
-  expect(
-    screen.getByRole('button', { name: 'Повторить сохранение' }),
-  ).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Повторить сохранение' }));
-  const ack = structuredClone(tree);
-  ack.tasks[0]!.status = 'doing';
-  ack.project.revision++;
-  await act(async () => resolve(ack));
-  expect(field).toHaveValue('31.02.2026');
-  expect(field).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
-});
+it.each([
+  ['Начало', '31.02.2026'],
+  ['Длительность, рабочих дней', '1e'],
+] as const)(
+  'retries sent operation despite newer invalid %s raw and preserves it after frozen acknowledgement',
+  async (label, raw) => {
+    const user = userEvent.setup(),
+      tree = panelTree();
+    let resolve!: (tree: ProjectTree | null) => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<ProjectTree | null>((r) => {
+          resolve = r;
+        }),
+    );
+    const view = render(<Panel tree={tree} onSave={onSave} />);
+    await openDates(user);
+    await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
+    await openDates(user);
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await act(async () => resolve(null));
+    const field = screen.getByLabelText(label);
+    await user.click(field);
+    fireEvent.change(field, { target: { value: raw } });
+    await user.tab();
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    view.rerender(<Panel tree={tree} onSave={onSave} retry locked />);
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      screen.getByRole('button', { name: 'Повторить сохранение' }),
+    ).toBeEnabled();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Повторить сохранение' }),
+    );
+    const ack = structuredClone(tree);
+    ack.tasks[0]!.status = 'doing';
+    ack.project.revision++;
+    await act(async () => resolve(ack));
+    expect(field).toHaveValue(raw);
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
+  },
+);
 
 it.each([
   ['weekdays', '12.10.2026'],
@@ -374,4 +382,130 @@ it('Today and Tomorrow use project day and preserve explicit weekend errors with
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('keeps the finish error after clearing duration from an inverted interval', async () => {
+  const user = userEvent.setup(),
+    onSave = vi.fn(async () => null);
+  render(<Panel onSave={onSave} />);
+  await openDates(user);
+  const finish = screen.getByLabelText('Окончание');
+  await user.click(finish);
+  fireEvent.change(finish, { target: { value: '08.10.2026' } });
+  await user.tab();
+  expect(finish).toHaveAttribute('aria-invalid', 'true');
+  await user.clear(screen.getByLabelText('Длительность, рабочих дней'));
+  await user.click(screen.getByRole('button', { name: 'Готово' }));
+  expect(screen.getByRole('dialog', { name: 'Сроки задачи' })).toBeVisible();
+  expect(finish).toHaveAttribute('aria-invalid', 'true');
+  expect(finish).toHaveValue('08.10.2026');
+  expect(screen.getByLabelText('Начало')).toHaveValue('09.10.2026');
+  expect(screen.getByRole('alert')).toHaveTextContent('Окончание:');
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  expect(onSave).not.toHaveBeenCalled();
+});
+it.each([
+  ['Окончание', '31.02.2026', 'Сегодня'],
+  ['Окончание', '31.02.2026', 'Завтра'],
+  ['Длительность, рабочих дней', '0', 'Сегодня'],
+  ['Длительность, рабочих дней', '0', 'Завтра'],
+] as const)(
+  'preserves the actual %s error through %s and %s repair',
+  async (label, raw, preset) => {
+    const user = userEvent.setup(),
+      tree = panelTree();
+    // Date grammar and duration failures are independent of today's calendar day.
+    render(<Panel tree={tree} />);
+    await openDates(user);
+    const field = screen.getByLabelText(label);
+    await user.click(field);
+    fireEvent.change(field, { target: { value: raw } });
+    await user.tab();
+    await user.click(screen.getByRole('button', { name: preset }));
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Начало')).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      label === 'Окончание' ? 'Окончание:' : 'Длительность:',
+    );
+    await user.click(field);
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Исправить сроки' }));
+    await waitFor(() => expect(field).toHaveFocus());
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  },
+);
+it('retains an unfinished duration string as raw draft through close and repair', async () => {
+  const user = userEvent.setup(),
+    onDirty = vi.fn();
+  render(<Panel onDirty={onDirty} />);
+  await openDates(user);
+  const field = screen.getByLabelText('Длительность, рабочих дней');
+  await user.clear(field);
+  await user.type(field, '1e');
+  await user.click(screen.getByRole('button', { name: 'Готово' }));
+  expect(field).toHaveValue('1e');
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByRole('dialog', { name: 'Сроки задачи' })).toBeVisible();
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  await user.click(field);
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('tab', { name: 'Журнал' }));
+  await user.click(screen.getByRole('button', { name: 'Исправить сроки' }));
+  await waitFor(() => expect(field).toHaveFocus());
+  expect(field).toHaveValue('1e');
+  await user.clear(field);
+  await user.type(field, '3');
+  await user.click(screen.getByRole('button', { name: 'Готово' }));
+  expect(screen.getByLabelText('Окончание')).toHaveValue('13.10.2026');
+});
+
+it.each([
+  { inputStart: '2026-10-09', inputFinish: null, durationDays: null },
+  { inputStart: null, inputFinish: '2026-10-12', durationDays: null },
+  { inputStart: null, inputFinish: null, durationDays: 3 },
+  { inputStart: null, inputFinish: null, durationDays: null },
+] satisfies SourceFields[])(
+  'accepts nullable source without filling missing values %j',
+  (plan) => {
+    const fields = { current: null as PlanFieldsHandle | null };
+    const onChange = vi.fn();
+    render(
+      <PlanFields
+        ref={fields}
+        task={{ status: 'doing' }}
+        plan={plan}
+        calendar="weekdays"
+        summary={false}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    expect(fields.current!.finishInput()).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+  },
+);
+it('reset discards unfinished duration raw even when its source equals the baseline', async () => {
+  const user = userEvent.setup();
+  let actions: TaskPanelActions | null = null;
+  const onDirty = vi.fn();
+  render(
+    <Panel
+      registerActions={(a) => {
+        actions = a;
+      }}
+      onDirty={onDirty}
+    />,
+  );
+  await openDates(user);
+  const field = screen.getByLabelText('Длительность, рабочих дней');
+  await user.click(field);
+  fireEvent.change(field, { target: { value: '1e' } });
+  expect(field).toHaveValue('1e');
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  act(() => actions!.reset());
+  fireEvent.blur(field);
+  expect(field).toHaveValue('2');
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(onDirty).toHaveBeenLastCalledWith(false);
 });
