@@ -205,7 +205,11 @@ it('refuses an inactive project menu while the current settings draft is dirty',
   expect(screen.getByLabelText('Часовой пояс проекта')).toHaveValue(
     'UTC/invalid',
   );
-  expect(fetchMock.mock.calls).toHaveLength(requests);
+  // Background reads of the current project may still arrive; the refused
+  // switch must neither write nor request the inactive project.
+  const later = fetchMock.mock.calls.slice(requests);
+  expect(later.some(([, init]) => init?.method !== 'GET')).toBe(false);
+  expect(later.some(([url]) => String(url).includes(other.id))).toBe(false);
 });
 it('mounts forms on demand and returns keyboard menu focus without writes', async () => {
   render(<App />);
@@ -221,7 +225,12 @@ it('mounts forms on demand and returns keyboard menu focus without writes', asyn
   ).toHaveFocus();
   await userEvent.keyboard('{Escape}');
   expect(opener).toHaveFocus();
-  expect(fetchMock.mock.calls).toHaveLength(requests);
+  // Background reads may still arrive after the heading; only writes count.
+  expect(
+    fetchMock.mock.calls
+      .slice(requests)
+      .some(([, init]) => init?.method !== 'GET'),
+  ).toBe(false);
 });
 it('contains Tab, preserves dirty Escape draft and explicitly discards it', async () => {
   const opener = await openSettings();
@@ -376,7 +385,9 @@ it('guards project switching and task selection while settings are dirty without
     screen.getByRole('button', { name: /Другой демо-проект/ }),
   );
   expect(screen.getByRole('heading', { name: project.title })).toBeVisible();
-  expect(fetchMock.mock.calls).toHaveLength(requests);
+  const later = fetchMock.mock.calls.slice(requests);
+  expect(later.some(([, init]) => init?.method !== 'GET')).toBe(false);
+  expect(later.some(([url]) => String(url).includes(other.id))).toBe(false);
 });
 it('closes stale clean settings when switching projects', async () => {
   await openSettings();
