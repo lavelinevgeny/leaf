@@ -82,6 +82,7 @@ type Mutation =
       knownIds: string[];
       quickKey?: string;
       sentQuickDraft?: QuickDraft;
+      sentQuickRawVersion?: number;
       panelTaskId?: string;
       immediateTaskId?: string;
     }
@@ -173,6 +174,13 @@ export function App() {
   const [quickDrafts, setQuickDrafts] = useState<Record<string, QuickDraft>>(
     {},
   );
+  const quickRawVersions = useRef(new Map<string, number>());
+  function noteQuickRawEdit(key: string) {
+    quickRawVersions.current.set(
+      key,
+      (quickRawVersions.current.get(key) ?? 0) + 1,
+    );
+  }
   const [quickAcknowledgements, setQuickAcknowledgements] = useState<
     Record<string, number>
   >({});
@@ -339,6 +347,7 @@ export function App() {
     currentProject.current = null;
     setSelected(null);
     setQuickDrafts({});
+    quickRawVersions.current.clear();
     setPending(null);
     pendingRef.current = null;
     setConflict(false);
@@ -865,7 +874,12 @@ export function App() {
         );
         const key = job.quickKey ?? job.projectId;
         updateQuick(key, (draft) => {
-          if (!job.sentQuickDraft || !sameQuickDraft(draft, job.sentQuickDraft))
+          if (
+            !job.sentQuickDraft ||
+            (quickRawVersions.current.get(key) ?? 0) !==
+              (job.sentQuickRawVersion ?? 0) ||
+            !sameQuickDraft(draft, job.sentQuickDraft)
+          )
             return draft;
           return {
             title: '',
@@ -910,6 +924,7 @@ export function App() {
     options: {
       quickKey?: string;
       sentQuickDraft?: QuickDraft;
+      sentQuickRawVersion?: number;
       panelTaskId?: string;
       immediateTaskId?: string;
     } = {},
@@ -1028,6 +1043,7 @@ export function App() {
     if (!canNavigate()) return false;
     const preserved = preserveWork(addContext.parentId);
     if (preserved === null) return false;
+    const key = quickKey ?? treeRef.current!.project.id;
     return !!(await commandTree(
       {
         type: 'task.create',
@@ -1038,7 +1054,8 @@ export function App() {
         ...(preserved ? { preserveWork: true } : {}),
       },
       {
-        quickKey: quickKey ?? treeRef.current!.project.id,
+        quickKey: key,
+        sentQuickRawVersion: quickRawVersions.current.get(key) ?? 0,
         sentQuickDraft: {
           title,
           context: { ...addContext },
@@ -1467,6 +1484,7 @@ export function App() {
       setProjectMenuTarget(null);
       setSelected(null);
       setQuickDrafts({});
+      quickRawVersions.current.clear();
     } catch (failure) {
       setError(asError(failure));
     } finally {
@@ -2068,6 +2086,7 @@ export function App() {
                             predecessorIds,
                           }))
                         }
+                        onRawEdit={() => noteQuickRawEdit(tree.project.id)}
                         acknowledgement={
                           quickAcknowledgements[tree.project.id] ?? 0
                         }
@@ -2347,6 +2366,7 @@ export function App() {
                   predecessorIds,
                 }))
               }
+              onRawEdit={() => noteQuickRawEdit(subtaskKey)}
               acknowledgement={quickAcknowledgements[subtaskKey] ?? 0}
               key={subtaskKey}
               calendar={tree.project.calendarType}

@@ -46,6 +46,7 @@ interface Props {
   parentPlan?: SourceFields | null;
   inline?: boolean;
   onEditing?: (editing: boolean) => void;
+  onRawEdit?: () => void;
   onCancel?: () => void;
 }
 export function QuickAdd({
@@ -71,6 +72,7 @@ export function QuickAdd({
   parentPlan = null,
   inline = false,
   onEditing,
+  onRawEdit,
   onCancel,
 }: Props) {
   const [editing, setEditing] = useState(false);
@@ -82,6 +84,7 @@ export function QuickAdd({
     onEditing?.(true);
   }
   function clear() {
+    onRawEdit?.();
     onTitle('');
     onPlan(newTaskPlan());
     onPredecessors([]);
@@ -389,6 +392,7 @@ export function QuickAdd({
           resetVersion={resetVersion}
           onEdit={() => {
             rawVersion.current++;
+            onRawEdit?.();
           }}
           id={scheduleId}
           plan={plan}

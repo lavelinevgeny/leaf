@@ -2306,6 +2306,93 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       }
     },
   );
+  it.each([
+    ['main', true],
+    ['subtask', true],
+    ['main', false],
+    ['subtask', false],
+  ] as const)(
+    'coordinates non-default %s raw generation with the real parent acknowledgement; newer=%s',
+    async (entry, newer) => {
+      tree.tasks = [task(1, 'A')];
+      await open();
+      const user = userEvent.setup();
+      let scope = screen;
+      if (entry === 'subtask') {
+        await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+        await openPanelQuick(user);
+        scope = within(
+          screen.getByRole('complementary', { name: 'Задача' }),
+        ) as typeof screen;
+      }
+      const title = scope.getByLabelText('Новая задача');
+      await user.type(title, 'B');
+      if (entry === 'main') await user.tab();
+      await user.click(
+        scope.getByRole('button', { name: 'Сроки новой задачи' }),
+      );
+      const popup = scope.getByRole('dialog', { name: 'Сроки задачи' }),
+        fields = within(popup),
+        duration = fields.getByLabelText('Длительность, рабочих дней');
+      await user.clear(duration);
+      await user.type(duration, '3');
+      await user.tab();
+      let resolve!: (value: Response) => void;
+      fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
+        commands.push(JSON.parse(String(init.body)) as CommandEnvelope);
+        return new Promise<Response>((done) => {
+          resolve = done;
+        });
+      });
+      await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+      expect(Object.keys(commands[0]!).sort()).toEqual([
+        'command',
+        'contractVersion',
+        'expectedRevision',
+        'operationId',
+      ]);
+      expect(commands[0]!.command).toMatchObject({ durationDays: 3 });
+      expect(title).toBeDisabled();
+      expect(duration).toBeDisabled();
+      // Existing late-ack boundary: a queued input event arrives after send; ordinary busy UI stays locked.
+      if (newer) fireEvent.change(duration, { target: { value: '3e' } });
+      tree = {
+        ...tree,
+        project: { ...project, revision: 1 },
+        tasks: [...tree.tasks, { ...task(51, 'B', id(1), 0), durationDays: 3 }],
+      };
+      await act(async () => resolve(await json(tree)));
+      await waitFor(() => expect(title).toBeEnabled());
+      if (newer) {
+        expect(title).toHaveValue('B');
+        expect(duration).toHaveValue('3e');
+        expect(duration).toHaveAttribute('aria-invalid', 'true');
+        expect(
+          scope.getByRole('button', { name: 'Добавить задачу' }),
+        ).toBeDisabled();
+        expect(scope.getByText('Родитель: A')).toBeInTheDocument();
+        await user.clear(duration);
+        await user.type(duration, '3');
+        await user.tab();
+        await user.click(
+          scope.getByRole('button', { name: 'Добавить задачу' }),
+        );
+        await waitFor(() => expect(title).toHaveValue(''));
+        expect(commands.at(-1)?.command).toMatchObject({
+          type: 'task.create',
+          title: 'B',
+          durationDays: 3,
+          parentId: id(1),
+        });
+        expect(commands.at(-1)?.command).not.toHaveProperty('afterId');
+      } else {
+        expect(title).toHaveValue('');
+        expect(duration).toHaveValue('1');
+        expect(duration).not.toHaveAttribute('aria-invalid');
+        expect(fields.queryByRole('alert')).toBeNull();
+      }
+    },
+  );
   it.each(['pointer', 'keyboard'] as const)(
     'uses confirmed IDs and restores Gantt action focus after global retry with %s input without opening the panel',
     async (entry) => {

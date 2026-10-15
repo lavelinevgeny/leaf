@@ -1,5 +1,15 @@
 # Статус разработки
 
+## Карточка задачи D22 — Task 3, исправление review round 2, 2026-10-16
+
+Scoped re-review `3b1cea2` подтвердил закрытие прежних трёх findings, но обнаружил новый Important integration gap S3-STD-R1-01 / S3-R1-M1: после отправки duration=3 новый raw `3e` оставлял parsed source=3, и parent App считал QuickDraft прежним. Parent reset до default1 перекрывал новый buffer, хотя локальный QuickAdd generation guard уже отказался его очищать.
+
+QuickAdd теперь уведомляет App о raw gestures и явном clear/cancel необязательным onRawEdit. App хранит синхронное поколение по quickKey только в RAM и фиксирует отправленное поколение в локальных Mutation metadata. Parent очищает title/source/context только при совпадении parsed snapshot и поколения; прежние локальные guards остаются. Normal matched acknowledgement, global exact retry и явный reset сохраняют свои действия. Map очищается в общих private reset путях 401 и успешного logout; обычные switch/tab её не очищают. Поколение не входит в API envelope, модель QuickDraft, URL/history или постоянные хранилища; новых текстовых копий raw нет.
+
+Независимые actual-App fixtures используют non-default3 и реальный parent acknowledgement, отдельно для main/subtask. RED: новый raw main/subtask 2 FAIL (очищался title), normal ack 2 PASS. GREEN 4/4: `3e`/invalid/blocked-create, title B и исходный parent/context остаются; repair и следующий create сохраняют numeric3 и исходный afterId. Paired normal ack очищает title и duration до1. Обычные busy controls остаются disabled; fireEvent моделирует только уже существующую границу позднего queued input, browser locks не ослаблялись. Explicit envelope keys проверяют отсутствие нового RAM metadata в запросе.
+
+PASS production build; named actual-server inline presets/lifecycle и conditional creation/exact retry 6/6 в двух desktop projects. PASS обязательные code gates: typecheck/lint/format/build; unit 43 файла / 828 tests, integration 27 / 384; check:kit 72 Markdown / 427 links и git diff --check. Scoped staged scan и enabled hooks фиксируются в локальном fix-отчёте. Другие browser suites не повторялись без причины. Затронуты только App, QuickAdd, App client fixture и STATUS. API/schema/scheduler/security/lockfile не менялись, private assets не читались, remote actions не выполнялись. Следующий шаг — scoped независимые re-reviews точного fix SHA; Task 4 и S4–S6 остаются незавершёнными.
+
 ## Карточка задачи D22 — Task 3, исправления review round 1, 2026-10-16
 
 Независимые Spec/Standards reviews `ad1245d` нашли три Important issue: очистка duration снимала ошибку оставшегося обратного интервала; native number скрывал незавершённый `1e` за пустым value; пресеты переносили ошибку окончания/длительности на корректное начало. Все три исправлены одним scoped изменением.
