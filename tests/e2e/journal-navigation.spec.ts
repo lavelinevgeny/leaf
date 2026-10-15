@@ -453,7 +453,11 @@ test('dirty planning refuses Back without history displacement; project defaults
     .fill('Грязный план защищён');
   const dirtyUrl = page.url();
   await page.goBack();
+  await expect(
+    page.getByRole('dialog', { name: 'Несохранённые изменения задачи' }),
+  ).toBeVisible();
   await expect.poll(() => page.url()).toBe(dirtyUrl);
+  await page.getByRole('button', { name: 'Продолжить редактирование' }).click();
   await expect(panel.getByLabel('Описание', { exact: true })).toHaveValue(
     'Грязный план защищён',
   );

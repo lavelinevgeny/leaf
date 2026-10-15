@@ -661,28 +661,7 @@ h2 {
   font-size: 12px;
   margin: 14px 0;
 }
-.task-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  border-top: 1px solid var(--leaf-border);
-  padding-top: 22px;
-  margin-top: 22px;
-}
-.move-controls {
-  border-top: 1px solid var(--leaf-border);
-  padding-top: 14px;
-  margin: 20px 0;
-}
-.move-controls legend {
-  color: #59675f;
-}
-.order-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
-}
+
 .order-actions button {
   font-size: 12px;
 }
@@ -954,4 +933,45 @@ h2 {
 }
 [hidden] {
   display: none !important;
+}
+
+.task-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border: 1px solid var(--leaf-border);
+  border-radius: 12px;
+  padding: 20px;
+  color: var(--leaf-text);
+  background: var(--leaf-surface, white);
+}
+.task-dialog::backdrop {
+  background: rgb(20 30 25 / 25%);
+}
+.task-dialog h2 {
+  margin-block: 0 16px;
+  font-size: 18px;
+}
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.task-move-candidates {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+  margin-block: 12px;
+}
+.task-move-candidates button {
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.task-move-dialog details {
+  margin-top: 16px;
+}
+.panel-action-menu {
+  margin-inline-start: auto;
 }

@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
+HTMLDialogElement.prototype.showModal = function () {
+  this.setAttribute('open', '');
+};
+HTMLDialogElement.prototype.close = function () {
+  this.removeAttribute('open');
+};
 import {
   act,
   cleanup,
@@ -17,7 +23,6 @@ import {
   type TimelineViewState,
 } from '../../src/client/TaskTimeline.js';
 import { api, ApiError } from '../../src/client/api.js';
-import { strings } from '../../src/client/strings.js';
 import {
   parseWorkspaceUrl,
   workspaceUrl,
@@ -227,7 +232,10 @@ it('blocks Back for a dirty planning baseline and restores the prior history pos
   });
   const before = window.location.search;
   await travel('back');
-  await screen.findByText(strings.unsaved);
+  await screen.findByRole('dialog', { name: 'Несохранённые изменения задачи' });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
   await waitFor(() => expect(window.location.search).toBe(before));
   expect(screen.getByLabelText('Название задачи')).toHaveValue(
     'Pinned own plan title',

@@ -21,7 +21,8 @@ import { ScheduleStatus } from './ScheduleStatus.js';
 import { Dependencies } from './Dependencies.js';
 import type { Command } from '../shared/contracts.js';
 import { TaskTree, type TreeAction } from './TaskTree.js';
-import { subtreeIds } from './tree-view.js';
+import { ActionMenu } from './ActionMenu.js';
+import { TaskMoveDialog } from './TaskMoveDialog.js';
 import { strings } from './strings.js';
 
 type Draft = Pick<Task, 'title' | 'description' | 'status'>;
@@ -31,7 +32,13 @@ const draftOf = (task: Task): Draft => ({
   status: task.status,
 });
 export type PanelTab = 'details' | 'subtasks' | 'dependencies' | 'journal';
+export type TaskPanelActions = {
+  save: () => Promise<boolean>;
+  reset: () => void;
+  focusInvalid: () => void;
+};
 interface Props {
+  registerActions?: (actions: TaskPanelActions | null) => void;
   task: Task;
   removed: boolean;
   tasks: Task[];
@@ -97,6 +104,7 @@ export function TaskPanel({
   journalContent,
   journalTitle,
   onJournal,
+  registerActions,
 }: Props) {
   const visibleTab = visiblePanelTab(tab);
   const layout = useTaskPanelLayout(tab);
@@ -140,6 +148,7 @@ export function TaskPanel({
   currentDraft.current = { details: draft, plan, incoming };
   const acknowledgedRevision = useRef(tree.project.revision);
   const submitted = useRef<typeof currentDraft.current | null>(null);
+  const saveResult = useRef<((saved: boolean) => void) | null>(null);
   const [returnedAcknowledgement, setReturnedAcknowledgement] = useState<{
     tree: ProjectTree;
   } | null>(null);
@@ -152,10 +161,17 @@ export function TaskPanel({
   function reconcile(ack: ProjectTree) {
     const sent = submitted.current;
     const canonical = ack.tasks.find((item) => item.id === task.id);
-    if (!sent || !canonical || ack.project.id !== task.projectId) return;
+    if (!sent) return;
+    if (!canonical || ack.project.id !== task.projectId) {
+      saveResult.current?.(false);
+      saveResult.current = null;
+      return;
+    }
     submitted.current = null;
     if (ack.project.revision < acknowledgedRevision.current) {
       setSaved(false);
+      saveResult.current?.(false);
+      saveResult.current = null;
       return;
     }
     acknowledgedRevision.current = ack.project.revision;
@@ -185,9 +201,12 @@ export function TaskPanel({
       setIncoming(ids);
       setSaved(true);
       onDirty(false);
+      saveResult.current?.(true);
     } else {
       setSaved(false);
+      saveResult.current?.(false);
     }
+    saveResult.current = null;
   }
   useEffect(() => {
     if (saveAcknowledgement) reconcile(saveAcknowledgement);
@@ -196,8 +215,9 @@ export function TaskPanel({
     if (returnedAcknowledgement) reconcile(returnedAcknowledgement.tree);
   }, [returnedAcknowledgement]);
   const [planValid, setPlanValid] = useState(true);
-  const [moveParent, setMoveParent] = useState(task.parentId ?? '');
-  const previousParent = useRef(task.parentId);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const moveTrigger = useRef<HTMLButtonElement | null>(null);
   const unavailable = tree.schedule.diagnostics.some(
     (item) =>
       item.code === 'LEGACY_INTERVAL_UNAVAILABLE' &&
@@ -220,19 +240,6 @@ export function TaskPanel({
     planDirty ||
     incomingDirty;
   const summary = tasks.some((child) => child.parentId === task.id);
-  const excluded = removed ? new Set<string>() : subtreeIds(tasks, task.id);
-  useEffect(() => {
-    const parentChanged = previousParent.current !== task.parentId;
-    setMoveParent((preview) =>
-      parentChanged ||
-      (preview &&
-        (!tasks.some((candidate) => candidate.id === preview) ||
-          excluded.has(preview)))
-        ? (task.parentId ?? '')
-        : preview,
-    );
-    previousParent.current = task.parentId;
-  }, [task.parentId, tasks, removed]);
   useEffect(() => {
     onDirty(dirty);
   }, [dirty, onDirty]);
@@ -270,11 +277,15 @@ export function TaskPanel({
       conflict ||
       !draft.title.trim() ||
       !planValid
-    )
-      return;
+    ) {
+      focusInvalid();
+      return false;
+    }
     const fields = { ...draft, title: draft.title.trim() };
-    if (!summary && planDirty && !sourceFieldsSchema.safeParse(plan).success)
-      return;
+    if (!summary && planDirty && !sourceFieldsSchema.safeParse(plan).success) {
+      focusInvalid();
+      return false;
+    }
     const changes: Extract<Command, { type: 'task.edit' }>['changes'] = {};
     for (const key of ['title', 'description', 'status'] as const)
       if (fields[key] !== baseline[key])
@@ -288,9 +299,68 @@ export function TaskPanel({
     // An exact replay retains this original submitted draft, including post-send changes.
     if (!retry || !submitted.current)
       submitted.current = structuredClone(currentDraft.current);
+    const confirmed = new Promise<boolean>((resolve) => {
+      saveResult.current = resolve;
+    });
     const ack = await onSave(changes);
-    if (ack) setReturnedAcknowledgement({ tree: ack });
+    if (!ack) {
+      saveResult.current?.(false);
+      saveResult.current = null;
+      return false;
+    }
+    setReturnedAcknowledgement({ tree: ack });
+    return confirmed;
   }
+  function reset() {
+    setDraft({ ...baseline });
+    setPlan({ ...baselinePlan });
+    setIncoming([...baselineIncoming]);
+    submitted.current = null;
+    setSaved(false);
+    onDirty(false);
+  }
+  function focusInvalid() {
+    onTab('details');
+    requestAnimationFrame(() => {
+      if (!draft.title.trim()) {
+        const input = document.querySelector<HTMLElement>(
+          '.panel-title-editor input',
+        );
+        if (input) input.focus();
+        else
+          document
+            .querySelector<HTMLButtonElement>(
+              `.panel-header [aria-label="${strings.editTitle}"]`,
+            )
+            ?.click();
+      } else
+        document
+          .querySelector<HTMLElement>('#panel-details [aria-invalid="true"]')
+          ?.focus();
+    });
+  }
+  useEffect(() => {
+    registerActions?.({ save, reset, focusInvalid });
+  });
+  useEffect(
+    () => () => {
+      registerActions?.(null);
+      saveResult.current?.(false);
+      saveResult.current = null;
+    },
+    [registerActions],
+  );
+  const structuralReason = busy
+    ? strings.saving
+    : locked
+      ? strings.loading
+      : removed
+        ? strings.taskRemoved
+        : conflict
+          ? strings.resolveTaskConflict
+          : dirty
+            ? strings.saveTaskBeforeSubtask
+            : null;
   return (
     <aside
       ref={layout.panel}
@@ -322,13 +392,57 @@ export function TaskPanel({
           closeDisabled={busy || locked}
           onClose={onClose}
           journalTitle={visibleTab === 'journal' ? journalTitle : undefined}
+          actions={
+            <ActionMenu
+              label="Действия задачи"
+              className="panel-action-menu"
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              items={[
+                {
+                  id: 'sibling',
+                  label: strings.addSibling,
+                  disabled: !!structuralReason,
+                  disabledReason: structuralReason ?? undefined,
+                  onSelect: () => onAction('sibling', task),
+                },
+                {
+                  id: 'move',
+                  label: 'Переместить…',
+                  disabled: busy || locked || removed,
+                  onSelect: (trigger) => {
+                    moveTrigger.current = trigger;
+                    setMoveOpen(true);
+                  },
+                },
+                {
+                  id: 'show',
+                  label: 'Показать на Ганте',
+                  disabled: busy || locked || removed,
+                  onSelect: (trigger) => {
+                    trigger.focus({ preventScroll: true });
+                    onShow(task);
+                  },
+                },
+                {
+                  id: 'delete',
+                  label: 'Удалить задачу…',
+                  disabled: !!structuralReason,
+                  disabledReason: structuralReason ?? undefined,
+                  tone: 'danger',
+                  separatorBefore: true,
+                  onSelect: () => onAction('delete', task),
+                },
+              ]}
+            />
+          }
           back={
             backTask && (
               <button
                 type="button"
                 className="quiet panel-back"
                 aria-label={`${strings.back}: ${backTask.title}`}
-                disabled={busy || locked || dirty}
+                disabled={busy || locked}
                 onClick={onBack}
               >
                 ←
@@ -539,7 +653,7 @@ export function TaskPanel({
               {!subtaskOpen && subtaskInput && (
                 <button
                   type="button"
-                  disabled={busy || locked || removed || dirty}
+                  disabled={busy || locked || removed}
                   aria-describedby={
                     dirty ? 'panel-subtasks-blocked' : undefined
                   }
@@ -597,80 +711,13 @@ export function TaskPanel({
               task={task}
               tree={tree}
               disabled={busy || locked || conflict || removed || dirty}
+              navigationDisabled={busy || locked || conflict || removed}
               onCommand={onDependency}
               onSelect={onNeighbor}
               onShow={onShow}
             />
           </div>
         )}
-        <div className="task-actions">
-          {visibleTab !== 'details' && (
-            <button
-              type="button"
-              disabled={busy || locked || removed || dirty}
-              onClick={() => onAction('child', task)}
-            >
-              {strings.addChild}
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={busy || locked || removed || dirty}
-            onClick={() => onAction('sibling', task)}
-          >
-            {strings.addSibling}
-          </button>
-        </div>
-        <fieldset
-          className="move-controls"
-          disabled={busy || locked || removed || dirty}
-        >
-          <legend>{strings.move}</legend>
-          <div className="order-actions">
-            <button type="button" onClick={() => onAction('up', task)}>
-              {strings.moveUp}
-            </button>
-            <button type="button" onClick={() => onAction('down', task)}>
-              {strings.moveDown}
-            </button>
-            <button type="button" onClick={() => onAction('out', task)}>
-              {strings.moveOut}
-            </button>
-            <button type="button" onClick={() => onAction('in', task)}>
-              {strings.moveIn}
-            </button>
-          </div>
-          <label>
-            {strings.moveParent}
-            <select
-              value={moveParent}
-              onChange={(event) => setMoveParent(event.target.value)}
-            >
-              <option value="">{strings.root}</option>
-              {tasks
-                .filter((candidate) => !excluded.has(candidate.id))
-                .map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.title}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => onMove(task, moveParent || null)}
-          >
-            {strings.move}
-          </button>
-        </fieldset>
-        <button
-          type="button"
-          className="danger quiet"
-          disabled={busy || locked || removed || dirty}
-          onClick={() => onAction('delete', task)}
-        >
-          {strings.delete}
-        </button>
       </div>
       <TaskPanelFooter
         dirty={dirty}
@@ -699,37 +746,20 @@ export function TaskPanel({
         resetDisabled={busy || locked}
         feedback={feedback}
         onSave={() => void save()}
-        onReset={() => {
-          setDraft({ ...baseline });
-          setPlan({ ...baselinePlan });
-          setIncoming([...baselineIncoming]);
-          submitted.current = null;
-          setSaved(false);
-          onDirty(false);
-        }}
-        onRepair={() => {
-          onTab('details');
-          requestAnimationFrame(() => {
-            if (!draft.title.trim()) {
-              const titleInput = document.querySelector<HTMLElement>(
-                '.panel-title-editor input',
-              );
-              if (titleInput) titleInput.focus();
-              else
-                document
-                  .querySelector<HTMLButtonElement>(
-                    `.panel-header [aria-label="${strings.editTitle}"]`,
-                  )
-                  ?.click();
-            } else
-              document
-                .querySelector<HTMLElement>(
-                  '#panel-details [aria-invalid="true"]',
-                )
-                ?.focus();
-          });
-        }}
+        onReset={reset}
+        onRepair={focusInvalid}
       />
+      {moveOpen && (
+        <TaskMoveDialog
+          task={task}
+          tasks={tasks}
+          trigger={moveTrigger.current}
+          blockedReason={structuralReason}
+          onMove={onMove}
+          onAction={onAction}
+          onClose={() => setMoveOpen(false)}
+        />
+      )}
     </aside>
   );
 }

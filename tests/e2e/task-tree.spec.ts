@@ -48,7 +48,7 @@ async function add(page: Page, title: string, scope: Page | Locator = page) {
   const quick = scope.locator('form.quick-add');
   await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
   await quick.getByLabel('Длительность, рабочих дней').fill('');
-  await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
+  await quick.getByRole('button', { name: 'Готово', exact: true }).click();
   const input = scope.getByLabel('Новая задача', { exact: true });
   await input.fill(title);
   await input.press('Enter');
@@ -65,9 +65,8 @@ test('creates a root immediately after confirmed deletion of the only task', asy
   await add(page, 'Задача A');
   await row(page, 'Задача A').click();
   page.once('dialog', (dialog) => dialog.accept());
-  await page
-    .getByRole('button', { name: 'Удалить ветку', exact: true })
-    .click();
+  await page.getByRole('button', { name: 'Действия задачи' }).click();
+  await page.getByRole('menuitem', { name: 'Удалить задачу…' }).click();
   await expect(page.getByText('В проекте пока нет задач.')).toBeVisible();
   await add(page, 'Задача B');
   await expect(row(page, 'Задача B')).toHaveAttribute('aria-level', '1');
@@ -270,7 +269,11 @@ test('child and sibling controls expose an accessible quick editor at narrow wid
     await page.setViewportSize({ width, height: 800 });
     for (const action of ['Добавить подзадачу', 'Добавить соседнюю задачу']) {
       await row(page, 'Задача A').click();
-      await page.getByRole('button', { name: action, exact: true }).click();
+      if (action === 'Добавить соседнюю задачу') {
+        await page.getByRole('button', { name: 'Действия задачи' }).click();
+        await page.getByRole('menuitem', { name: action, exact: true }).click();
+      } else
+        await page.getByRole('button', { name: action, exact: true }).click();
       const child = action === 'Добавить подзадачу';
       const scope = child
         ? page.getByRole('complementary', { name: 'Задача', exact: true })

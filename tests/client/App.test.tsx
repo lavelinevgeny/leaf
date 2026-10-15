@@ -240,6 +240,19 @@ async function openPanelQuick(user: ReturnType<typeof userEvent.setup>) {
     );
   }
 }
+async function openMove(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Действия задачи' }));
+  await user.click(screen.getByRole('menuitem', { name: 'Переместить…' }));
+  return screen.getByRole('dialog', { name: 'Переместить задачу' });
+}
+async function orderMove(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+) {
+  await openMove(user);
+  await user.click(screen.getByText('Порядок и уровень'));
+  await user.click(screen.getByRole('button', { name }));
+}
 async function open() {
   render(<App />);
   await screen.findByRole('heading', { name: project.title });
@@ -740,6 +753,9 @@ describe('client HTTP interactions', () => {
     await panel.findByText(/Нет связи с сервером/);
     expect(panel.getByLabelText('Новая задача')).toHaveValue('Ребёнок');
     expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    expect(
+      panel.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
     const firstBody = fetchMock.mock.calls
       .filter(([url]) => String(url).endsWith('/commands'))
       .at(-1)?.[1]?.body;
@@ -795,8 +811,14 @@ describe('client HTTP interactions', () => {
     await user.click(panel.getByRole('tab', { name: 'Задача' }));
     await openPanelQuick(user);
     expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик ветки');
-    expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    expect(panel.getByLabelText('Новая задача')).toBeEnabled();
+    expect(
+      panel.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
     await user.click(panel.getByRole('treeitem', { name: /^Ребёнок,/ }));
+    await user.click(
+      screen.getByRole('button', { name: 'Продолжить редактирование' }),
+    );
     expect(panel.getByRole('heading', { name: 'Этап' })).toBeInTheDocument();
     await user.click(panel.getByRole('tab', { name: 'Задача' }));
     await openPanelQuick(user);
@@ -821,6 +843,9 @@ describe('client HTTP interactions', () => {
     );
     await user.type(panel.getByLabelText('Новая задача'), 'Ребёнок{Enter}');
     expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    expect(
+      panel.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
     const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
     await user.click(search);
     resolve(
@@ -851,7 +876,8 @@ describe('client HTTP interactions', () => {
         { name: /^Ребёнок,/ },
       ),
     );
-    await user.selectOptions(screen.getByLabelText('Новый родитель'), '');
+    await openMove(user);
+    await user.click(screen.getByRole('button', { name: 'В корень' }));
     tree = {
       ...tree,
       project: { ...project, revision: 1 },
@@ -889,6 +915,9 @@ describe('client HTTP interactions', () => {
     await panel.findByText(/Выбранная задача удалена/);
     expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик ветки');
     expect(panel.getByLabelText('Новая задача')).toBeDisabled();
+    expect(
+      panel.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
     expect(panel.queryByRole('tree')).not.toBeInTheDocument();
     expect(commands).toHaveLength(0);
   });
@@ -1094,12 +1123,15 @@ describe('client HTTP interactions', () => {
       ...tree,
       tasks: [task(1, 'Задача A'), task(2, 'Задача B', id(1))],
     };
-    await user.click(
-      screen.getByRole('button', { name: 'Вложить в предыдущую задачу' }),
-    );
+    await orderMove(user, 'Вложить в предыдущую задачу');
     await waitFor(() =>
-      expect(screen.getByLabelText('Новый родитель')).toHaveValue(id(1)),
+      expect(commands.at(-1)?.command.type).toBe('task.move'),
     );
+    await openMove(user);
+    expect(
+      within(screen.getByRole('dialog')).getByText('Родитель: Задача A'),
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Отмена' }));
     expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик корня');
     expect(screen.getByText('Родитель: Корень проекта')).toBeInTheDocument();
     await user.click(screen.getByLabelText('Новая задача'));
@@ -1152,7 +1184,8 @@ describe('client HTTP interactions', () => {
     await user.keyboard('{Insert}');
     await user.type(screen.getByLabelText('Новая задача'), 'Сосед ребёнка');
     await user.click(screen.getByRole('treeitem', { name: /Ребёнок A,/ }));
-    await user.click(screen.getByRole('button', { name: 'Удалить ветку' }));
+    await user.click(screen.getByRole('button', { name: 'Действия задачи' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Удалить задачу…' }));
     await waitFor(() =>
       expect(
         screen.queryByRole('treeitem', { name: /Ребёнок A,/ }),
@@ -1311,7 +1344,12 @@ describe('client HTTP interactions', () => {
     expect(screen.getByLabelText('Название задачи')).toHaveValue(
       'Новое название',
     );
-    expect(screen.getByRole('alert')).toHaveTextContent(/несохранённые/i);
+    expect(
+      screen.getByRole('dialog', { name: 'Несохранённые изменения задачи' }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole('button', { name: 'Продолжить редактирование' }),
+    );
     fetchMock.mockImplementationOnce(() =>
       Promise.reject(new TypeError('synthetic offline')),
     );
@@ -1573,12 +1611,13 @@ describe('client HTTP interactions', () => {
       }),
     );
     await user.click(row);
-    const picker = screen.getByLabelText('Новый родитель');
+    await openMove(user);
+    const picker = screen.getByRole('group', { name: 'Новый родитель' });
     expect(
-      within(picker).queryByRole('option', { name: 'Ребёнок B' }),
+      within(picker).queryByRole('button', { name: /Ребёнок B/ }),
     ).not.toBeInTheDocument();
     expect(
-      within(picker).queryByRole('option', { name: 'Задача B' }),
+      within(picker).queryByRole('button', { name: /Задача B/ }),
     ).not.toBeInTheDocument();
   });
   it('permits cancelling the dated-work conversion before any command', async () => {
@@ -1768,7 +1807,12 @@ describe('client HTTP interactions', () => {
     await user.click(
       screen.getByRole('button', { name: /Другой демо-проект/ }),
     );
-    expect(screen.getByRole('alert')).toHaveTextContent(/несохранённые/);
+    expect(
+      screen.getByRole('dialog', { name: 'Несохранённые изменения задачи' }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole('button', { name: 'Продолжить редактирование' }),
+    );
     expect(screen.getByLabelText('Описание')).toHaveValue('Черновик');
     expect(
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/tree')),
@@ -1935,7 +1979,12 @@ describe('client HTTP interactions', () => {
     const user = userEvent.setup();
     for (const name of ['Добавить подзадачу', 'Добавить соседнюю задачу']) {
       await user.click(screen.getByRole('treeitem', { name: /Задача A,/ }));
-      await user.click(screen.getByRole('button', { name }));
+      if (name === 'Добавить соседнюю задачу') {
+        await user.click(
+          screen.getByRole('button', { name: 'Действия задачи' }),
+        );
+        await user.click(screen.getByRole('menuitem', { name }));
+      } else await user.click(screen.getByRole('button', { name }));
       const child = name === 'Добавить подзадачу';
       expect(!!screen.queryByRole('complementary', { name: 'Задача' })).toBe(
         child,
@@ -1960,17 +2009,24 @@ describe('client HTTP interactions', () => {
     await open();
     const user = userEvent.setup();
     await user.click(screen.getByRole('treeitem', { name: /Задача B,/ }));
-    expect(screen.getByLabelText('Новый родитель')).toHaveValue('');
+    await openMove(user);
+    expect(
+      within(screen.getByRole('dialog')).getByText('Родитель: Корень проекта'),
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Отмена' }));
     tree = {
       ...tree,
       tasks: [task(1, 'Задача A'), task(2, 'Задача B', id(1))],
     };
-    await user.click(
-      screen.getByRole('button', { name: 'Вложить в предыдущую задачу' }),
-    );
+    await orderMove(user, 'Вложить в предыдущую задачу');
     await waitFor(() =>
-      expect(screen.getByLabelText('Новый родитель')).toHaveValue(id(1)),
+      expect(commands.at(-1)?.command.type).toBe('task.move'),
     );
+    await openMove(user);
+    expect(
+      within(screen.getByRole('dialog')).getByText('Родитель: Задача A'),
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Отмена' }));
     tree = {
       ...tree,
       tasks: [task(1, 'Задача A'), task(2, 'Задача B', null, 1)],
@@ -1978,9 +2034,11 @@ describe('client HTTP interactions', () => {
     await user.click(
       screen.getByRole('button', { name: 'Отменить изменение плана' }),
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('Новый родитель')).toHaveValue(''),
-    );
+    await waitFor(() => expect(commands).toHaveLength(2));
+    await openMove(user);
+    expect(
+      within(screen.getByRole('dialog')).getByText('Родитель: Корень проекта'),
+    ).toBeVisible();
   });
   describe.each(['create', 'move'] as const)(
     'preserve-work confirmation for %s',
@@ -2106,33 +2164,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       if (entry === 'subtask') {
         await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
         await user.click(screen.getByRole('tab', { name: 'Задача' }));
-        if (
-          screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
-          !screen
-            .getByRole('button', { name: 'Добавить подзадачу' })
-            .hasAttribute('disabled')
-        )
-          await user.click(
-            screen.getByRole('button', { name: 'Добавить подзадачу' }),
-          );
-        if (
-          screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
-          !screen
-            .getByRole('button', { name: 'Добавить подзадачу' })
-            .hasAttribute('disabled')
-        )
-          await user.click(
-            screen.getByRole('button', { name: 'Добавить подзадачу' }),
-          );
-        if (
-          screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
-          !screen
-            .getByRole('button', { name: 'Добавить подзадачу' })
-            .hasAttribute('disabled')
-        )
-          await user.click(
-            screen.getByRole('button', { name: 'Добавить подзадачу' }),
-          );
+        await openPanelQuick(user);
         scope = within(
           screen.getByRole('complementary', { name: 'Задача' }),
         ) as typeof screen;

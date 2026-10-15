@@ -498,9 +498,8 @@ test('branch deletion and plan undo restore exact journal rows while surviving l
     expect(dialog.message()).toContain('журнал');
     await dialog.accept();
   });
-  await panel
-    .getByRole('button', { name: 'Удалить ветку', exact: true })
-    .click();
+  await panel.getByRole('button', { name: 'Действия задачи' }).click();
+  await page.getByRole('menuitem', { name: 'Удалить задачу…' }).click();
   await expect(
     page.locator(`[role="treeitem"][data-task-id="${deepId}"]`),
   ).toHaveCount(0);

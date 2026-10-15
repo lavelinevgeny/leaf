@@ -12,6 +12,7 @@ interface Props {
   task: Task;
   tree: ProjectTree;
   disabled: boolean;
+  navigationDisabled?: boolean;
   onCommand: (command: Command) => Promise<boolean>;
   onSelect: (task: Task) => void;
   onShow: (task: Task) => void;
@@ -20,6 +21,7 @@ export function Dependencies({
   task,
   tree,
   disabled,
+  navigationDisabled = disabled,
   onCommand,
   onSelect,
   onShow,
@@ -100,7 +102,7 @@ export function Dependencies({
       >
         <button
           type="button"
-          disabled={disabled || !edge}
+          disabled={navigationDisabled || !edge}
           className="dependency-open"
           aria-label={`${strings.openTask}: ${item.title}`}
           onClick={() => onSelect(item)}
@@ -147,7 +149,7 @@ export function Dependencies({
       <button
         className="quiet"
         type="button"
-        disabled={disabled}
+        disabled={navigationDisabled}
         onClick={() => onShow(task)}
       >
         {strings.showOnGantt}

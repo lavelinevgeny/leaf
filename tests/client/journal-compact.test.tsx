@@ -53,15 +53,17 @@ it('Q01 refused row quick actions keep focus on the action button', async () => 
   });
   expect(button('Добавить подзадачу: Работа 2')).toBeDisabled();
   await userEvent.click(button('Добавить запись: Работа 2'));
+  expect(
+    screen.getByRole('dialog', { name: 'Несохранённые изменения задачи' }),
+  ).toBeVisible();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
   expect(button('Добавить запись: Работа 2')).toHaveFocus();
   expect(within(panel).getByLabelText('Название задачи')).toHaveValue(
     'Несохранённое название',
   );
-  expect(
-    screen.getByText(
-      'Сначала сохраните или отбросьте несохранённые изменения.',
-    ),
-  ).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 
 async function openProjectJournal() {

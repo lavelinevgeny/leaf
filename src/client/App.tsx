@@ -37,7 +37,14 @@ import { requiresWorkPreservation } from '../shared/work-preservation.js';
 import { api, ApiError } from './api.js';
 import { ProjectSidebar } from './ProjectSidebar.js';
 import { QuickAdd, type AddContext } from './QuickAdd.js';
-import { TaskPanel, type PanelTab } from './TaskPanel.js';
+import {
+  TaskPanel,
+  type PanelTab,
+  type TaskPanelActions,
+} from './TaskPanel.js';
+import { TaskLeaveDialog } from './TaskLeaveDialog.js';
+import { panelScrollOwner } from './task-panel-view.js';
+import { assertCanMove } from '../domain/tree.js';
 import { visiblePanelTab } from './task-panel-view.js';
 import { focusTaskRow, type TreeAction } from './TaskTree.js';
 import { orderedChildren, subtreeIds } from './tree-view.js';
@@ -83,6 +90,8 @@ interface PanelVisit {
   taskId: string;
   tab: PanelTab;
   focusId?: string;
+  scrollTop?: number;
+  scrollLeft?: number;
 }
 interface UndoFocus {
   trigger: HTMLButtonElement;
@@ -271,6 +280,27 @@ export function App() {
   const lock = useRef(false);
   const loadSequence = useRef(0);
   const dirtyRef = useRef(false);
+  const conflictRef = useRef(conflict);
+  conflictRef.current = conflict;
+  const panelActions = useRef<TaskPanelActions | null>(null);
+  const registerPanelActions = useCallback(
+    (actions: TaskPanelActions | null) => {
+      panelActions.current = actions;
+    },
+    [],
+  );
+  const pendingNavigation = useRef<{
+    proceed: () => void;
+    taskId: string | null;
+    projectId: string | null;
+    session: typeof sessionRef.current;
+  } | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaveSaving, setLeaveSaving] = useState(false);
+  const selectedIdentity = useRef(selected?.id ?? null);
+  selectedIdentity.current = selected?.id ?? null;
+  const branchRestore = useRef(0);
+
   const currentProject = useRef<string | null>(null);
   const context = (tree && quickDrafts[tree.project.id]?.context) || {
     parentId: null,
@@ -288,7 +318,13 @@ export function App() {
     setDirty(value);
   }, []);
   const projectToday = useProjectToday(tree?.project.timezone ?? 'UTC');
+  function clearTaskNavigation() {
+    pendingNavigation.current = null;
+    setLeaveOpen(false);
+    ++branchRestore.current;
+  }
   function expireSession() {
+    clearTaskNavigation();
     ++loadSequence.current;
     journal.clearPrivateState();
     knownRevision.current = null;
@@ -371,18 +407,21 @@ export function App() {
     }
   }
   function openTaskJournal(task: Task, trigger: HTMLElement): boolean {
-    if (journalLocked || (selected?.id !== task.id && !canNavigate()))
-      return false;
-    journalOrigin.current = trigger;
-    panelOrigin.current = task.id;
-    setSelected(task);
-    setPanelTab('journal');
-    setPanelHistory([]);
-    journal.openCreate(task.projectId, task.id, projectToday);
-    journalFocusRequest.current = {
-      taskId: task.id,
-      token: ++journalFocus.current,
+    if (journalLocked) return false;
+    const proceed = () => {
+      journalOrigin.current = trigger;
+      panelOrigin.current = task.id;
+      setSelected(task);
+      setPanelTab('journal');
+      setPanelHistory([]);
+      journal.openCreate(task.projectId, task.id, projectToday);
+      journalFocusRequest.current = {
+        taskId: task.id,
+        token: ++journalFocus.current,
+      };
     };
+    if (selected?.id === task.id) proceed();
+    else requestTaskNavigation(proceed);
     return true;
   }
   function changeProjectView(view: ProjectView) {
@@ -490,10 +529,16 @@ export function App() {
     });
     return true;
   }
-  function canNavigate(allowRename = false) {
+  function canNavigate(allowRename = false, allowTaskDraft = false) {
     lastCapture.current();
+    if (journalLocked) {
+      setNotice('Повторите сохранение записи перед переходом.');
+      return false;
+    }
+    if (lock.current || pendingRef.current || conflictRef.current || loading)
+      return false;
     if (
-      dirtyRef.current ||
+      (!allowTaskDraft && dirtyRef.current) ||
       projectDirtyRef.current ||
       (!allowRename &&
         rename !== null &&
@@ -502,13 +547,69 @@ export function App() {
       setNotice(strings.unsaved);
       return false;
     }
-    if (journalLocked) {
-      setNotice('Повторите сохранение записи перед переходом.');
-      return false;
-    }
-    if (lock.current || pendingRef.current || conflict || loading) return false;
     setNotice('');
     return true;
+  }
+  function requestTaskNavigation(proceed: () => void): void {
+    ++branchRestore.current;
+    if (!canNavigate(false, true)) return;
+    if (!dirtyRef.current) {
+      clearTaskNavigation();
+      proceed();
+      return;
+    }
+    pendingNavigation.current = {
+      proceed,
+      taskId: selectedIdentity.current,
+      projectId: currentProject.current,
+      session: sessionRef.current,
+    };
+    setLeaveOpen(true);
+  }
+  function navigationStillCurrent(
+    next: NonNullable<typeof pendingNavigation.current>,
+  ) {
+    return (
+      pendingNavigation.current === next &&
+      selectedIdentity.current === next.taskId &&
+      currentProject.current === next.projectId &&
+      sessionRef.current === next.session
+    );
+  }
+  async function saveAndNavigate() {
+    const next = pendingNavigation.current;
+    const actions = panelActions.current;
+    if (!next || !actions || !canNavigate(false, true)) return;
+    setLeaveSaving(true);
+    const saved = await actions.save();
+    setLeaveSaving(false);
+    if (!navigationStillCurrent(next)) return;
+    if (!saved || dirtyRef.current || !canNavigate()) {
+      // Return to the panel for repair/retry. The attempted transition is never queued.
+      clearTaskNavigation();
+      return;
+    }
+    clearTaskNavigation();
+    next.proceed();
+  }
+  function discardAndNavigate() {
+    const next = pendingNavigation.current;
+    if (!next || !navigationStillCurrent(next) || !canNavigate(false, true))
+      return;
+    panelActions.current?.reset();
+    clearTaskNavigation();
+    next.proceed();
+  }
+  function branchVisit(focusId?: string): PanelVisit {
+    const panel = document.querySelector<HTMLElement>('.task-panel');
+    const owner = panel ? panelScrollOwner(panel) : null;
+    return {
+      taskId: selected!.id,
+      tab: panelTab,
+      ...(focusId ? { focusId } : {}),
+      scrollTop: owner?.scrollTop ?? 0,
+      scrollLeft: owner?.scrollLeft ?? 0,
+    };
   }
   async function loadProject(id: string, preserveDraft = false) {
     if (restoreStartHandle.current?.projectId !== id) cancelStartFocus();
@@ -949,84 +1050,84 @@ export function App() {
   }
   // false: refused, or the reused panel will not take focus (focus returns to the trigger).
   function selectTask(task: Task): boolean {
-    if (!canNavigate()) return false;
-    const reselect = selected?.id === task.id;
-    setSelected(task);
-    setPanelTab('details');
-    setPanelHistory([]);
-    panelOrigin.current = task.id;
-    // C31: selecting a row never moves the quick input; an untouched one returns to the end.
-    const draft = quickDrafts[task.projectId];
-    if (!draft || !hasQuickDraft(draft)) {
-      setQuickEditing(false);
-      quickOrigin.current = null;
-      setContext({ parentId: null });
-    }
-    return !reselect;
+    requestTaskNavigation(() => {
+      setSelected(task);
+      setPanelTab('details');
+      setPanelHistory([]);
+      panelOrigin.current = task.id;
+      // C31: selecting a row never moves the quick input; an untouched one returns to the end.
+      const draft = quickDrafts[task.projectId];
+      if (!draft || !hasQuickDraft(draft)) {
+        setQuickEditing(false);
+        quickOrigin.current = null;
+        setContext({ parentId: null });
+      }
+    });
+    return true;
   }
   function closePanel() {
-    if (!canNavigate()) return;
-    const id = selected?.id;
-    ++journalFocus.current;
-    setSelected(null);
-    setPanelHistory([]);
-    if (projectView === 'journal' && journalOrigin.current?.isConnected) {
-      journalOrigin.current.focus();
-      return;
-    }
-    const mainTree = document.querySelector(
-      `[role="tree"][aria-label="${strings.tasks}"]`,
-    );
-    if (
-      !mainTree ||
-      !(
-        (id && focusTaskRow(id, mainTree)) ||
-        (panelOrigin.current && focusTaskRow(panelOrigin.current, mainTree))
+    requestTaskNavigation(() => {
+      const id = selected?.id;
+      ++journalFocus.current;
+      setSelected(null);
+      setPanelHistory([]);
+      if (projectView === 'journal' && journalOrigin.current?.isConnected) {
+        journalOrigin.current.focus();
+        return;
+      }
+      const mainTree = document.querySelector(
+        `[role="tree"][aria-label="${strings.tasks}"]`,
+      );
+      if (
+        !mainTree ||
+        !(
+          (id && focusTaskRow(id, mainTree)) ||
+          (panelOrigin.current && focusTaskRow(panelOrigin.current, mainTree))
+        )
       )
-    )
-      document.getElementById('quick-task')?.focus();
+        document.getElementById('quick-task')?.focus();
+    });
   }
   function selectSubtask(task: Task): boolean {
-    if (!canNavigate()) return false;
-    if (selected)
-      setPanelHistory((previous) => [
-        ...previous,
-        { taskId: selected.id, tab: panelTab, focusId: task.id },
-      ]);
-    setSelected(task);
-    setPanelTab('details');
+    requestTaskNavigation(() => {
+      if (selected)
+        setPanelHistory((previous) => [...previous, branchVisit(task.id)]);
+      setSelected(task);
+      setPanelTab('details');
+    });
     return true;
   }
   function selectNeighbor(task: Task) {
-    if (!canNavigate()) return;
-    if (selected)
-      setPanelHistory((previous) => [
-        ...previous,
-        { taskId: selected.id, tab: panelTab },
-      ]);
-    setSelected(task);
-    setPanelTab('dependencies');
+    requestTaskNavigation(() => {
+      if (selected) setPanelHistory((previous) => [...previous, branchVisit()]);
+      setSelected(task);
+      setPanelTab('dependencies');
+    });
   }
   function showOnGantt(task: Task) {
-    if (!canNavigate() || !treeRef.current) return;
-    cancelStartFocus();
-    setProjectView('tasks');
-    setTaskFilter(emptyTaskFilter);
-    const byId = new Map(treeRef.current.tasks.map((item) => [item.id, item]));
-    setCollapsed((previous) => {
-      const next = new Set(previous);
-      let parent = task.parentId;
-      while (parent) {
-        next.delete(parent);
-        parent = byId.get(parent)?.parentId ?? null;
-      }
-      return next;
+    requestTaskNavigation(() => {
+      if (!treeRef.current) return;
+      cancelStartFocus();
+      setProjectView('tasks');
+      setTaskFilter(emptyTaskFilter);
+      const byId = new Map(
+        treeRef.current.tasks.map((item) => [item.id, item]),
+      );
+      setCollapsed((previous) => {
+        const next = new Set(previous);
+        let parent = task.parentId;
+        while (parent) {
+          next.delete(parent);
+          parent = byId.get(parent)?.parentId ?? null;
+        }
+        return next;
+      });
+      setShowGantt(true);
+      setGanttReveal((previous) => ({
+        taskId: task.id,
+        sequence: (previous?.sequence ?? 0) + 1,
+      }));
     });
-    setShowGantt(true);
-    setGanttReveal((previous) => ({
-      taskId: task.id,
-      sequence: (previous?.sequence ?? 0) + 1,
-    }));
   }
   function toggle(id: string) {
     setCollapsed((previous) => {
@@ -1042,6 +1143,12 @@ export function App() {
     position?: number,
   ) {
     if (!canNavigate()) return;
+    try {
+      assertCanMove(treeRef.current?.tasks ?? [], task.id, parentId);
+    } catch {
+      setNotice('Нельзя перенести задачу в выбранную ветку.');
+      return;
+    }
     const originTree = document.activeElement?.closest('[role="tree"]');
     const preserved =
       task.parentId === parentId ? false : preserveWork(parentId);
@@ -1099,8 +1206,8 @@ export function App() {
       return;
     }
     if (value === 'delete') {
-      if (window.confirm(strings.deleteConfirm))
-        void command({ type: 'task.delete', taskId: task.id });
+      if (!window.confirm(strings.deleteConfirm)) return false;
+      void command({ type: 'task.delete', taskId: task.id });
       return;
     }
     const tasks = treeRef.current?.tasks ?? [];
@@ -1342,6 +1449,7 @@ export function App() {
     setError(null);
     try {
       await api.logout();
+      clearTaskNavigation();
       journal.clearPrivateState();
       knownRevision.current = null;
       ++loadSequence.current;
@@ -1417,12 +1525,36 @@ export function App() {
       ? visits.current.get(visitId.current)
       : undefined;
     if (!session?.authenticated) return;
-    if (!canNavigate()) {
+    if (!canNavigate(false, true) || dirtyRef.current) {
+      const parsed =
+        target?.visit ?? parseWorkspaceUrl(new URL(window.location.href));
       if (old && target) {
         suppressedPop.current = true;
         window.history.go(old.index - target.index);
       } else if (old && visitId.current)
         writeWorkspaceVisit(old.visit, visitId.current, 'replace');
+      if (dirtyRef.current && parsed)
+        requestTaskNavigation(() => {
+          if (old && target) window.history.go(target.index - old.index);
+          else {
+            const saved: SessionVisit = target ?? {
+              visit: parsed,
+              index: old?.index ?? 0,
+              collapsed: new Set(),
+              filter: emptyTaskFilter,
+              showGantt: true,
+              query: {},
+              timeline: undefined,
+              scroll: { id: null, date: null, offset: 0, top: 0, left: 0 },
+              origin: null,
+            };
+            restorationApplied.current = false;
+            restoringVisit.current = saved;
+            if (treeRef.current?.project.id !== parsed.projectId)
+              void loadProject(parsed.projectId);
+            else restoreWorkspace(saved, treeRef.current);
+          }
+        });
       return;
     }
     captureVisit();
@@ -1767,12 +1899,13 @@ export function App() {
       <ProjectSidebar
         projects={projects}
         selectedId={tree?.project.id ?? null}
-        onSelect={(id, openMenu = false) => {
-          if (!canNavigate()) return;
-          initialVisit.current = null;
-          setProjectMenuTarget(openMenu ? id : null);
-          void loadProject(id);
-        }}
+        onSelect={(id, openMenu = false) =>
+          requestTaskNavigation(() => {
+            initialVisit.current = null;
+            setProjectMenuTarget(openMenu ? id : null);
+            void loadProject(id);
+          })
+        }
         onCreate={createProject}
         onLogout={() => void logout()}
         controls={
@@ -1953,12 +2086,11 @@ export function App() {
                         onContext={setContext}
                         onCreate={createTask}
                         busy={busy || loading}
+                        submitBlockedReason={
+                          dirty ? strings.saveTaskBeforeSubtask : null
+                        }
                         blocked={
-                          journalLocked ||
-                          !!pending ||
-                          conflict ||
-                          dirty ||
-                          projectDirty
+                          journalLocked || !!pending || conflict || projectDirty
                         }
                         title={quickDrafts[tree.project.id]?.title ?? ''}
                         onTitle={(title) =>
@@ -2083,6 +2215,7 @@ export function App() {
       {selectedTask && tree && (
         <TaskPanel
           key={selectedTask.id}
+          registerActions={registerPanelActions}
           task={selectedTask}
           removed={
             journal.unavailableTaskIds.has(selectedTask.id) ||
@@ -2132,21 +2265,43 @@ export function App() {
           onShow={showOnGantt}
           backTask={backTask}
           onBack={() => {
-            if (backTask && backVisit && canNavigate()) {
+            if (!backTask || !backVisit) return;
+            requestTaskNavigation(() => {
               setSelected(backTask);
               setPanelTab(backVisit.tab);
               setPanelHistory((previous) => previous.slice(0, -1));
-              if (backVisit.focusId)
-                requestAnimationFrame(() => {
-                  const subtree = document.querySelector<HTMLElement>(
-                    '#panel-details .panel-subtasks',
-                  );
-                  if (!subtree || !focusTaskRow(backVisit.focusId!, subtree))
-                    requestAnimationFrame(() =>
-                      document.getElementById('quick-subtask')?.focus(),
-                    );
-                });
-            }
+              const token = ++branchRestore.current;
+              requestAnimationFrame(() => {
+                if (
+                  token !== branchRestore.current ||
+                  (document.activeElement !== document.body &&
+                    !document.activeElement?.closest('.panel-back'))
+                )
+                  return;
+                const panel =
+                  document.querySelector<HTMLElement>('.task-panel');
+                const owner = panel ? panelScrollOwner(panel) : null;
+                const subtree =
+                  panel?.querySelector<HTMLElement>('.panel-subtasks');
+                if (
+                  backVisit.focusId &&
+                  (!subtree || !focusTaskRow(backVisit.focusId, subtree))
+                ) {
+                  const fallback =
+                    document.getElementById('quick-subtask') ??
+                    document.getElementById('panel-subtasks-heading');
+                  if (fallback) {
+                    if (!fallback.hasAttribute('tabindex'))
+                      fallback.tabIndex = -1;
+                    fallback.focus({ preventScroll: true });
+                  }
+                }
+                if (owner) {
+                  owner.scrollTop = backVisit.scrollTop ?? 0;
+                  owner.scrollLeft = backVisit.scrollLeft ?? 0;
+                }
+              });
+            });
           }}
           collapsed={collapsed}
           onToggle={toggle}
@@ -2211,16 +2366,25 @@ export function App() {
                 createTask(title, context, plan, predecessorIds, subtaskKey)
               }
               busy={busy || loading}
+              submitBlockedReason={dirty ? strings.saveTaskBeforeSubtask : null}
               blocked={
                 journalLocked ||
                 !!pending ||
                 conflict ||
-                dirty ||
                 projectDirty ||
                 !subtaskIds.size
               }
             />
           }
+        />
+      )}
+      {leaveOpen && (
+        <TaskLeaveDialog
+          blocked={leaveSaving || !!pending || busy || journalLocked}
+          saving={leaveSaving}
+          onSave={() => void saveAndNavigate()}
+          onDiscard={discardAndNavigate}
+          onContinue={clearTaskNavigation}
         />
       )}
     </div>

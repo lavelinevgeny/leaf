@@ -11,6 +11,7 @@ interface Props {
   closeDisabled: boolean;
   onClose: () => void;
   back: ReactNode;
+  actions?: ReactNode;
   journalTitle?: string | undefined;
 }
 export function TaskPanelHeader({
@@ -22,6 +23,7 @@ export function TaskPanelHeader({
   closeDisabled,
   onClose,
   back,
+  actions,
   journalTitle,
 }: Props) {
   const [editing, setEditing] = useState(false);
@@ -35,6 +37,7 @@ export function TaskPanelHeader({
     <header className="panel-header">
       <div className="panel-header-actions">
         {back}
+        {actions}
         <button
           type="button"
           aria-label={strings.close}

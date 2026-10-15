@@ -16,6 +16,7 @@ export interface ActionMenuItem {
   // false: refused or no-op action, focus returns to the trigger.
   onSelect: (trigger: HTMLButtonElement) => boolean | void;
   disabled?: boolean;
+  disabledReason?: string | undefined;
   tone?: 'danger';
   separatorBefore?: boolean;
 }
@@ -237,6 +238,11 @@ export function ActionMenu({
                   role="menuitem"
                   className={item.tone === 'danger' ? 'danger' : undefined}
                   disabled={item.disabled}
+                  aria-describedby={
+                    item.disabledReason
+                      ? `${menuId}-${item.id}-reason`
+                      : undefined
+                  }
                   onClick={() => {
                     const button = trigger.current;
                     change.current(false);
@@ -250,6 +256,11 @@ export function ActionMenu({
                 >
                   {item.label}
                 </button>
+                {item.disabledReason && (
+                  <p id={`${menuId}-${item.id}-reason`} className="field-hint">
+                    {item.disabledReason}
+                  </p>
+                )}
               </Fragment>
             ))}
           </div>,

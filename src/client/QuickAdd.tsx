@@ -38,6 +38,7 @@ interface Props {
   timezone: string;
   busy: boolean;
   blocked: boolean;
+  submitBlockedReason?: string | null;
   title: string;
   onTitle: (title: string) => void;
   inputId?: string;
@@ -62,6 +63,7 @@ export function QuickAdd({
   timezone,
   busy,
   blocked,
+  submitBlockedReason,
   title,
   onTitle,
   inputId = 'quick-task',
@@ -127,7 +129,8 @@ export function QuickAdd({
     setRestoreFocus(true);
   }, [acknowledgement]);
   async function submit() {
-    if (!title.trim() || busy || blocked || !canSubmit) return;
+    if (!title.trim() || busy || blocked || !!submitBlockedReason || !canSubmit)
+      return;
     if (await onCreate(title, context, plan, predecessorIds)) {
       setRestoreFocus(true);
     }
@@ -254,7 +257,16 @@ export function QuickAdd({
           title={strings.addTask}
           className="quick-submit"
           type="submit"
-          disabled={busy || blocked || !title.trim() || !canSubmit}
+          disabled={
+            busy ||
+            blocked ||
+            !!submitBlockedReason ||
+            !title.trim() ||
+            !canSubmit
+          }
+          aria-describedby={
+            submitBlockedReason ? `${scheduleId}-submit-reason` : undefined
+          }
         >
           {inline ? (
             <svg
@@ -300,6 +312,11 @@ export function QuickAdd({
           </button>
         )}
       </div>
+      {submitBlockedReason && (
+        <p id={`${scheduleId}-submit-reason`} className="field-hint">
+          {submitBlockedReason}
+        </p>
+      )}
       <div className={inline ? 'quick-meta sr-only' : 'quick-meta'}>
         <span>
           {strings.parent}: {parent?.title ?? strings.root}
