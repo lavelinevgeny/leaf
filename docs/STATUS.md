@@ -1,5 +1,14 @@
 # Статус разработки
 
+## Карточка задачи D22 — Task 5, исправление review round 1, 2026-10-16
+
+Независимые reviews `cf1c6da` нашли один общий Important S5-SPEC-I1 / Standards I1: ack A освобождал write lock, но Promise отправки продолжал ждать GET. За это время можно было отправить B; поздний onSaved A скрывал composer B и его exact retry при uncertain ответе. Общий send теперь завершает POST/PATCH/DELETE на ack и запускает refresh независимо. Outcome/operation notice и finally завершаются до новой записи; позднее чтение не запускает старый UI callback. Source/task drafts, pinned floors, uncertainty и auth generation сохраняют свои правила; дополнительных очередей и component-key обходов нет.
+
+Новый rendered fixture использует настоящий useJournal + TaskJournal: A ack → быстрый project GET / удержанный task GET → обычный submit B → поздний GET A → network failure B. Редактор B остаётся видимым и locked с исходным текстом, старое finally не снимает lock B, exact retry отправляет прежний B envelope и даёт один эффект. Ещё три fixtures проверяют завершение POST/PATCH/DELETE до ответа фонового GET. RED — 4/4 новых сценария упали; GREEN journal client suites — 4 файла / 81 tests. Actual-server browser подтверждает тот же порядок без искусственной разблокировки: B реально committed, её ответ потерян, повтор использует operationId/envelope B и оставляет единственную B запись / journalRevision2.
+
+PASS финальные typecheck/lint/build/format и affected browser subset 18/18 в обоих desktop projects: новый two-write race, pinned edit, lost POST/PATCH/DELETE + admission429, обычный create/edit/delete, project prepend geometry, compact composer focus и ack+failedGET. Полный прежний 88-case run повторно не запускался. PASS unit 43 файла / 853 tests, integration 27 / 384, check:kit 72 Markdown / 427 links и git diff --check; scoped staged/hooks results — в дополнении локального отчёта; API/schema/scheduler/security не менялись. Minor Standards M1 (stale Journal breadcrumb links), S2-M1 и S4-SPEC-M1 явно остаются Task 6. Следующий шаг — независимые scoped re-reviews точного fix SHA; Task 6 и S4–S6 не завершены.
+
+
 ## Карточка задачи D22 — Task 5, журнал и общая прокрутка, 2026-10-16
 
 Подтверждение POST/PATCH/DELETE журнала теперь хранится отдельно в scoped lastWrite (project/task/operation/result). После ack освобождаются подтверждённый pending и только совпадающий отправленный draft; revision floors сохраняют max. Ошибка последующего GET меняет только ленту: «Запись сохранена. Не удалось обновить историю» или отдельный результат удаления, повтор выполняет чтение. Initial GET, другая задача и новая неуспешная отправка не наследуют сообщение об успехе; 401/успешный logout очищают lastWrite вместе с private RAM. Независимые task/incoming drafts, exact retry и pinned planning baseline сохраняют прежние контракты.

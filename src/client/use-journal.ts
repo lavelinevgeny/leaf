@@ -507,11 +507,8 @@ export function useJournal(context: JournalContext): JournalController {
       state.current.removed = false;
       state.current.notice =
         job.method === 'DELETE' ? 'Запись удалена' : 'Запись сохранена';
-      publish();
-      if (active()?.projectId === job.projectId) await refresh();
-      if (epoch !== generation.current || privacy !== privateGeneration.current)
-        return false;
       if (
+        epoch === generation.current &&
         job.method !== 'DELETE' &&
         state.current.lastWrite?.operationId === job.input.operationId &&
         state.current.notice
@@ -540,7 +537,14 @@ export function useJournal(context: JournalContext): JournalController {
         )
           state.current.notice = 'Запись сохранена; она не подходит под фильтр';
       }
-      return true;
+      publish();
+      // The ack completes this operation, including its UI callback/finally.
+      // Reads have their own request generations; awaiting them here lets an
+      // old completion run after a new write has acquired the shared lock.
+      if (active()?.projectId === job.projectId) void refresh();
+      return (
+        epoch === generation.current && privacy === privateGeneration.current
+      );
     } catch (error) {
       if (privacy !== privateGeneration.current || auth(error, privacy))
         return false;

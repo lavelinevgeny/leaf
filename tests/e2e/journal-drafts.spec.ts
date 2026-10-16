@@ -840,3 +840,122 @@ test('saved breadcrumb and journal metadata navigation guard dirty task title wi
     (await readJournalPage(page, runtime.origin, tree.project.id)).entries,
   ).toHaveLength(0);
 });
+
+test('late read A cannot hide uncertain write B and its real exact replay', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await expect(panel.getByText('Записей пока нет')).toBeVisible();
+  const projectUrl = `${runtime.origin}/api/projects/${tree.project.id}/journal`;
+  const taskUrl = `${runtime.origin}/api/projects/${tree.project.id}/tasks/${doneId}/journal`;
+  let releaseReadA!: () => void;
+  let loseResponseB!: () => void;
+  const readGate = new Promise<void>((resolve) => {
+    releaseReadA = resolve;
+  });
+  const writeGate = new Promise<void>((resolve) => {
+    loseResponseB = resolve;
+  });
+  let acknowledgedA = false;
+  let heldReadA = false;
+  let committedB = false;
+  const writes: { operationId: string; expectedJournalRevision: number }[] = [];
+  await page.route(taskUrl, async (route) => {
+    if (route.request().method() === 'GET' && acknowledgedA && !heldReadA) {
+      heldReadA = true;
+      await readGate;
+    }
+    await route.continue();
+  });
+  await page.route(projectUrl, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    writes.push(route.request().postDataJSON());
+    if (writes.length === 1) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      acknowledgedA = true;
+      return route.fulfill({ response });
+    }
+    if (writes.length === 2) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committedB = true;
+      await writeGate;
+      return route.abort('failed');
+    }
+    await route.continue();
+  });
+  try {
+    await panel.getByLabel('Текст записи').fill('Подтверждённая операция A');
+    await panel
+      .getByRole('button', { name: 'Сохранить запись', exact: true })
+      .click();
+    await expect.poll(() => heldReadA).toBe(true);
+    await expect(
+      projectFeed(page).getByText('Подтверждённая операция A', { exact: true }),
+    ).toHaveCount(1);
+    // These are normal enabled controls: no imperative unlock or hook state edits.
+    const add = panel.getByRole('button', {
+      name: 'Добавить запись',
+      exact: true,
+    });
+    if (await add.isVisible()) await add.click();
+    await panel
+      .getByLabel('Текст записи')
+      .fill('Сохранённая один раз операция B');
+    await expect(
+      panel.getByRole('button', { name: 'Сохранить запись', exact: true }),
+    ).toBeEnabled();
+    await panel
+      .getByRole('button', { name: 'Сохранить запись', exact: true })
+      .click();
+    await expect.poll(() => committedB).toBe(true);
+    const readFinished = page.waitForResponse(
+      (response) =>
+        response.url() === taskUrl && response.request().method() === 'GET',
+    );
+    releaseReadA();
+    await readFinished;
+    loseResponseB();
+    await expect(
+      panel.getByRole('button', { name: 'Повторить сохранение', exact: true }),
+    ).toBeVisible();
+    await expect(panel.getByLabel('Текст записи')).toHaveValue(
+      'Сохранённая один раз операция B',
+    );
+    await expect(panel.getByLabel('Текст записи')).toBeDisabled();
+    expect(writes).toHaveLength(2);
+    await panel
+      .getByRole('button', { name: 'Повторить сохранение', exact: true })
+      .click();
+    await expect(panel.getByLabel('Текст записи')).toHaveValue('');
+    await expect(panel.getByLabel('Текст записи')).toBeEnabled();
+    expect(writes).toHaveLength(3);
+    expect(JSON.stringify(writes[2]) === JSON.stringify(writes[1])).toBe(true);
+    expect(writes[1]!.operationId).not.toBe(writes[0]!.operationId);
+    expect(writes[1]!.expectedJournalRevision).toBe(1);
+    const stored = await readJournalPage(page, runtime.origin, tree.project.id);
+    expect(stored.journalRevision).toBe(2);
+    expect(
+      stored.entries.filter(
+        (entry) => entry.body === 'Сохранённая один раз операция B',
+      ),
+    ).toHaveLength(1);
+    await expect(
+      panel.getByText('Сохранённая один раз операция B', { exact: true }),
+    ).toBeVisible();
+  } finally {
+    releaseReadA();
+    loseResponseB();
+    await page.unroute(taskUrl);
+    await page.unroute(projectUrl);
+  }
+});

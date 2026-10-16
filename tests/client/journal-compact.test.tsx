@@ -12,7 +12,10 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { App } from '../../src/client/App.js';
-import { api } from '../../src/client/api.js';
+import { api, ApiError } from '../../src/client/api.js';
+import { useJournal } from '../../src/client/use-journal.js';
+import { TaskJournal } from '../../src/client/TaskJournal.js';
+import type { JournalController } from '../../src/client/journal-state.js';
 import { periodLabel } from '../../src/client/ProjectJournal.js';
 import { task } from './fixtures.js';
 import {
@@ -20,6 +23,7 @@ import {
   journal5,
   mockJournalApp,
   page5,
+  journalContext,
 } from './journal-fixtures.js';
 import type { JournalPage } from '../../src/shared/journal-contracts.js';
 
@@ -872,4 +876,95 @@ it('normal saved ancestor buttons use the task tab and the common dirty guard', 
     'aria-selected',
     'true',
   );
+});
+
+it('ack A completes its composer before deferred GET A; late read cannot hide pending/uncertain B or change its exact retry', async () => {
+  const server = mockJournalApp();
+  let controller: JournalController | undefined;
+  function Harness() {
+    controller = useJournal(journalContext({ taskId: journal5.taskId }));
+    return (
+      <TaskJournal
+        controller={controller}
+        task={server.tree.tasks[0]!}
+        today="2026-10-09"
+      />
+    );
+  }
+  render(<Harness />);
+  await screen.findByLabelText('Текст записи');
+  await waitFor(() => expect(controller?.taskFeed?.phase).toBe('ready'));
+  const taskReadA = deferred<JournalPage>();
+  const originalRead = vi.mocked(api.journalTask).getMockImplementation()!;
+  let heldA = false;
+  vi.mocked(api.journalTask).mockImplementation((projectId, taskId, query) => {
+    if (server.revision === 6 && !heldA) {
+      heldA = true;
+      return taskReadA.promise;
+    }
+    return originalRead(projectId, taskId, query);
+  });
+  const writeB = deferred<Awaited<ReturnType<typeof api.journalCreate>>>();
+  const create = vi.mocked(api.journalCreate);
+  const originalCreate = create.getMockImplementation()!;
+  create.mockImplementation((...args) =>
+    create.mock.calls.length === 2 ? writeB.promise : originalCreate(...args),
+  );
+  fireEvent.change(screen.getByLabelText('Текст записи'), {
+    target: { value: 'Operation A' },
+  });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Сохранить запись' }),
+  );
+  await waitFor(() =>
+    expect(controller?.projectFeed?.page?.journalRevision).toBe(6),
+  );
+  expect(heldA).toBe(true);
+  // Original UI exposes Add until A's late callback. The corrected UI has
+  // already completed A and opened its next empty composer at the ack.
+  const add = screen.queryByRole('button', { name: 'Добавить запись' });
+  if (add) await userEvent.click(add);
+  fireEvent.change(screen.getByLabelText('Текст записи'), {
+    target: { value: 'Operation B' },
+  });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Сохранить запись' }),
+  );
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+  const envelopeB = structuredClone(create.mock.calls[1]);
+  const operationB = controller!.pending!.input.operationId;
+  await act(async () =>
+    taskReadA.resolve({
+      ...page5,
+      taskId: journal5.taskId,
+      journalRevision: 6,
+    }),
+  );
+  expect(screen.getByLabelText('Текст записи')).toHaveValue('Operation B');
+  expect(screen.getByLabelText('Текст записи')).toBeDisabled();
+  expect(controller?.pending?.input.operationId).toBe(operationB);
+  expect(controller?.writing).toBe(true);
+  await act(async () =>
+    writeB.reject(
+      new ApiError('NETWORK_ERROR', 'synthetic lost B response', null, true),
+    ),
+  );
+  expect(controller?.uncertain).toBe(true);
+  expect(screen.getByLabelText('Текст записи')).toHaveValue('Operation B');
+  expect(
+    screen.queryByText('Запись сохранена. Не удалось обновить историю'),
+  ).toBeNull();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Повторить сохранение' }),
+  );
+  await waitFor(() => expect(controller?.pending).toBeNull());
+  expect(create.mock.calls[2]).toEqual(envelopeB);
+  expect(create.mock.calls[2]![1].operationId).toBe(operationB);
+  expect(create.mock.calls[0]![1].operationId).not.toBe(operationB);
+  expect(
+    server.entries.filter((entry) => entry.body === 'Operation B'),
+  ).toHaveLength(1);
+  expect(screen.getByLabelText('Текст записи')).toHaveValue('');
+  expect(screen.getByLabelText('Текст записи')).toBeEnabled();
+  await screen.findByText('Operation B');
 });

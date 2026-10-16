@@ -871,3 +871,69 @@ it('401 after an acknowledged write clears the outcome and all private drafts', 
   expect(view.result.current.notice).toBeNull();
   expect(view.result.current.drafts.size).toBe(0);
 });
+
+it.each(['POST', 'PATCH', 'DELETE'] as const)(
+  '%s completion belongs to its ack, without waiting for background GET',
+  async (method) => {
+    const view = await setup();
+    let key: JournalDraftKey | null = null;
+    act(() => {
+      if (method === 'POST') {
+        key = view.result.current.openCreate(
+          journal5.projectId,
+          journal5.taskId,
+          '2026-10-09',
+        );
+      } else if (method === 'PATCH')
+        key = view.result.current.openEdit(journal5, 5);
+      else view.result.current.askDelete(journal5, 5);
+    });
+    if (key)
+      act(() =>
+        view.result.current.changeDraft(key!, {
+          body: 'Acknowledged operation',
+        }),
+      );
+    const ack: JournalMutation =
+      method === 'DELETE'
+        ? {
+            journalContractVersion: 1,
+            kind: 'deleted',
+            projectId: journal5.projectId,
+            journalRevision: 6,
+            deletedEntryId: journal5.id,
+          }
+        : {
+            journalContractVersion: 1,
+            kind: 'saved',
+            projectId: journal5.projectId,
+            journalRevision: 6,
+            entry: journal5,
+          };
+    vi.spyOn(
+      api,
+      method === 'POST'
+        ? 'journalCreate'
+        : method === 'PATCH'
+          ? 'journalUpdate'
+          : 'journalDelete',
+    ).mockResolvedValue(ack);
+    const heldRead = deferred<typeof page5>();
+    vi.mocked(api.journalProject).mockReturnValue(heldRead.promise);
+    let completed = false;
+    act(() => {
+      void (
+        method === 'DELETE'
+          ? view.result.current.confirmDelete()
+          : view.result.current.submit(key!)
+      ).then((saved) => {
+        completed = saved;
+      });
+    });
+    await waitFor(() => expect(completed).toBe(true));
+    expect(view.result.current.projectFeed?.phase).toBe('loading');
+    expect(view.result.current.pending).toBeNull();
+    expect(view.result.current.writing).toBe(false);
+    await act(async () => heldRead.resolve({ ...page5, journalRevision: 6 }));
+  },
+);
