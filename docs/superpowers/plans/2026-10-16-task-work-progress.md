@@ -22,7 +22,7 @@
 
 ## File structure
 
-`JournalEntryBody.tsx` отвечает за presentation-only preview и доступное независимое раскрытие. `JournalFeed.tsx` подключает его только при opt-in `collapseBodies?: boolean`. `TaskJournal.tsx` включает этот режим. `JournalEditor.tsx` использует компактное оформление только при `compactIdle`; полный редактор записи не меняется. `CalendarDateInput` переиспользуется, его подпись скрывается scoped CSS. `TaskPanel.tsx` и `strings.ts` различают подпись вкладки задачи и проекта. `styles/journal.css` содержит scoped layout/preview. Client/E2E тесты проверяют поведение; UI/DECISIONS/ACCEPTANCE/STATUS фиксируют результат без расширения C-решений.
+`JournalEntryBody.tsx` отвечает за presentation-only preview и доступное независимое раскрытие. `JournalFeed.tsx` подключает его только при opt-in `collapseBodies?: boolean` и хранит раскрытые IDs; optional controlled props body сохраняют состояние после временной выгрузки строки. `TaskJournal.tsx` включает этот режим. `JournalEditor.tsx` использует компактное оформление только при `compactIdle`; полный редактор записи не меняется. `CalendarDateInput` переиспользуется, его подпись скрывается scoped CSS. `TaskPanel.tsx` и `strings.ts` различают подпись вкладки задачи и проекта. `styles/journal.css` содержит scoped layout/preview. Client/E2E тесты проверяют поведение; UI/DECISIONS/ACCEPTANCE/STATUS фиксируют результат без расширения C-решений.
 
 ### Task 1: Компактное добавление и название вкладки
 
@@ -30,7 +30,7 @@
 
 **Interfaces:** Consumes existing `JournalDraft`, `JournalController`, `CalendarDateInput`, `compactIdle` and `TaskJournal`. Produces task-tab label `strings.workProgress` while `strings.journal` remains project label; compact editor layout retains existing form callbacks and accessible labels.
 
-- [ ] **Step 1: Failing tests.** Use `mockJournalApp`, open task via its treeitem, assert task tab and two-row input; project tab still uses «Журнал». Assert Enter changes text without `api.journalCreate`, Ctrl+Enter produces one create with exact original body/date, IME submit does not send, invalid date preserves body. Example assertions:
+- [x] **Step 1: Failing tests.** Use `mockJournalApp`, open task via its treeitem, assert task tab and two-row input; project tab still uses «Журнал». Assert Enter changes text without `api.journalCreate`, Ctrl+Enter produces one create with exact original body/date, IME submit does not send, invalid date preserves body. Example assertions:
 
 ```tsx
 expect(within(panel).getByRole('tab', { name: 'Ход работы' })).toBeVisible();
@@ -39,8 +39,8 @@ expect(screen.getByRole('tab', { name: 'Журнал', exact: true })).toBeVisib
 expect(api.journalCreate).toHaveBeenCalledWith(project.id, expect.objectContaining({ body: original, workDate: '2024-02-29' }));
 ```
 
-- [ ] **Step 2: Run red.** `npx vitest run tests/client/work-progress.test.tsx`; verify missing name/rows/composition guard failures.
-- [ ] **Step 3: Implement.** Add `workProgress: 'Ход работы'`; use it only for the task journal tab. Retain accessible submit name «Сохранить запись» while showing an SVG and tooltip in compact mode. Group textarea/date/submit into responsive grid; hide only compact calendar label and normal hint visually. Show errors and limits visibly when invalid. Preserve retry/clear/conflict callbacks and edit-mode form. Add composition guard before Ctrl/Cmd+Enter. Keep two-row minimum in task compact CSS; maintain autogrow on width/font changes. No changes to controller/storage.
+- [x] **Step 2: Run red.** `npx vitest run tests/client/work-progress.test.tsx`; verify missing name/rows/composition guard failures.
+- [x] **Step 3: Implement.** Add `workProgress: 'Ход работы'`; use it only for the task journal tab. Retain accessible submit name «Сохранить запись» while showing an SVG and tooltip in compact mode. Group textarea/date/submit into responsive grid; hide only compact calendar label and normal hint visually. Show errors and limits visibly when invalid. Preserve retry/clear/conflict callbacks and edit-mode form. Add composition guard before Ctrl/Cmd+Enter. Keep two-row minimum in task compact CSS; maintain autogrow on width/font changes. No changes to controller/storage.
 
 ```tsx
 if (event.nativeEvent.isComposing) return;
@@ -50,16 +50,16 @@ if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
 }
 ```
 
-- [ ] **Step 4: Browser checks and green.** Actual-server E2E seed via `seedJournal`; open task, verify two-row idle geometry and autogrow for pasted multiline text, visible date/save/clear, mobile width 375 and low height, no panel overflow. Verify Enter and Ctrl+Enter, exact body persistence, backdated grouping and no plan revision change. Update task-tab selectors only; project selectors remain «Журнал». Run `npx vitest run tests/client/work-progress.test.tsx tests/client/journal-compact.test.tsx tests/client/journal.test.tsx tests/client/journal-drafts.test.tsx tests/client/journal-navigation.test.tsx` and `npx playwright test tests/e2e/work-progress.spec.ts tests/e2e/task-journal.spec.ts tests/e2e/journal-drafts.spec.ts tests/e2e/journal-navigation.spec.ts` after build.
-- [ ] **Step 5: Review and commit.** Format changed files; run typecheck/lint; inspect diff and staged guard/Gitleaks, commit `feat: simplify task work progress entry form`, independent spec/quality review on exact commit. Fix relevant findings before Task 2.
+- [x] **Step 4: Browser checks and green.** Actual-server E2E seed via `seedJournal`; open task, verify two-row idle geometry and autogrow for pasted multiline text, visible date/save/clear, mobile width 375 and low height, no panel overflow. Verify Enter and Ctrl+Enter, exact body persistence, backdated grouping and no plan revision change. Update task-tab selectors only; project selectors remain «Журнал». Run `npx vitest run tests/client/work-progress.test.tsx tests/client/journal-compact.test.tsx tests/client/journal.test.tsx tests/client/journal-drafts.test.tsx tests/client/journal-navigation.test.tsx` and `npx playwright test tests/e2e/work-progress.spec.ts tests/e2e/task-journal.spec.ts tests/e2e/journal-drafts.spec.ts tests/e2e/journal-navigation.spec.ts` after build.
+- [x] **Step 5: Review and commit.** Format changed files; run typecheck/lint; inspect diff and staged guard/Gitleaks, commit `feat: simplify task work progress entry form`, independent spec/quality review on exact commit. Fix relevant findings before Task 2.
 
 ### Task 2: Четыре строки, исходное форматирование и завершение
 
-**Files:** Create `src/client/JournalEntryBody.tsx`, `tests/client/journal-entry-body.test.tsx`; Modify `src/client/JournalFeed.tsx`, `src/client/TaskJournal.tsx`, `src/client/styles/journal.css`, `tests/e2e/work-progress.spec.ts`; Update `docs/UI.md`, `docs/DECISIONS.md`, `docs/ACCEPTANCE.md`, `docs/STATUS.md` and this plan.
+**Files:** Create `src/client/JournalEntryBody.tsx`, `tests/client/journal-entry-body.test.tsx`, `tests/client/journal-preview-anchor.test.tsx`; Modify `src/client/App.tsx`, `src/client/TaskPanel.tsx`, `src/client/JournalEditor.tsx`, `src/client/JournalFeed.tsx`, `src/client/TaskJournal.tsx`, `src/client/styles/journal.css`, `tests/e2e/work-progress.spec.ts`; Update `docs/UI.md`, `docs/DECISIONS.md`, `docs/ACCEPTANCE.md`, `docs/STATUS.md` and this plan.
 
-**Interfaces:** Consumes Task 1 form/name and existing keyed entry sections. Produces `JournalEntryBody({body}: {body: string})` and `JournalFeed` optional `collapseBodies?: boolean` default false; TaskJournal sets true. State is local per entry, preserved across ordinary feed refresh and isolated by task scope.
+**Interfaces:** Consumes Task 1 form/name and existing keyed entry sections. Produces `JournalEntryBody({body}: {body: string})` and `JournalFeed` optional `collapseBodies?: boolean` default false; TaskJournal sets true. State is stored by entry ID in the feed, preserved across ordinary refresh/editor/page remount and isolated by task scope. `JournalEntryBody` additionally accepts optional `expanded?: boolean` and `onExpandedChange?: (expanded: boolean) => void`; `TaskJournal.visible?: boolean` (default true) forwards current tab visibility from App to JournalFeed; `JournalEntryBody.visible?: boolean` and `JournalEditor.visible?: boolean` (default true) synchronize reveal measurement and skip hidden zero-width geometry. TaskPanel retains a lazily visited journal under hidden; final anchor application uses one cancellable frame after body measurement and loads the next page only when the old offset is unreachable.
 
-- [ ] **Step 1: Failing tests.** Test short original has no toggle; normalized-short has toggle despite no layout overflow; LF/CRLF/space-only empty lines compact, full disclosure and editor preserve original; two rendered components expand independently. Stub layout only for unit overflow tests, use browser for real wrapping. Example:
+- [x] **Step 1: Failing tests.** Test short original has no toggle; normalized-short has toggle despite no layout overflow; LF/CRLF/space-only empty lines compact, full disclosure and editor preserve original; two rendered components expand independently. Stub layout only for unit overflow tests, use browser for real wrapping. Example:
 
 ```tsx
 const original = '\n\nАбзац A\n  \n\t\nАбзац B\n\n';
@@ -70,8 +70,8 @@ expect(document.querySelector('.journal-body')?.textContent).toBe(original);
 expect(screen.getByRole('button', { name: 'Свернуть' })).toHaveAttribute('aria-expanded', 'true');
 ```
 
-- [ ] **Step 2: Run red.** `npx vitest run tests/client/journal-entry-body.test.tsx`; confirm missing component/folding failures.
-- [ ] **Step 3: Implement.** Normalize preview only by removing blank edge lines and replacing internal blank runs with one blank line. Preserve original in expanded DOM and edit form. Measure actual four-line overflow via layout effect, ResizeObserver and font readiness/change; toggle appears for overflow or normalization difference. Render full body in ordinary project feed, opt-in body component in task feed; do not remount components on refresh. Keep keyset ordering and scroll owner unchanged.
+- [x] **Step 2: Run red.** `npx vitest run tests/client/journal-entry-body.test.tsx`; confirm missing component/folding failures.
+- [x] **Step 3: Implement.** Normalize preview only by removing blank edge lines and replacing internal blank runs with one blank line. Preserve original in expanded DOM and edit form. Measure actual four-line overflow via layout effect, ResizeObserver and font readiness/change; toggle appears for overflow or normalization difference. Render full body in ordinary project feed, opt-in body component in task feed; do not remount components on refresh. Keep keyset ordering and scroll owner unchanged.
 
 ```tsx
 {collapseBodies ? <JournalEntryBody body={entry.body} /> : <p className="journal-body">{entry.body}</p>}
@@ -82,4 +82,4 @@ expect(screen.getByRole('button', { name: 'Свернуть' })).toHaveAttribute
 
 ## Plan self-review
 
-Task 1 and Task 2 share only scoped journal CSS and new browser tests; execute sequentially. Task 2 consumes Task 1 accessible labels and composer layout without changing controller contracts. W01–W03 are covered by Task 1; W04–W06 by Task 2; W07–W10 by both regression checks. Normalized-short disclosure, project opt-in boundary, original body, IME and uncertain retry have explicit checks. No schema/architecture change requires ADR.
+Task 1 and Task 2 share scoped journal CSS, editor/panel and new browser tests; execute sequentially. Additional visibility props, lazy hidden mounting and feed-local disclosure are required by W06/W07 and have focused reveal/anchor regressions. Task 2 consumes Task 1 accessible labels and composer layout without changing controller contracts. W01–W03 are covered by Task 1; W04–W06 by Task 2; W07–W10 by both regression checks. Normalized-short disclosure, project opt-in boundary, original body, IME and uncertain retry have explicit checks. No schema/architecture change requires ADR.

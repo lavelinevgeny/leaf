@@ -150,3 +150,23 @@ Public export/import и контейнерная приёмка не подме�
 `tests/e2e/fs-dependencies.spec.ts`, сценарий C25 Details, теперь подтверждает одну task.edit сроков и нового предшественника именно по «Готово», canonical даты и общий Undo. Сценарий C25 graph отдельно сохраняет название/source/incoming общей кнопкой: fallback не утрачен. Одна отмена общего изменения не отменяет отдельно сохранённый статус — это самостоятельная подтверждённая операция.
 
 Для новой карточки дополнительно проверен нативный 200% в свежем headed Chromium на отдельном Xvfb: пять X11 Ctrl+equal, DPR 2, viewport 719×406 CSS px, fullscreen panel 719.5×406. Одинаковая ширина underlying документа 786 CSS px до/после открытия остаётся прежним ограничением общей мобильной шапки. Inline-описание, явная отмена, все три поля сроков и переход в пустой журнал доступны; CSS zoom и page-scale emulation не применялись. Профиль и runtime синтетические, без доступа к пользовательским сессиям.
+
+
+## Ход работы задачи D23 — W01–W10
+
+Спецификация: [task work progress](superpowers/specs/2026-10-16-task-work-progress-design.md). Приёмка использует независимую синтетику, существующий сервер и два browser projects 1440×900/1280×800; внутри сценариев также 375×812, 375×240, 1440×180 и расширенная панель. Новые client evidence: `tests/client/work-progress.test.tsx`, `journal-entry-body.test.tsx`, `journal-preview-anchor.test.tsx`. Browser evidence: `tests/e2e/work-progress.spec.ts`, действующие journal/navigation/draft suites. Общие итоги команд — в STATUS.
+
+| ID | Проверенное поведение и evidence |
+| --- | --- |
+| W01 | Task tab «Ход работы», project tab «Журнал», прежние внутренние IDs/URL; client и browser navigation. |
+| W02 | Две исходные строки, autogrow ввода/вставки/ширины/шрифта, полная ширина в 480 px панели, side-by-side только от 500 px контейнера; browser geometry/clear/focus. |
+| W03 | Enter переносит строку, Ctrl/Cmd+Enter сохраняет точный body/workDate; IME и невалидная дата/пустой текст/лимит не отправляются; client и actual-server browser. |
+| W04 | Короткий текст без toggle; пятистрочный, переносимый и длинный URL ограничены четырьмя визуальными строками; ResizeObserver/font events обновляют основание toggle. |
+| W05 | LF/CRLF, пустые крайние строки и серии из пробелов/табуляции сокращаются только в preview; normalized-short доступен полностью, server/editor/project feed хранят исходный body. |
+| W06 | Независимые раскрытые IDs переживают refresh, вкладки, edit-close и временную выгрузку tail pages; новая задача сбрасывает раскрытие. Hidden short→long/long→short измеряется при reveal. |
+| W07 | Backdated группы, пагинация и точный anchor ID/offset сохраняются. В hidden browser regression 25 записей и пять изменённых верхних body возвращаются к исходному offset −17 px. Следующая страница загружается только при нехватке высоты для offset; reachable и exhausted-cursor ветви покрыты. |
+| W08 | Existing journal/draft/replay/coherence/navigation проверки сохраняют независимость task draft, retry и сохранность текста; общий результат full suites записывается в STATUS. |
+| W09 | Keyboard toggle/меню/date/save/clear, узкая/низкая панель, реальный browser zoom 200% — без горизонтального переполнения панели. |
+| W10 | Project feed оставлен полным, существующий full editor показывает raw body и текстовые действия. |
+
+Нативный zoom 200% проверен root в свежем headed Chromium на отдельном Xvfb display, с disposable syntheticRuntime и новым browser context. Пять нативных X11 Ctrl+equal изменили innerWidth 1439→719, innerHeight 812→406 и DPR 1→2. Панель clientWidth/scrollWidth равны 719 CSS px. Из существовавшей underlying ширины документа 786 CSS px не выводится отсутствие общего mobile overflow; сама панель не переполняется. Раскрытие/сворачивание записи, меню и возврат фокуса, дата, save/clear доступны с клавиатуры и проверены в viewport. Enter добавляет перенос, Ctrl+Enter создаёт ровно одну новую запись с полным текстом; plan revision неизменна. CSS zoom/page-scale emulation не применялись. Browser/runtime/Xvfb закрыты; личные профили, sessions и данные не использовались.
