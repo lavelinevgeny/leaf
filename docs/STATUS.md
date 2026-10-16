@@ -1,5 +1,18 @@
 # Статус разработки
 
+## Карточка задачи D22 — Task 5, журнал и общая прокрутка, 2026-10-16
+
+Подтверждение POST/PATCH/DELETE журнала теперь хранится отдельно в scoped lastWrite (project/task/operation/result). После ack освобождаются подтверждённый pending и только совпадающий отправленный draft; revision floors сохраняют max. Ошибка последующего GET меняет только ленту: «Запись сохранена. Не удалось обновить историю» или отдельный результат удаления, повтор выполняет чтение. Initial GET, другая задача и новая неуспешная отправка не наследуют сообщение об успехе; 401/успешный logout очищают lastWrite вместе с private RAM. Независимые task/incoming drafts, exact retry и pinned planning baseline сохраняют прежние контракты.
+
+Вкладка журнала показывает сохранённый заголовок и ancestry из одной coherent metadata revision; отличающийся локальный заголовок помечен отдельно. Обычный путь берётся из сохранённого дерева. Реальные кнопки предков проходят общий guard: обычный переход открывает «Задача», переход из журнала — «Журнал»; Dependencies сохраняет собственную навигацию. Предок из более новой metadata, отсутствующий в локальном плане, остаётся доступным в журнале; редактирование плана блокируется с предложением обновить план, без ложного сообщения об удалении и без подмены planning baseline. Причина различает revision и project context.
+
+Task feed получает фактический scroll owner из панели; anchors/пагинация измеряют и восстанавливают именно его, включая fallback всей панели на низком экране. Постоянные вложенные scroll ленты и textarea устранены; textarea растёт по содержимому с учётом border-box. Project feed сохраняет собственную прокрутку, header date editor остаётся mounted.
+
+PASS: typecheck/lint/production build (существующее предупреждение chunk >500 kB)/format:check, unit 43 файла / 849 tests, integration 27 / 384, check:kit 72 Markdown / 427 links и git diff --check. Полный affected browser run: task-journal, journal-drafts, journal-navigation, action-menus — 88/88 в двух desktop projects; он предшествует последнему уточнению причины отсутствующей задачи. После последнего локального уточнения причины также повторены затронутый actual-server breadcrumb scenario в обоих desktop projects — 2/2 и focused client suites — 5 файлов / 170 tests; широкие unit/integration повторно не запускались для этой текстовой ветки; точные результаты и scoped security/hooks — в локальном отчёте Task 5. Новый scroll scenario дополнительно проверяет 375×812 и 1440×180, autosize, pagination, refresh/prepend anchor и переключение scroll owner. Новая запись с реальным серверным ack + отказом task GET сохраняется ровно один раз.
+
+Затронуты journal hook/state/feed/editor, TaskPanel/Header, App navigation, scoped CSS, client/browser fixtures и STATUS; App frozen replay assertion адаптирован к видимому сохранённому заголовку журнала с проверкой RAM draft после возврата на «Задача». API/schema/scheduler/security/lockfile не менялись. Полный завершающий browser gate, 200%/keyboard acceptance и deferred S2-M1/S4-SPEC-M1 остаются Task 6 после независимых reviews точного SHA Task 5. Workspace/history/kit integration дополнительно не запускались; private assets не читались и не изменялись. S4–S6 и первый релиз не завершены; remote actions не выполнялись.
+
+
 
 ## Карточка задачи D22 — Task 4, исправление review round 1, 2026-10-16
 

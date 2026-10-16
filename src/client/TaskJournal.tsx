@@ -10,11 +10,13 @@ export function TaskJournal({
   task,
   today,
   onEditorReady,
+  scrollContainer,
 }: {
   controller: JournalController;
   disabled?: boolean;
   task: Task;
   today: string;
+  scrollContainer?: HTMLElement | null | undefined;
   onEditorReady?: ((editor: HTMLTextAreaElement) => void) | undefined;
 }) {
   const [key, setKey] = useState<JournalDraftKey | null>(null);
@@ -81,10 +83,16 @@ export function TaskJournal({
           Добавить запись
         </button>
       )}
-      {controller.notice && <p role="status">{controller.notice}</p>}
+      {controller.notice &&
+        !controller.mutationError &&
+        controller.lastWrite?.projectId === task.projectId &&
+        controller.lastWrite.taskId === task.id && (
+          <p role="status">{controller.notice}</p>
+        )}
       {controller.taskFeed ? (
         <JournalFeed
           disabled={disabled}
+          scrollContainer={scrollContainer}
           state={controller.taskFeed}
           controller={controller}
           showTaskTitles={false}

@@ -276,3 +276,28 @@
   margin: 0;
   font-size: 12px;
 }
+
+/* The task journal shares the panel's current scroll owner, including the
+   low-height fallback where the complete panel becomes scrollable. */
+.task-journal .journal-feed {
+  max-height: none;
+  overflow: visible;
+  flex: none;
+}
+.task-journal .journal-editor textarea {
+  max-height: none;
+  overflow: hidden;
+  resize: none;
+}
+.panel-task-path {
+  font-size: 12px;
+  color: var(--leaf-text-muted);
+  overflow-wrap: anywhere;
+}
+.panel-task-path button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--leaf-accent);
+  text-align: start;
+}

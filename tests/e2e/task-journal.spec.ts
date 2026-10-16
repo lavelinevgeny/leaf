@@ -826,3 +826,220 @@ test('task panel inline entry editor keeps footer labels on one line without ove
       });
   }
 });
+
+test('acknowledged task write survives failed feed GET and retry reads without a second write', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await expect(panel.getByText('Записей пока нет')).toBeVisible();
+  let acknowledged = false;
+  let writes = 0;
+  const projectUrl = `${runtime.origin}/api/projects/${tree.project.id}/journal`;
+  const taskUrl = `${runtime.origin}/api/projects/${tree.project.id}/tasks/${doneId}/journal`;
+  await page.route(projectUrl, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    writes++;
+    const response = await route.fetch();
+    expect(response.status()).toBe(201);
+    acknowledged = true;
+    await route.fulfill({ response });
+  });
+  await page.route(taskUrl, async (route) => {
+    if (route.request().method() === 'GET' && acknowledged)
+      await route.fulfill({
+        status: 503,
+        json: {
+          error: {
+            code: 'SYNTHETIC_UNAVAILABLE',
+            message: 'Synthetic read failure',
+          },
+        },
+      });
+    else await route.continue();
+  });
+  await panel.getByLabel('Текст записи').fill('Подтверждённая запись');
+  await panel
+    .getByRole('button', { name: 'Сохранить запись', exact: true })
+    .click();
+  await expect(
+    panel.getByText('Запись сохранена. Не удалось обновить историю', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(panel.getByLabel('Текст записи')).toHaveValue('');
+  await expect(
+    panel.getByRole('button', { name: 'Повторить сохранение' }),
+  ).toHaveCount(0);
+  await page.unroute(taskUrl);
+  await panel.getByRole('button', { name: 'Повторить загрузку' }).click();
+  await expect(
+    panel.getByText('Подтверждённая запись', { exact: true }),
+  ).toBeVisible();
+  expect(writes).toBe(1);
+  const saved = await readJournalPage(page, runtime.origin, tree.project.id);
+  expect(saved.journalRevision).toBe(1);
+  expect(saved.entries).toHaveLength(1);
+});
+
+test('task journal autosizes and preserves anchors and pagination in the actual panel scroll owner', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  for (let i = 0; i < 55; i++)
+    await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      doneId,
+      i,
+      `Запись прокрутки ${i}\n${'строка\n'.repeat(3)}`,
+      '2026-10-09',
+    );
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await expect(panel.locator('[data-journal-entry]')).toHaveCount(50);
+  const editor = panel.getByLabel('Текст записи');
+  await editor.fill('Большой черновик\n'.repeat(24));
+  expect(
+    await editor.evaluate((node) => ({
+      height: node.clientHeight,
+      overflow: node.scrollHeight - node.clientHeight,
+    })),
+  ).toMatchObject({ overflow: 0 });
+  expect(await editor.evaluate((node) => node.clientHeight)).toBeGreaterThan(
+    300,
+  );
+  await editor.fill('');
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 375, height: 812 },
+    { width: 1440, height: 180 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(() => panel.locator('[data-panel-scroll-owner]').count())
+      .toBeLessThanOrEqual(1);
+    await expect
+      .poll(() =>
+        panel.evaluate(
+          (node) =>
+            node.matches('[data-panel-scroll-owner]') ||
+            !!node.querySelector('[data-panel-scroll-owner]'),
+        ),
+      )
+      .toBe(true);
+    const owner = () =>
+      panel.evaluate((node) => {
+        const scroll = node.matches('[data-panel-scroll-owner]')
+          ? node
+          : node.querySelector('[data-panel-scroll-owner]')!;
+        const feed = node.querySelector<HTMLElement>(
+          '[data-journal-feed="task"]',
+        )!;
+        return {
+          shell: scroll === node,
+          top: scroll.scrollTop,
+          feedTop: feed.scrollTop,
+          overflow: getComputedStyle(feed).overflowY,
+        };
+      });
+    await expect
+      .poll(async () => (await owner()).shell)
+      .toBe(viewport.height === 180);
+    await panel.evaluate((node) => {
+      const scroll = node.matches('[data-panel-scroll-owner]')
+        ? node
+        : node.querySelector('[data-panel-scroll-owner]')!;
+      scroll.scrollTop = 900;
+    });
+    expect((await owner()).top).toBeGreaterThan(0);
+    expect((await owner()).feedTop).toBe(0);
+    expect((await owner()).overflow).toBe('visible');
+    const anchor = await panel.evaluate((node) => {
+      const scroll = node.matches('[data-panel-scroll-owner]')
+        ? node
+        : node.querySelector('[data-panel-scroll-owner]')!;
+      const top = scroll.getBoundingClientRect().top;
+      const entry = [
+        ...node.querySelectorAll<HTMLElement>('[data-journal-entry]'),
+      ].find((item) => item.getBoundingClientRect().bottom > top)!;
+      return {
+        id: entry.dataset.journalEntry!,
+        offset: entry.getBoundingClientRect().top - top,
+      };
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect
+      .poll(() =>
+        panel.evaluate((node, id) => {
+          const scroll = node.matches('[data-panel-scroll-owner]')
+            ? node
+            : node.querySelector('[data-panel-scroll-owner]')!;
+          const entry = node.querySelector<HTMLElement>(
+            `[data-journal-entry="${id}"]`,
+          )!;
+          return (
+            entry.getBoundingClientRect().top -
+            scroll.getBoundingClientRect().top
+          );
+        }, anchor.id),
+      )
+      .toBeCloseTo(anchor.offset, 0);
+  }
+  await panel.getByRole('button', { name: 'Показать ещё' }).click();
+  await expect(panel.locator('[data-journal-entry]')).toHaveCount(55);
+  const anchor = await panel.evaluate((node) => {
+    const owner = node.querySelector<HTMLElement>('[data-panel-scroll-owner]')!;
+    owner.scrollTop = 900;
+    const top = owner.getBoundingClientRect().top;
+    const entry = [
+      ...node.querySelectorAll<HTMLElement>('[data-journal-entry]'),
+    ].find((item) => item.getBoundingClientRect().bottom > top)!;
+    return {
+      id: entry.dataset.journalEntry!,
+      offset: entry.getBoundingClientRect().top - top,
+    };
+  });
+  await createJournalEntry(
+    page,
+    runtime.origin,
+    tree.project.id,
+    doneId,
+    55,
+    'Новая запись перед якорем',
+    '2026-10-11',
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(
+    panel.getByText('Новая запись перед якорем', { exact: true }),
+  ).toHaveCount(1);
+  await expect
+    .poll(() =>
+      panel.evaluate((node, id) => {
+        const owner = node.querySelector<HTMLElement>(
+          '[data-panel-scroll-owner]',
+        )!;
+        return (
+          node
+            .querySelector<HTMLElement>(`[data-journal-entry="${id}"]`)!
+            .getBoundingClientRect().top - owner.getBoundingClientRect().top
+        );
+      }, anchor.id),
+    )
+    .toBeCloseTo(anchor.offset, 0);
+});

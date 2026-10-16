@@ -17,7 +17,9 @@ export function JournalFeed({
   showTaskTitles,
   restorePosition,
   onPosition,
+  scrollContainer,
 }: {
+  scrollContainer?: HTMLElement | null | undefined;
   visible?: boolean;
   restorePosition?: JournalPosition | undefined;
   onPosition?: ((position: JournalPosition) => void) | undefined;
@@ -52,7 +54,8 @@ export function JournalFeed({
   function readPosition(): JournalPosition | null {
     const node = root.current;
     if (!node || node.closest('[hidden]')) return null;
-    const top = node.getBoundingClientRect().top;
+    const owner = scrollContainer ?? node;
+    const top = owner.getBoundingClientRect().top;
     const entry = [
       ...node.querySelectorAll<HTMLElement>('[data-journal-entry]'),
     ].find((item) => item.getBoundingClientRect().bottom > top);
@@ -60,8 +63,8 @@ export function JournalFeed({
       id: entry?.dataset.journalEntry ?? null,
       date: entry?.dataset.workDate ?? null,
       offset: entry ? entry.getBoundingClientRect().top - top : 0,
-      top: node.scrollTop,
-      left: node.scrollLeft,
+      top: owner.scrollTop,
+      left: owner.scrollLeft,
     };
   }
   function capturePosition() {
@@ -83,7 +86,7 @@ export function JournalFeed({
     };
     document.addEventListener('pointerdown', cancel);
     document.addEventListener('focusin', focusin);
-    const node = root.current;
+    const node = scrollContainer ?? root.current;
     node?.addEventListener('wheel', cancel);
     const keyboard = (event: KeyboardEvent) => {
       if (
@@ -100,7 +103,12 @@ export function JournalFeed({
       node?.removeEventListener('wheel', cancel);
       node?.removeEventListener('keydown', keyboard);
     };
-  }, []);
+  }, [scrollContainer]);
+  useEffect(() => {
+    const owner = scrollContainer ?? root.current;
+    owner?.addEventListener('scroll', capturePosition);
+    return () => owner?.removeEventListener('scroll', capturePosition);
+  });
   useLayoutEffect(() => {
     // Each explicit history event supplies a new object; consumed requests are
     // not replayed by later renders or ordinary tab switches.
@@ -119,17 +127,18 @@ export function JournalFeed({
     if (!visible || !node || node.closest('[hidden]')) return;
     if (!coherent || !['ready', 'empty', 'no-match'].includes(state.phase))
       return;
+    const owner = scrollContainer ?? node;
     const saved = restoration.current;
     if (saved) {
       const entry = saved.id
         ? node.querySelector<HTMLElement>(`[data-journal-entry="${saved.id}"]`)
         : null;
       if (entry) {
-        node.scrollTop +=
+        owner.scrollTop +=
           entry.getBoundingClientRect().top -
-          node.getBoundingClientRect().top -
+          owner.getBoundingClientRect().top -
           saved.offset;
-        node.scrollLeft = saved.left;
+        owner.scrollLeft = saved.left;
       } else if (saved.id && state.page?.nextCursor) {
         void controller.loadMore(scope);
         return;
@@ -139,13 +148,19 @@ export function JournalFeed({
               `[data-journal-date="${saved.date}"]`,
             )
           : null;
-        node.scrollTop = group ? group.offsetTop : saved.id ? 0 : saved.top;
-        node.scrollLeft = saved.left;
+        owner.scrollTop = group
+          ? owner.scrollTop +
+            group.getBoundingClientRect().top -
+            owner.getBoundingClientRect().top
+          : saved.id
+            ? 0
+            : saved.top;
+        owner.scrollLeft = saved.left;
       }
       restoration.current = null;
     }
     capturePosition();
-  }, [state, visible, restorePosition]);
+  }, [state, visible, restorePosition, scrollContainer]);
   const entries = state.page?.entries ?? [];
   const draft = editing ? controller.getDraft(editing) : undefined;
   const confirmation = controller.deleteConfirmation;
@@ -214,7 +229,7 @@ export function JournalFeed({
       onScroll={capturePosition}
       className="journal-feed"
       data-journal-feed={scope}
-      data-journal-scroll
+      data-journal-scroll={scrollContainer ? undefined : ''}
       tabIndex={-1}
     >
       {['loading', 'loading-more'].includes(state.phase) && (
@@ -230,7 +245,17 @@ export function JournalFeed({
       )}
       {state.error && (
         <div role="alert">
-          <p>{state.error}</p>
+          <p>
+            {controller.notice &&
+            !controller.mutationError &&
+            !controller.pending &&
+            controller.lastWrite?.projectId === state.scope.projectId &&
+            (!state.scope.taskId ||
+              controller.lastWrite.taskId === state.scope.taskId) &&
+            state.phase === 'error'
+              ? `${controller.lastWrite.result === 'deleted' ? 'Запись удалена' : 'Запись сохранена'}. Не удалось обновить историю`
+              : state.error}
+          </p>
           <button
             type="button"
             onClick={() =>

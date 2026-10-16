@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { JournalDraft, JournalController } from './journal-state.js';
 import { journalUpdateSchema } from '../shared/journal-contracts.js';
 import { calendarDateSchema } from '../shared/contracts.js';
@@ -23,6 +23,26 @@ export function JournalEditor({
   compactIdle?: boolean;
 }) {
   const id = useId();
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const node = textarea.current;
+    if (!node?.closest('.task-journal')) return;
+    const resize = () => {
+      node.style.height = 'auto';
+      const style = getComputedStyle(node);
+      const border =
+        style.boxSizing === 'border-box'
+          ? parseFloat(style.borderTopWidth) +
+            parseFloat(style.borderBottomWidth)
+          : 0;
+      node.style.height = `${node.scrollHeight + border}px`;
+    };
+    resize();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    if (node.parentElement) observer?.observe(node.parentElement);
+    return () => observer?.disconnect();
+  }, [draft.body]);
   const locked = disabled || controller.writing || !!controller.pending;
   const valid = journalUpdateSchema.safeParse({
     journalContractVersion: 1,
@@ -69,6 +89,7 @@ export function JournalEditor({
           Текст записи
         </span>
         <textarea
+          ref={textarea}
           data-journal-body
           value={draft.body}
           rows={compactIdle ? 3 : 5}

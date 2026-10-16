@@ -363,6 +363,15 @@ it.each([
         await screen.findByRole('treeitem', { name: /^Сервер revision 8,/ }),
       ).toBeVisible();
     if (variant === 'new draft') {
+      expect(
+        screen.getByText('Несохранённое название: Новый локальный черновик'),
+      ).toBeVisible();
+      await user.click(
+        within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
+          'tab',
+          { name: 'Задача' },
+        ),
+      );
       expect(screen.getByLabelText('Название задачи')).toHaveValue(
         'Новый локальный черновик',
       );

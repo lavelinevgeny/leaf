@@ -268,6 +268,7 @@ it('does not resurrect any state after a late mutation following private reset',
   expect(view.result.current.drafts.size).toBe(0);
   expect(view.result.current.pending).toBeNull();
   expect(view.result.current.projectFeed).toBeNull();
+  expect(view.result.current.lastWrite).toBeNull();
 });
 it('planning busy or uncertainty blocks competing writes while a dirty plan alone permits journal save', async () => {
   const ctx = journalContext();
@@ -713,4 +714,160 @@ it('rendered conflict replacement confirms before discarding own body/date or ad
   expect(write.mock.calls[1]?.[2].operationId).not.toBe(
     write.mock.calls[0]?.[2].operationId,
   );
+});
+
+it.each(['POST', 'PATCH', 'DELETE'] as const)(
+  'acknowledges %s independently from a failed subsequent task GET',
+  async (method) => {
+    const view = renderHook(() =>
+      useJournal(journalContext({ taskId: journal5.taskId })),
+    );
+    await waitFor(() =>
+      expect(view.result.current.taskFeed?.phase).toBe('ready'),
+    );
+    let key: JournalDraftKey | null = null;
+    act(() => {
+      key =
+        method === 'POST'
+          ? view.result.current.openCreate(
+              journal5.projectId,
+              journal5.taskId,
+              '2026-10-09',
+            )
+          : view.result.current.openEdit(journal5, 5);
+      if (method !== 'DELETE')
+        view.result.current.changeDraft(key!, { body: 'Acknowledged text' });
+      else view.result.current.askDelete(journal5, 5);
+    });
+    const ack: JournalMutation =
+      method === 'DELETE'
+        ? {
+            journalContractVersion: 1,
+            projectId: journal5.projectId,
+            journalRevision: 6,
+            kind: 'deleted',
+            deletedEntryId: journal5.id,
+          }
+        : {
+            journalContractVersion: 1,
+            projectId: journal5.projectId,
+            journalRevision: 6,
+            kind: 'saved',
+            entry: journal5,
+          };
+    const write =
+      method === 'POST'
+        ? vi.spyOn(api, 'journalCreate').mockResolvedValue(ack)
+        : method === 'PATCH'
+          ? vi.spyOn(api, 'journalUpdate').mockResolvedValue(ack)
+          : vi.spyOn(api, 'journalDelete').mockResolvedValue(ack);
+    vi.mocked(api.journalProject).mockResolvedValue({
+      ...page5,
+      journalRevision: 6,
+    });
+    vi.mocked(api.journalTask).mockRejectedValue(
+      new ApiError('NETWORK_ERROR', 'synthetic read failure'),
+    );
+    await act(async () =>
+      expect(
+        await (method === 'DELETE'
+          ? view.result.current.confirmDelete()
+          : view.result.current.submit(key!)),
+      ).toBe(true),
+    );
+    expect(view.result.current.pending).toBeNull();
+    expect(view.result.current.uncertain).toBe(false);
+    expect(view.result.current.mutationError).toBeNull();
+    expect(view.result.current.lastWrite).toEqual({
+      projectId: journal5.projectId,
+      taskId: journal5.taskId,
+      operationId: (method === 'POST'
+        ? vi.mocked(api.journalCreate).mock.calls[0]?.[1]
+        : method === 'PATCH'
+          ? vi.mocked(api.journalUpdate).mock.calls[0]?.[2]
+          : vi.mocked(api.journalDelete).mock.calls[0]?.[2]
+      )?.operationId,
+      result: method === 'DELETE' ? 'deleted' : 'saved',
+    });
+    expect(view.result.current.taskFeed?.phase).toBe('error');
+    if (method !== 'DELETE')
+      expect(view.result.current.getDraft(key!)).toBeUndefined();
+    else expect(view.result.current.deleteConfirmation).toBeNull();
+    await act(async () => view.result.current.refresh());
+    expect(write).toHaveBeenCalledTimes(1);
+    act(() => view.result.current.clearPrivateState());
+    expect(view.result.current.lastWrite).toBeNull();
+  },
+);
+
+it('an acknowledged operation cannot erase a newer draft created while its read is still pending', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openCreate(
+      journal5.projectId,
+      journal5.taskId,
+      '2026-10-09',
+    );
+  });
+  act(() => view.result.current.changeDraft(key!, { body: 'Sent snapshot' }));
+  vi.spyOn(api, 'journalCreate').mockResolvedValue({
+    journalContractVersion: 1,
+    projectId: journal5.projectId,
+    journalRevision: 6,
+    kind: 'saved',
+    entry: journal5,
+  });
+  const read = deferred<typeof page5>();
+  vi.mocked(api.journalProject).mockReturnValue(read.promise);
+  let saving: Promise<boolean> | undefined;
+  act(() => {
+    saving = view.result.current.submit(key!);
+  });
+  await waitFor(() =>
+    expect(view.result.current.lastWrite?.result).toBe('saved'),
+  );
+  expect(view.result.current.pending).toBeNull();
+  expect(view.result.current.writing).toBe(false);
+  act(() => {
+    view.result.current.openCreate(
+      journal5.projectId,
+      journal5.taskId,
+      '2026-10-09',
+    );
+  });
+  act(() => view.result.current.changeDraft(key!, { body: 'New local draft' }));
+  await act(async () => {
+    read.resolve({ ...page5, journalRevision: 6 });
+    await saving;
+  });
+  expect(view.result.current.getDraft(key!)?.body).toBe('New local draft');
+});
+
+it('401 after an acknowledged write clears the outcome and all private drafts', async () => {
+  const view = await setup();
+  let key: JournalDraftKey | null = null;
+  act(() => {
+    key = view.result.current.openEdit(journal5, 5);
+  });
+  vi.spyOn(api, 'journalUpdate').mockResolvedValue({
+    journalContractVersion: 1,
+    projectId: journal5.projectId,
+    journalRevision: 6,
+    kind: 'saved',
+    entry: journal5,
+  });
+  vi.mocked(api.journalProject).mockResolvedValue({
+    ...page5,
+    journalRevision: 6,
+  });
+  await act(async () => view.result.current.submit(key!));
+  expect(view.result.current.lastWrite?.result).toBe('saved');
+  vi.mocked(api.journalProject).mockRejectedValue(
+    new ApiError('AUTH_REQUIRED', 'synthetic expiry', 401),
+  );
+  await act(async () => view.result.current.refresh());
+  expect(view.result.current.lastWrite).toBeNull();
+  expect(view.result.current.notice).toBeNull();
+  expect(view.result.current.drafts.size).toBe(0);
 });

@@ -11,6 +11,7 @@ import {
   editEntry,
   chooseTask,
   assertPrivateBrowserState,
+  planContent,
 } from '../helpers/journal-e2e.js';
 import { readTree, send } from '../helpers/optional-e2e.js';
 
@@ -739,4 +740,103 @@ test('native conflict replacement protects own body/date until confirmation and 
   } finally {
     await context.close();
   }
+});
+
+test('saved breadcrumb and journal metadata navigation guard dirty task title without saving independent drafts', async ({
+  page,
+  runtime,
+}) => {
+  let { tree } = await seedJournal(page, runtime);
+  const child = tree.tasks.find((task) => task.title === 'Уровень 1')!;
+  await page.goto(runtime.origin);
+  await page.locator(`[role="treeitem"][data-task-id="${child.id}"]`).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  const path = panel.getByRole('navigation', { name: 'Путь задачи' });
+  await expect(
+    path.getByRole('button', { name: 'Без дат', exact: true }),
+  ).toBeVisible();
+  await panel.getByRole('button', { name: 'Изменить название' }).click();
+  await panel
+    .getByLabel('Название задачи', { exact: true })
+    .fill('Локальный заголовок');
+  await panel.getByLabel('Название задачи', { exact: true }).press('Enter');
+  await path.getByRole('button', { name: 'Без дат', exact: true }).click();
+  const leave = page.getByRole('dialog', {
+    name: 'Несохранённые изменения задачи',
+  });
+  await expect(leave).toBeVisible();
+  await leave
+    .getByRole('button', { name: 'Продолжить редактирование' })
+    .click();
+  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByLabel('Текст записи').fill('Независимый RAM черновик');
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.create',
+    parentId: null,
+    title: 'Новый сохранённый родитель',
+  });
+  const remoteParent = tree.tasks.find(
+    (task) => task.title === 'Новый сохранённый родитель',
+  )!;
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.move',
+    taskId: child.id,
+    parentId: remoteParent.id,
+    position: 0,
+  });
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.edit',
+    taskId: child.id,
+    changes: { title: 'Сохранённое удалённое название' },
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(panel.getByRole('heading', { level: 2 })).toHaveText(
+    'Сохранённое удалённое название',
+  );
+  await expect(
+    panel.getByText('Несохранённое название: Локальный заголовок', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    path.getByRole('button', { name: 'Без дат', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    path.getByRole('button', {
+      name: 'Новый сохранённый родитель',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(panel.getByLabel('Текст записи')).toHaveValue(
+    'Независимый RAM черновик',
+  );
+  await path
+    .getByRole('button', { name: 'Новый сохранённый родитель', exact: true })
+    .click();
+  await expect(leave).toBeVisible();
+  await leave
+    .getByRole('button', { name: 'Продолжить редактирование' })
+    .click();
+  await expect(panel.getByRole('heading', { level: 2 })).toHaveText(
+    'Сохранённое удалённое название',
+  );
+  await path
+    .getByRole('button', { name: 'Новый сохранённый родитель', exact: true })
+    .click();
+  await leave.getByRole('button', { name: 'Не сохранять' }).click();
+  await expect(panel.getByRole('heading', { level: 2 })).toHaveText(
+    'Новый сохранённый родитель',
+  );
+  await expect(
+    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  expect(
+    planContent(await readTree(page, runtime.origin, tree.project.id)),
+  ).toEqual(planContent(tree));
+  expect(
+    (await readJournalPage(page, runtime.origin, tree.project.id)).entries,
+  ).toHaveLength(0);
 });

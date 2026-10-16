@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   sourceFieldsSchema,
   type Task,
@@ -16,7 +22,8 @@ import {
 } from './TaskPanelSchedule.js';
 import { TaskPanelHeader } from './TaskPanelHeader.js';
 import { TaskPanelFooter } from './TaskPanelFooter.js';
-import { visiblePanelTab } from './task-panel-view.js';
+import type { JournalMetadata } from './journal-state.js';
+import { panelScrollOwner, visiblePanelTab } from './task-panel-view.js';
 import { useTaskPanelLayout } from './use-task-panel-layout.js';
 import { sourceOf } from './planning-view.js';
 import { Dependencies } from './Dependencies.js';
@@ -69,8 +76,10 @@ interface Props {
   feedback: ReactNode;
   subtaskInput?: ReactNode;
   subtaskDraftActive?: boolean;
-  journalContent?: ReactNode;
-  journalTitle?: string | undefined;
+  journalContent?:
+    ReactNode | ((scrollContainer: HTMLElement | null) => ReactNode);
+  journalMetadata?: JournalMetadata | null | undefined;
+  onAncestor?: ((task: Task, tab: PanelTab) => void) | undefined;
   onJournal?:
     ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
 }
@@ -103,12 +112,43 @@ export function TaskPanel({
   subtaskInput,
   subtaskDraftActive = false,
   journalContent,
-  journalTitle,
+  journalMetadata,
+  onAncestor,
   onJournal,
   registerActions,
 }: Props) {
   const visibleTab = visiblePanelTab(tab);
   const layout = useTaskPanelLayout(tab);
+  const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(
+    null,
+  );
+  useLayoutEffect(() => {
+    setScrollContainer(
+      layout.panel.current ? panelScrollOwner(layout.panel.current) : null,
+    );
+  }, [layout.shellScroll]);
+  const pathTasks =
+    visibleTab === 'journal' ? (journalMetadata?.tasks ?? []) : tree.tasks;
+  const path: Task[] = [];
+  const seen = new Set<string>();
+  let pathTask = pathTasks.find((item) => item.id === task.id);
+  while (pathTask && !seen.has(pathTask.id)) {
+    if (pathTask.id !== task.id) path.unshift(pathTask);
+    seen.add(pathTask.id);
+    pathTask = pathTasks.find((item) => item.id === pathTask?.parentId);
+  }
+  const metadataOnlyTask =
+    journalMetadata?.projectId === tree.project.id &&
+    journalMetadata.revision > tree.project.revision &&
+    journalMetadata.tasks.some((item) => item.id === task.id);
+  const removedReason = metadataOnlyTask
+    ? 'Обновите план, чтобы проверить задачу и продолжить редактирование.'
+    : strings.taskRemoved;
+  const journalTitle =
+    visibleTab === 'journal'
+      ? (journalMetadata?.tasks.find((item) => item.id === task.id)?.title ??
+        'Загрузка задачи…')
+      : undefined;
   const [descriptionEditing, setDescriptionEditing] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [subtaskOpen, setSubtaskOpen] = useState(
@@ -410,7 +450,7 @@ export function TaskPanel({
     : locked
       ? strings.loading
       : removed
-        ? strings.taskRemoved
+        ? removedReason
         : conflict
           ? strings.resolveTaskConflict
           : dirty
@@ -451,7 +491,7 @@ export function TaskPanel({
               resetKey={resetKey}
               disabledReason={
                 removed
-                  ? strings.taskRemoved
+                  ? removedReason
                   : busy
                     ? strings.saving
                     : locked
@@ -480,7 +520,30 @@ export function TaskPanel({
           disabled={busy || locked}
           closeDisabled={busy || locked}
           onClose={onClose}
-          journalTitle={visibleTab === 'journal' ? journalTitle : undefined}
+          journalTitle={journalTitle}
+          unsavedTitle={!!journalMetadata && draft.title !== journalTitle}
+          path={
+            <nav aria-label="Путь задачи" className="panel-task-path">
+              <span>{tree.project.title}</span>
+              {path.map((item) => (
+                <span key={item.id}>
+                  <span aria-hidden="true"> / </span>
+                  <button
+                    type="button"
+                    disabled={busy || locked || !onAncestor}
+                    onClick={() =>
+                      onAncestor?.(
+                        item,
+                        visibleTab === 'journal' ? 'journal' : 'details',
+                      )
+                    }
+                  >
+                    {item.title}
+                  </button>
+                </span>
+              ))}
+            </nav>
+          }
           actions={
             <ActionMenu
               label="Действия задачи"
@@ -610,10 +673,12 @@ export function TaskPanel({
         className="panel-content"
         data-panel-scroll-owner={layout.shellScroll ? undefined : ''}
       >
-        {removed && <p role="status">{strings.taskRemoved}</p>}
+        {removed && <p role="status">{removedReason}</p>}
         {visibleTab === 'journal' ? (
           <div role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
-            {journalContent}
+            {typeof journalContent === 'function'
+              ? journalContent(scrollContainer)
+              : journalContent}
           </div>
         ) : visibleTab === 'details' ? (
           <div role="tabpanel" id="panel-details" aria-labelledby="tab-details">
@@ -785,7 +850,9 @@ export function TaskPanel({
           busy
             ? strings.saving
             : removed
-              ? strings.cannotSaveRemovedTask
+              ? metadataOnlyTask
+                ? removedReason
+                : strings.cannotSaveRemovedTask
               : conflict
                 ? strings.resolveTaskConflict
                 : !retry && !draft.title.trim()

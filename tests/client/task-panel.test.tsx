@@ -423,3 +423,51 @@ it('labels only scheduling edits as saved-plan analysis and keeps hard locks on 
     ).toBeDisabled();
   }
 });
+
+it.each([
+  { revision: 8, matchingProject: true, newer: true },
+  { revision: 7, matchingProject: true, newer: false },
+  { revision: 6, matchingProject: true, newer: false },
+  { revision: 8, matchingProject: false, newer: false },
+])(
+  'missing task feedback distinguishes newer coherent metadata from stale metadata: $revision/$matchingProject',
+  ({ revision, matchingProject, newer }) => {
+    const tree = initial();
+    tree.project.revision = 7;
+    tree.tasks = [];
+    render(
+      <Harness
+        task={task(1)}
+        tasks={[]}
+        tree={tree}
+        removed
+        journalMetadata={{
+          projectId: matchingProject
+            ? tree.project.id
+            : '99999999-9999-4999-8999-999999999999',
+          revision,
+          tasks: [task(1)],
+        }}
+      />,
+    );
+    if (newer) {
+      expect(
+        screen.getAllByText(
+          'Обновите план, чтобы проверить задачу и продолжить редактирование.',
+        )[0],
+      ).toBeVisible();
+      expect(screen.queryByText(/Выбранная задача удалена/)).toBeNull();
+      expect(
+        screen.queryByText('Сохранение удалённой задачи недоступно'),
+      ).toBeNull();
+    } else {
+      expect(screen.getByText(/Выбранная задача удалена/)).toBeVisible();
+      expect(
+        screen.queryByText(
+          'Обновите план, чтобы проверить задачу и продолжить редактирование.',
+        ),
+      ).toBeNull();
+    }
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  },
+);

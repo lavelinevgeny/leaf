@@ -702,3 +702,174 @@ it('U09 applying a period while the composer is open keeps the composer, its tex
     'Черновик при смене периода',
   );
 });
+
+it('task feed explains acknowledged write and failed read, retries only reads and scopes success to its task', async () => {
+  const panel = await openTaskJournal();
+  const taskRead = vi.mocked(api.journalTask);
+  const original = taskRead.getMockImplementation()!;
+  taskRead.mockRejectedValue(new Error('Synthetic GET failure'));
+  fireEvent.change(within(panel).getByLabelText('Текст записи'), {
+    target: { value: 'Saved before GET failure' },
+  });
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Сохранить запись' }),
+  );
+  await within(panel).findByText(
+    'Запись сохранена. Не удалось обновить историю',
+  );
+  expect(within(panel).getByLabelText('Текст записи')).toHaveValue('');
+  taskRead.mockImplementation(original);
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Повторить загрузку' }),
+  );
+  await within(panel).findByText('Saved before GET failure');
+  expect(api.journalCreate).toHaveBeenCalledTimes(1);
+});
+
+it('journal primary title and ancestor path come from coherent metadata while unsaved task title stays separate', async () => {
+  const server = mockJournalApp();
+  const parent = task(2, { title: 'Saved parent' });
+  server.tree.tasks = [parent, task(1, { parentId: parent.id })];
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  await userEvent.click(
+    screen.getAllByRole('treeitem', { name: /^Работа 1,/ })[0]!,
+  );
+  const panel = screen.getByRole('complementary', { name: 'Задача' });
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Изменить название' }),
+  );
+  fireEvent.change(within(panel).getByLabelText('Название задачи'), {
+    target: { value: 'Own unsaved title' },
+  });
+  fireEvent.keyDown(within(panel).getByLabelText('Название задачи'), {
+    key: 'Enter',
+  });
+  await userEvent.click(within(panel).getByRole('tab', { name: 'Журнал' }));
+  server.projects[0]!.revision = 1;
+  server.tree.project.revision = 1;
+  const remote = task(3, { title: 'Remote parent' });
+  server.tree.tasks = [
+    parent,
+    remote,
+    task(1, { parentId: remote.id, title: 'Remote saved title' }),
+  ];
+  act(() => window.dispatchEvent(new Event('focus')));
+  await waitFor(() =>
+    expect(within(panel).getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Remote saved title',
+    ),
+  );
+  expect(
+    within(panel).getByText('Несохранённое название: Own unsaved title'),
+  ).toBeVisible();
+  const path = within(panel).getByRole('navigation', { name: 'Путь задачи' });
+  expect(path).toHaveTextContent('Remote parent');
+  expect(path).not.toHaveTextContent('Saved parent');
+  await userEvent.click(
+    within(path).getByRole('button', { name: 'Remote parent' }),
+  );
+  await screen.findByRole('dialog', { name: 'Несохранённые изменения задачи' });
+  await userEvent.click(screen.getByRole('button', { name: 'Не сохранять' }));
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
+        'heading',
+        { level: 2 },
+      ),
+    ).toHaveTextContent('Remote parent'),
+  );
+  expect(document.getElementById('tab-journal')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  expect(
+    within(screen.getByRole('complementary', { name: 'Задача' })).getAllByText(
+      'Обновите план, чтобы проверить задачу и продолжить редактирование.',
+    )[0],
+  ).toBeVisible();
+  expect(api.command).not.toHaveBeenCalled();
+});
+
+it('initial task GET failure has no saved outcome; another task cannot inherit a saved notice', async () => {
+  const server = mockJournalApp();
+  server.tree.tasks.push(task(2));
+  vi.mocked(api.journalTask).mockRejectedValue(
+    new Error('Initial synthetic GET failure'),
+  );
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  await userEvent.click(
+    screen.getAllByRole('button', { name: 'Добавить запись: Работа 1' })[0]!,
+  );
+  const panel = screen.getByRole('complementary', { name: 'Задача' });
+  await within(panel).findByText(
+    'Не удалось загрузить журнал. Повторите попытку.',
+  );
+  expect(within(panel).queryByText(/Запись сохранена/)).toBeNull();
+  fireEvent.change(within(panel).getByLabelText('Текст записи'), {
+    target: { value: 'Saved for first task' },
+  });
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Сохранить запись' }),
+  );
+  await within(panel).findByText(
+    'Запись сохранена. Не удалось обновить историю',
+  );
+  await userEvent.click(
+    screen.getAllByRole('button', { name: 'Добавить запись: Работа 2' })[0]!,
+  );
+  const currentPanel = screen.getByRole('complementary', { name: 'Задача' });
+  await within(currentPanel).findByText(
+    'Не удалось загрузить журнал. Повторите попытку.',
+  );
+  expect(within(currentPanel).queryByText(/Запись сохранена/)).toBeNull();
+});
+
+it('normal saved ancestor buttons use the task tab and the common dirty guard', async () => {
+  const server = mockJournalApp();
+  server.tree.tasks = [
+    task(2, { title: 'Ordinary parent' }),
+    task(1, { parentId: task(2).id }),
+  ];
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  await userEvent.click(
+    screen.getAllByRole('treeitem', { name: /^Работа 1,/ })[0]!,
+  );
+  const panel = screen.getByRole('complementary', { name: 'Задача' });
+  const path = within(panel).getByRole('navigation', { name: 'Путь задачи' });
+  expect(path).toHaveTextContent('Демо-проект / Ordinary parent');
+  await userEvent.click(
+    within(panel).getByRole('button', { name: 'Изменить название' }),
+  );
+  fireEvent.change(within(panel).getByLabelText('Название задачи'), {
+    target: { value: 'Dirty normal title' },
+  });
+  await userEvent.click(
+    within(path).getByRole('button', { name: 'Ordinary parent' }),
+  );
+  await screen.findByRole('dialog', { name: 'Несохранённые изменения задачи' });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
+  expect(within(panel).getByLabelText('Название задачи')).toHaveValue(
+    'Dirty normal title',
+  );
+  await userEvent.click(
+    within(path).getByRole('button', { name: 'Ordinary parent' }),
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Не сохранять' }));
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
+        'heading',
+        { level: 2 },
+      ),
+    ).toHaveTextContent('Ordinary parent'),
+  );
+  expect(document.getElementById('tab-details')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+});

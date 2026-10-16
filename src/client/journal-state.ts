@@ -79,7 +79,14 @@ export type JournalFeedState = {
     | 'metadata-error';
   error: string | null; // safe display string, no HTTP dumps
 };
+export type JournalLastWrite = {
+  projectId: string;
+  taskId: string | null;
+  operationId: string;
+  result: 'saved' | 'deleted';
+};
 export type JournalController = {
+  lastWrite: JournalLastWrite | null;
   active: boolean;
   projectFeed: JournalFeedState | null;
   taskFeed: JournalFeedState | null;

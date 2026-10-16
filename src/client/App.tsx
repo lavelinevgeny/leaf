@@ -1114,6 +1114,13 @@ export function App() {
     });
     return true;
   }
+  function selectAncestor(task: Task, tab: PanelTab) {
+    requestTaskNavigation(() => {
+      if (selected) setPanelHistory((previous) => [...previous, branchVisit()]);
+      setSelected(task);
+      setPanelTab(tab);
+    });
+  }
   function selectNeighbor(task: Task) {
     requestTaskNavigation(() => {
       if (selected) setPanelHistory((previous) => [...previous, branchVisit()]);
@@ -2263,15 +2270,13 @@ export function App() {
             }
           }}
           onJournal={openTaskJournal}
-          journalTitle={
-            journal.taskFeed?.metadata?.tasks.find(
-              (task) => task.id === selectedTask.id,
-            )?.title
-          }
-          journalContent={
+          journalMetadata={journal.taskFeed?.metadata}
+          onAncestor={selectAncestor}
+          journalContent={(scrollContainer) => (
             <TaskJournal
               disabled={busy || !!pending || conflict}
               controller={journal}
+              scrollContainer={scrollContainer}
               task={selectedTask}
               today={projectToday}
               onEditorReady={(editor) => {
@@ -2289,7 +2294,7 @@ export function App() {
                 });
               }}
             />
-          }
+          )}
           onDependency={(value) =>
             canNavigate() ? command(value) : Promise.resolve(false)
           }

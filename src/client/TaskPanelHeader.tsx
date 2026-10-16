@@ -13,6 +13,8 @@ interface Props {
   back: ReactNode;
   actions?: ReactNode;
   schedule: ReactNode;
+  path?: ReactNode;
+  unsavedTitle?: boolean;
   journalTitle?: string | undefined;
 }
 export function TaskPanelHeader({
@@ -27,6 +29,8 @@ export function TaskPanelHeader({
   actions,
   schedule,
   journalTitle,
+  path,
+  unsavedTitle,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const snapshot = useRef(title);
@@ -49,7 +53,15 @@ export function TaskPanelHeader({
           ×
         </button>
       </div>
-      {editing ? (
+      {path}
+      {journalTitle !== undefined ? (
+        <>
+          <h2>{journalTitle}</h2>
+          {unsavedTitle && journalTitle !== title && (
+            <p className="field-hint">Несохранённое название: {title}</p>
+          )}
+        </>
+      ) : editing ? (
         <h2 aria-label={journalTitle ?? title}>
           <label className="panel-title-editor">
             <span className="sr-only">{strings.title}</span>
@@ -111,11 +123,6 @@ export function TaskPanelHeader({
         </select>
       </label>
       {schedule}
-      {journalTitle !== undefined && journalTitle !== title && (
-        <p className="field-hint">
-          {strings.journalTaskTitle}: {journalTitle}
-        </p>
-      )}
     </header>
   );
 }
