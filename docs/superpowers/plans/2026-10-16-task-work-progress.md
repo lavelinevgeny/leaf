@@ -96,8 +96,10 @@ Root gates PASS: verify 1294/1294 unit/integration tests в 75 файлах, typ
 
 Tasks 1–2 фиксируют первоначальную реализацию. Этот пункт заменяет прежнее исключение проектной ленты из сворачивания; название и форма проекта остаются прежними.
 
-**Files:** `src/client/ProjectJournal.tsx`, поясняющие комментарии `JournalFeed.tsx`, `tests/client/work-progress.test.tsx`, ожидания отложенной прокрутки `tests/client/journal-navigation.test.tsx`, `tests/e2e/work-progress.spec.ts`, текущие UI/DECISIONS/ACCEPTANCE/STATUS/START_HERE и спецификация.
+**Files:** `src/client/ProjectJournal.tsx`, поясняющие комментарии `JournalFeed.tsx`, `tests/client/work-progress.test.tsx`, ожидания отложенной прокрутки `tests/client/journal-navigation.test.tsx`, `tests/e2e/work-progress.spec.ts`, ручная прокрутка в `tests/e2e/task-journal.spec.ts`, текущие UI/DECISIONS/ACCEPTANCE/STATUS/START_HERE и спецификация.
 
 - [x] Tests-first: client App/project case нормализованного preview и независимого раскрытия; actual-server project case с 55 записями, страницами, refresh/anchor, вкладками и поиском. Уточнить существующий общий сценарий обеих лент: четыре строки, keyboard toggle, исходный текст и полный editor. Red до реализации: client 1 fail/5 pass (сырой preview вместо компактного), новый browser case не находит toggle.
 - [x] Включить существующий `<JournalFeed collapseBodies ... />` в ProjectJournal. Переиспользовать тот же компонент, set раскрытых IDs, visible/reveal measurement и отменяемое восстановление scroll anchor, без дублирования нормализации и записей API.
-- [ ] Проверить `npm run verify`, `npm run format:check`, `npm run check:kit`, `npm run check:package` и профильные journal/work-progress E2E; исправить вызванные изменением сбои без ослабления assertions. Обновить фактический STATUS и сделать локальный scoped commit с включёнными guard/hooks.
+- [x] Проверить `npm run verify`, `npm run format:check`, `npm run check:kit`, `npm run check:package` и профильные journal/work-progress E2E; исправить вызванные изменением сбои без ослабления assertions. Обновить фактический STATUS и сделать локальный scoped commit с включёнными guard/hooks.
+
+Task 3 завершён: `82f7fb2`, test-only уточнение `bc01386`; независимые scoped review Approved. PASS verify 1295/1295, typecheck/lint/build; профильные E2E 106/106 в двух разрешениях, exit 0, без skips/retries; format:check, check:kit, check:package, diff/staged guard и штатные hooks. Полные факты, ограничения и следующий шаг — в STATUS.
