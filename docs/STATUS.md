@@ -1,5 +1,15 @@
 # Статус разработки
 
+## Разрешённый push — полный локальный gate, 2026-10-16
+
+Исправление ожидания scroll restore и правила проверки до деплоя зафиксированы в `8ad4deb`. Перед разрешённой отправкой текущей `feat/task-panel-ux` создан обычный одноразовый чистый клон этого коммита без private runtime/локальных agent files. В нём явно установлены штатные hooks и выполнен свежий `npm ci --strict-allow-scripts --no-audit --no-fund` по lockfile.
+
+PASS в чистом клоне: полный `npm run preflight` (56/56 kit/harness tests с настоящим Gitleaks; workspace/index/history и metadata scans), `npm run verify` (typecheck, lint, 1295/1295 tests в 75 файлах, production build), `npm run format:check`, `npm run check:package`, полный `npm run test:e2e` — 330/330 за 8,3 минуты в 1440×900 и 1280×800, без skipped/retries. В основном checkout отдельно PASS `npm run security:staged`, `npm run security:history` и штатные commit hooks. Все application runtime и fixtures синтетические; private owner files не читались и не менялись. Прежнее предупреждение chunk >500 kB сохраняется.
+
+Известный FAIL workspace guard в owner checkout из-за ранее существующих private/local-agent/неодобренных временных assets остаётся; полный gate пройден в чистом клоне без ослабления политики. Docker build/smoke здесь NOT RUN. Эта итоговая запись меняет только STATUS; проверенный application/test source соответствует `8ad4deb`. GitHub Actions для новых коммитов запускается после push; до его завершения remote CI PASS не заявляется. Разрешение на push не включает merge или deployment.
+
+Остаются ветки `feat/task-panel-ux`, `main` и `docs/task-panel-ux-spec`, linked worktree нет; проверочный clone временный. Следующий шаг — проверить `app` и `kit` отправленного SHA, затем отдельное решение владельца о merge/deploy.
+
 ## Проверки до деплоя и ожидание scroll restore, 2026-10-16
 
 В GitHub Actions run `38921061012`, job `117040782111`, кандидат `21424f0`, упал J14 в `tests/client/journal-compact.test.tsx`: появление prepended-записи проверялось до следующего animation frame, восстанавливающего scroll anchor при `collapseBodies`. Изолированный исходный тест прошёл; единичный PASS не исключает гонку. Исправлен только тест: `waitFor` ожидает прежние точные значения top 150 и scrollTop 350. Production source, API, scheduler, зависимости и CI workflows не менялись.
