@@ -965,6 +965,7 @@ test('task journal autosizes and preserves anchors and pagination in the actual 
       const scroll = node.matches('[data-panel-scroll-owner]')
         ? node
         : node.querySelector('[data-panel-scroll-owner]')!;
+      scroll.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
       scroll.scrollTop = 900;
     });
     expect((await owner()).top).toBeGreaterThan(0);
@@ -1005,6 +1006,8 @@ test('task journal autosizes and preserves anchors and pagination in the actual 
   await expect(panel.locator('[data-journal-entry]')).toHaveCount(55);
   const anchor = await panel.evaluate((node) => {
     const owner = node.querySelector<HTMLElement>('[data-panel-scroll-owner]')!;
+    // Manual scrolling cancels a still-pending load-more restoration frame.
+    owner.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
     owner.scrollTop = 900;
     const top = owner.getBoundingClientRect().top;
     const entry = [
@@ -1024,22 +1027,21 @@ test('task journal autosizes and preserves anchors and pagination in the actual 
     'Новая запись перед якорем',
     '2026-10-11',
   );
+  const offset = () =>
+    panel.evaluate((node, id) => {
+      const owner = node.querySelector<HTMLElement>(
+        '[data-panel-scroll-owner]',
+      )!;
+      return (
+        node
+          .querySelector<HTMLElement>(`[data-journal-entry="${id}"]`)!
+          .getBoundingClientRect().top - owner.getBoundingClientRect().top
+      );
+    }, anchor.id);
+  await expect.poll(offset).toBeCloseTo(anchor.offset, 0);
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(
     panel.getByText('Новая запись перед якорем', { exact: true }),
   ).toHaveCount(1);
-  await expect
-    .poll(() =>
-      panel.evaluate((node, id) => {
-        const owner = node.querySelector<HTMLElement>(
-          '[data-panel-scroll-owner]',
-        )!;
-        return (
-          node
-            .querySelector<HTMLElement>(`[data-journal-entry="${id}"]`)!
-            .getBoundingClientRect().top - owner.getBoundingClientRect().top
-        );
-      }, anchor.id),
-    )
-    .toBeCloseTo(anchor.offset, 0);
+  await expect.poll(offset).toBeCloseTo(anchor.offset, 0);
 });
