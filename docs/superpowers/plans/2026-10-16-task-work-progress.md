@@ -77,9 +77,16 @@ expect(screen.getByRole('button', { name: 'Свернуть' })).toHaveAttribute
 {collapseBodies ? <JournalEntryBody body={entry.body} /> : <p className="journal-body">{entry.body}</p>}
 ```
 
-- [ ] **Step 4: Browser and integration.** Extend actual-server E2E: short/5-line/wrapped-long/two-long/normalized-short entries; independently expand, refresh, switch tabs, check original text in editor/server and project feed. Check width/font changes and actual browser zoom 200%, keyboard toggle/menus, pagination and anchor. Run new client tests and affected journal/client suites; `npm run verify`, `npm run format:check`, `npm run check:kit`, `npm run check:package`, full `npm run test:e2e` once stable. Fix caused failures and record unrelated failures accurately without skip/empty tests.
-- [ ] **Step 5: Document, review, commit.** Add working D23 reference (not a new C-decision), UI/acceptance W01–W10 facts, STATUS changed areas, checks, limits and next task. Mark completed steps with evidence, run diff check and staged privacy/Gitleaks; commit `feat: collapse long task work progress entries`. Independent task review and final review over the feature range; no merge/push/deploy. Report existing branch/worktrees without deleting owner files.
+- [x] **Step 4: Browser and integration.** Extend actual-server E2E: short/5-line/wrapped-long/two-long/normalized-short entries; independently expand, refresh, switch tabs, check original text in editor/server and project feed. Check width/font changes and actual browser zoom 200%, keyboard toggle/menus, pagination and anchor. Run new client tests and affected journal/client suites; `npm run verify`, `npm run format:check`, `npm run check:kit`, `npm run check:package`, full `npm run test:e2e` once stable. Fix caused failures and record unrelated failures accurately without skip/empty tests.
+- [x] **Step 5: Document, review, commit.** Add working D23 reference (not a new C-decision), UI/acceptance W01–W10 facts, STATUS changed areas, checks, limits and next task. Mark completed steps with evidence, run diff check and staged privacy/Gitleaks; commit `feat: collapse long task work progress entries`. Independent task review and final review over the feature range; no merge/push/deploy. Report existing branch/worktrees without deleting owner files.
 
 ## Plan self-review
 
 Task 1 and Task 2 share scoped journal CSS, editor/panel and new browser tests; execute sequentially. Additional visibility props, lazy hidden mounting and feed-local disclosure are required by W06/W07 and have focused reveal/anchor regressions. Task 2 consumes Task 1 accessible labels and composer layout without changing controller contracts. W01–W03 are covered by Task 1; W04–W06 by Task 2; W07–W10 by both regression checks. Normalized-short disclosure, project opt-in boundary, original body, IME and uncertain retry have explicit checks. No schema/architecture change requires ADR.
+
+
+## Execution result — 2026-10-16
+
+Task 1: `c3e689a`, независимое spec/quality review Approved. Task 2: `3bb3764`, исправление hidden reveal `032b44d`; scoped re-review Approved. Форматирование regression test: `b6cdc00`. Итоговое feature review `bcb1c86..b6cdc00` Approved, открытых находок нет.
+
+Root gates PASS: verify 1294/1294 unit/integration tests в 75 файлах, typecheck/lint/build; full E2E 328/328 в двух разрешениях без skips/retries; настоящий browser zoom 200%; format:check, check:kit, check:package, diff/staged guard/Gitleaks. Workspace privacy scan остаётся FAIL из-за прежних приватных локальных артефактов; history/preflight не запускались, внешних действий нет. Полные факты и ограничения — в [STATUS](../../STATUS.md), W01–W10 — в [ACCEPTANCE](../../ACCEPTANCE.md).

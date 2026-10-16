@@ -15,10 +15,12 @@ Tests-first и независимое review: Task 1 одобрен без бл�
 - PASS `npm run doctor`; итоговый `npm run verify`: typecheck, lint, 1294/1294 unit/integration tests в 75 файлах, production build. Прежнее предупреждение Vite о chunk >500 kB сохраняется.
 - PASS профильные client 245/245 и `work-progress.spec.ts` 14/14 в обоих browser projects; дополнительные 70 journal E2E прошли на первом блоке и не выданы за финальный общий прогон.
 - PASS нативный zoom 200%: свежий headed Chromium/Xvfb и syntheticRuntime, X11 Ctrl+equal ×5, DPR 1→2, viewport 1439×812→719×406. Panel clientWidth/scrollWidth 719/719; keyboard disclosure/menu/date/save/clear и один journal submit проверены, plan revision неизменна. Ширина underlying документа 786 CSS px — прежнее ограничение общей мобильной шапки.
-- Полный `npm run test:e2e` на финальном коде выполняется; результат будет внесён перед завершением. Предыдущий общий запуск остановлен после подтверждённой review-находки и не считается пройденным.
+- PASS полный `npm run test:e2e`: 328/328 в 1440×900 и 1280×800, 8,0 минут, без skipped/retries. Предыдущий общий запуск остановлен после подтверждённой review-находки и не считается пройденным. Промежуточное падение focus-return в профильном прогоне прошло отдельно; окончательный общий прогон прошёл без падений и без постороннего production fix.
 - Staged guard/Gitleaks и enabled commit hooks прошли на каждом code-коммите. `security:workspace` — FAIL из-за существовавших локальных agent paths и непроверенных изображений/архива в приватных временных каталогах; они не читались, не менялись и не добавлялись в index. Guard не ослаблен. `security:history` и `preflight` не запускались; push/deploy не выполнялись.
 
-Синтетические desktop/mobile screenshots просмотрены локально и не добавлены в Git. Общие форматирование, kit/package checks и финальное review документации закрываются в текущей интеграции. Ветка `feat/task-panel-ux`, новые ветки/worktrees не создавались. S4–S6 и первый релиз остаются незавершёнными. Следующий шаг — завершить общий E2E/review, затем визуальная проверка владельцем.
+PASS `npm run format:check`, `npm run check:kit` (74 Markdown, 461 links), `npm run check:package`, `git diff --check`, scoped staged guard/Gitleaks и enabled hooks. Итоговое независимое review диапазона `bcb1c86..b6cdc00` одобрило спецификацию и качество, открытых Critical/Important/Minor нет; окончательное обновление этой записи и checkbox плана содержит только факты прошедшего общего прогона. Синтетические desktop/mobile screenshots просмотрены локально и не добавлены в Git.
+
+Ветка `feat/task-panel-ux`; остаются `main` и `docs/task-panel-ux-spec`, linked worktree нет, новых веток не создавалось. S4–S6 и первый релиз остаются незавершёнными. Следующий шаг — визуальная проверка владельцем готовой вкладки; интеграция/публикация требуют отдельного решения.
 
 
 
