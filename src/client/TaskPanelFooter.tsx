@@ -4,6 +4,7 @@ import { strings } from './strings.js';
 interface Props {
   dirty: boolean;
   busy: boolean;
+  saving: boolean;
   retry: boolean;
   disabledReason: string | null;
   onSave: () => void;
@@ -17,6 +18,7 @@ interface Props {
 export function TaskPanelFooter({
   dirty,
   busy,
+  saving,
   retry,
   disabledReason,
   onSave,
@@ -31,7 +33,7 @@ export function TaskPanelFooter({
     <footer className="panel-footer" aria-label={strings.taskSave}>
       {feedback}
       <div role="status">
-        {busy
+        {saving
           ? strings.saving
           : saved && !dirty
             ? strings.saved
@@ -54,7 +56,7 @@ export function TaskPanelFooter({
             onSave();
           }}
         >
-          {busy ? strings.saving : retry ? strings.retrySave : strings.save}
+          {saving ? strings.saving : retry ? strings.retrySave : strings.save}
         </button>
         {dirty && (
           <button

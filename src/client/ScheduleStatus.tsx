@@ -110,9 +110,11 @@ export function ScheduleStatus({
 export function ScheduleProblems({
   tree,
   task,
+  savedPlan = false,
 }: {
   tree: ProjectTree;
   task: Task;
+  savedPlan?: boolean;
 }) {
   const diagnostics = tree.schedule.diagnostics.filter(
     (item) => !isAbsenceOnlyDiagnostic(item) && item.taskIds.includes(task.id),
@@ -120,6 +122,7 @@ export function ScheduleProblems({
   if (!diagnostics.length) return null;
   return (
     <div className="schedule-status" aria-live="polite">
+      {savedPlan && <p>По сохранённому плану</p>}
       {tree.schedule.feasibility === 'infeasible' &&
         actionableDiagnostics(diagnostics).length > 0 && (
           <p className="schedule-error">{strings.infeasible}</p>

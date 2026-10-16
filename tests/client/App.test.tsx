@@ -819,6 +819,7 @@ describe('client HTTP interactions', () => {
     await openPanelQuick(user);
     await editTaskDescription(user);
     await user.type(panel.getByLabelText('Описание'), 'Черновик деталей');
+    await user.click(panel.getByRole('tab', { name: 'Журнал' }));
     await user.click(panel.getByRole('tab', { name: 'Задача' }));
     await openPanelQuick(user);
     expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик ветки');
@@ -835,6 +836,100 @@ describe('client HTTP interactions', () => {
     await openPanelQuick(user);
     expect(panel.getByLabelText('Описание')).toHaveValue('Черновик деталей');
     expect(commands).toHaveLength(0);
+  });
+
+  it('preserves unfinished QuickAdd input through real tabs and child branch return until corrected or cleared', async () => {
+    tree.tasks = [task(1, 'Этап'), task(2, 'Ребёнок', id(1))];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
+    await openPanelQuick(user);
+    const panel = () =>
+      within(screen.getByRole('complementary', { name: 'Задача' }));
+    await user.type(panel().getByLabelText('Новая задача'), 'Черновик ветки');
+    await user.click(
+      panel().getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    const duration = screen.getByRole('textbox', { name: /Длительность,/ });
+    await user.clear(duration);
+    await user.type(duration, '3');
+    await user.tab();
+    await user.click(duration);
+    await user.type(duration, 'e');
+    await user.keyboard('{Escape}');
+    for (const destination of ['journal', 'child'] as const) {
+      if (destination === 'journal') {
+        await user.click(panel().getByRole('tab', { name: 'Журнал' }));
+        await user.click(panel().getByRole('tab', { name: 'Задача' }));
+      } else {
+        await user.click(panel().getByRole('treeitem', { name: /^Ребёнок,/ }));
+        await user.click(screen.getByRole('button', { name: 'Назад: Этап' }));
+      }
+      expect(panel().getByLabelText('Новая задача')).toHaveValue(
+        'Черновик ветки',
+      );
+      expect(
+        panel().getByRole('button', { name: 'Добавить задачу' }),
+      ).toBeDisabled();
+      await user.click(
+        panel().getByRole('button', { name: 'Добавить задачу' }),
+      );
+      expect(commands).toHaveLength(0);
+      await user.click(
+        panel().getByRole('button', { name: 'Сроки новой задачи' }),
+      );
+      expect(
+        screen.getByRole('textbox', { name: /Длительность,/ }),
+      ).toHaveValue('3e');
+      expect(
+        screen.getByRole('textbox', { name: /Длительность,/ }),
+      ).toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getByText(/Длительность: Введите целое/)).toBeVisible();
+      await user.keyboard('{Escape}');
+    }
+    await user.click(
+      panel().getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    await user.clear(screen.getByRole('textbox', { name: /Длительность,/ }));
+    await user.type(
+      screen.getByRole('textbox', { name: /Длительность,/ }),
+      '4',
+    );
+    await user.keyboard('{Escape}');
+    await user.click(panel().getByRole('button', { name: 'Добавить задачу' }));
+    await waitFor(() => expect(commands).toHaveLength(1));
+    expect(commands[0]?.command).toMatchObject({
+      type: 'task.create',
+      title: 'Черновик ветки',
+      parentId: id(1),
+      durationDays: 4,
+    });
+    await user.click(panel().getByRole('tab', { name: 'Журнал' }));
+    await user.click(panel().getByRole('tab', { name: 'Задача' }));
+    expect(panel().getByLabelText('Новая задача')).toHaveValue('');
+    await user.click(
+      panel().getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    expect(screen.getByRole('textbox', { name: /Длительность,/ })).toHaveValue(
+      '1',
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: /Длительность,/ }),
+      'e',
+    );
+    await user.keyboard('{Escape}');
+    await user.click(
+      panel().getByRole('button', { name: 'Очистить быстрый ввод' }),
+    );
+    await user.click(panel().getByRole('tab', { name: 'Журнал' }));
+    await user.click(panel().getByRole('tab', { name: 'Задача' }));
+    await user.click(
+      panel().getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    expect(screen.getByRole('textbox', { name: /Длительность,/ })).toHaveValue(
+      '1',
+    );
+    expect(commands).toHaveLength(1);
   });
 
   it('does not take focus from search when a pending subtask create succeeds', async () => {
@@ -1889,6 +1984,15 @@ describe('client HTTP interactions', () => {
     await user.type(screen.getByLabelText('Новая задача'), 'Черновик A');
     await user.tab();
     expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    await user.clear(screen.getByRole('textbox', { name: /Длительность,/ }));
+    await user.type(
+      screen.getByRole('textbox', { name: /Длительность,/ }),
+      '3e',
+    );
+    await user.keyboard('{Escape}');
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
@@ -1913,6 +2017,19 @@ describe('client HTTP interactions', () => {
     await screen.findByRole('heading', { name: project.title });
     expect(screen.getByLabelText('Новая задача')).toHaveValue('Черновик A');
     expect(screen.getByText('Родитель: Задача A')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    expect(screen.getByRole('textbox', { name: /Длительность,/ })).toHaveValue(
+      '3e',
+    );
+    expect(
+      screen.getByRole('textbox', { name: /Длительность,/ }),
+    ).toHaveAttribute('aria-invalid', 'true');
+    await user.keyboard('{Escape}');
+    expect(
+      screen.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
     expect(commands).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Выйти' }));
     expect(screen.getByRole('alert')).toHaveTextContent(/быстр/i);
@@ -1923,6 +2040,14 @@ describe('client HTTP interactions', () => {
       screen.getByRole('button', { name: 'Отбросить быстрые черновики' }),
     );
     expect(screen.getByLabelText('Новая задача')).toHaveValue('');
+    await user.click(
+      screen.getByRole('button', { name: 'Сроки новой задачи' }),
+    );
+    expect(screen.getByRole('textbox', { name: /Длительность,/ })).toHaveValue(
+      '1',
+    );
+    expect(screen.queryByText(/Длительность: Введите целое/)).toBeNull();
+    await user.keyboard('{Escape}');
     const cleanUnload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(cleanUnload);
     expect(cleanUnload.defaultPrevented).toBe(false);
@@ -2931,3 +3056,64 @@ it.each([false, true])(
     expect(search).toHaveValue('');
   },
 );
+
+it('keeps task dirty status and all write locks while a Journal POST is pending', async () => {
+  tree.tasks = [task(1, 'Задача журнала')];
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /^Задача журнала,/ }));
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' черновик{Enter}');
+  await user.click(document.getElementById('tab-journal')!);
+  await user.type(
+    screen.getByLabelText('Текст записи'),
+    'Синтетическая запись',
+  );
+  const original = fetchMock.getMockImplementation()! as (
+    url: string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  let release!: (response: Response) => void;
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.endsWith('/journal') && init?.method === 'POST')
+      return new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    return original(url, init);
+  });
+  await user.click(screen.getByRole('button', { name: 'Сохранить запись' }));
+  await waitFor(() => expect(release).toBeDefined());
+  const footer = within(document.querySelector('.panel-footer')!);
+  expect(footer.getByRole('status')).toHaveTextContent(
+    'Есть несохранённые изменения',
+  );
+  expect(footer.queryByText('Сохраняем…')).toBeNull();
+  expect(footer.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  expect(
+    footer.getByText('Дождитесь сохранения записи журнала.'),
+  ).toBeVisible();
+  expect(
+    footer.getByRole('button', { name: 'Сбросить изменения' }),
+  ).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Закрыть панель' })).toBeDisabled();
+  expect(screen.getByLabelText('Статус')).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: /^Сроки задачи:/ }),
+  ).toHaveAttribute('aria-description', 'Дождитесь сохранения записи журнала.');
+  expect(commands).toHaveLength(0);
+  await act(async () =>
+    release(
+      await json({ code: 'TEST_ERROR', message: 'Синтетическая ошибка' }, 400),
+    ),
+  );
+  await waitFor(() =>
+    expect(footer.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
+  );
+  expect(
+    screen.getByText('Несохранённое название: Задача журнала черновик'),
+  ).toBeVisible();
+  expect(screen.getByLabelText('Текст записи')).toHaveValue(
+    'Синтетическая запись',
+  );
+  expect(commands).toHaveLength(0);
+});

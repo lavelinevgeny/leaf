@@ -5,10 +5,16 @@ import { shiftDate } from './gantt-view.js';
 import { fridayPlan, scheduleChip } from './quick-add-view.js';
 import { useProjectToday } from './use-project-today.js';
 import { strings } from './strings.js';
-import { PlanFields } from './PlanFields.js';
+import { PlanFields, type PlanFieldsDraft } from './PlanFields.js';
+export type QuickScheduleDraft = {
+  fields?: PlanFieldsDraft | undefined;
+  error?: string | undefined;
+};
 
 interface Props {
   open: boolean;
+  inputDraft?: QuickScheduleDraft | undefined;
+  onInputDraft?: ((draft: QuickScheduleDraft) => void) | undefined;
   resetVersion: number;
   onEdit: () => void;
   id: string;
@@ -24,6 +30,8 @@ interface Props {
 }
 export function QuickSchedule({
   open,
+  inputDraft,
+  onInputDraft,
   resetVersion,
   onEdit,
   id,
@@ -41,10 +49,23 @@ export function QuickSchedule({
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const today = useProjectToday(timezone);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(inputDraft?.error ?? '');
+  const input = useRef(inputDraft);
+  input.current = inputDraft;
+  function updateInput(patch: Partial<QuickScheduleDraft>) {
+    input.current = { ...input.current, ...patch };
+    onInputDraft?.(input.current);
+  }
+  function reportError(value: string) {
+    setError(value);
+    updateInput({ error: value });
+  }
   const [resetKey, setResetKey] = useState(0);
+  const previousReset = useRef(resetVersion);
   useLayoutEffect(() => {
-    setError('');
+    if (previousReset.current === resetVersion) return;
+    previousReset.current = resetVersion;
+    reportError('');
   }, [resetVersion]);
   useLayoutEffect(() => {
     const node = popup.current;
@@ -82,11 +103,11 @@ export function QuickSchedule({
     setResetKey((key) => key + 1);
     try {
       onChange(make());
-      setError('');
+      reportError('');
       onValidityChange(true);
     } catch {
       if (fallback) onChange(fallback);
-      setError(strings.quickScheduleError);
+      reportError(strings.quickScheduleError);
       onValidityChange(false);
     }
   }
@@ -174,6 +195,8 @@ export function QuickSchedule({
         )}
       </div>
       <PlanFields
+        inputDraft={inputDraft?.fields}
+        onInputDraft={(fields) => updateInput({ fields })}
         resetKey={resetKey + resetVersion}
         onEdit={onEdit}
         compact
@@ -184,7 +207,7 @@ export function QuickSchedule({
         summary={false}
         disabled={disabled}
         onChange={(next) => {
-          setError('');
+          reportError('');
           onChange(next);
         }}
         onValidityChange={(valid) => onValidityChange(valid && !error)}
@@ -206,7 +229,7 @@ export function QuickSchedule({
               inputFinish: null,
               durationDays: null,
             });
-            setError('');
+            reportError('');
             onValidityChange(true);
           }}
         >

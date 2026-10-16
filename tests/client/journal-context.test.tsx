@@ -240,6 +240,17 @@ it('authenticated journal401 clears all drafts and stale authenticated content b
   });
   render(<App />);
   await screen.findByRole('treeitem', { name: /Работа 1/ });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Сроки новой задачи' }),
+  );
+  fireEvent.change(screen.getByRole('textbox', { name: /Длительность,/ }), {
+    target: { value: '3' },
+  });
+  fireEvent.blur(screen.getByRole('textbox', { name: /Длительность,/ }));
+  fireEvent.change(screen.getByRole('textbox', { name: /Длительность,/ }), {
+    target: { value: '3e' },
+  });
+  await userEvent.keyboard('{Escape}');
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
   fireEvent.change(await screen.findByLabelText('Текст записи'), {
@@ -256,6 +267,15 @@ it('authenticated journal401 clears all drafts and stale authenticated content b
   });
   await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
   await screen.findByRole('treeitem', { name: /Работа 1/ });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Сроки новой задачи' }),
+  );
+  expect(screen.getByRole('textbox', { name: /Длительность,/ })).toHaveValue(
+    '1',
+  );
+  expect(screen.queryByText(/Длительность: Введите целое/)).toBeNull();
+  await userEvent.keyboard('{Escape}');
+
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
   expect(await screen.findByLabelText('Текст записи')).toHaveValue('');

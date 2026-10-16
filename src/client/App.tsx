@@ -493,6 +493,7 @@ export function App() {
       return {
         ...previous,
         [next.project.id]: {
+          inputDraft: saved?.inputDraft,
           title: saved?.title ?? '',
           predecessorIds: saved?.predecessorIds ?? [],
           plan: saved?.plan ?? newTaskPlan(),
@@ -1732,6 +1733,7 @@ export function App() {
                       id,
                       {
                         ...draft,
+                        inputDraft: undefined,
                         title: '',
                         plan: newTaskPlan(),
                         predecessorIds: [],
@@ -2093,6 +2095,13 @@ export function App() {
                             predecessorIds,
                           }))
                         }
+                        inputDraft={quickDrafts[tree.project.id]?.inputDraft}
+                        onInputDraft={(inputDraft) =>
+                          updateQuick(tree.project.id, (draft) => ({
+                            ...draft,
+                            inputDraft,
+                          }))
+                        }
                         onRawEdit={() => noteQuickRawEdit(tree.project.id)}
                         acknowledgement={
                           quickAcknowledgements[tree.project.id] ?? 0
@@ -2367,6 +2376,12 @@ export function App() {
           onDirty={setPanelDirty}
           onClose={closePanel}
           busy={busy || journal.writing}
+          taskSaving={
+            busy &&
+            pending?.kind === 'command' &&
+            pending.panelTaskId === selectedTask.id
+          }
+          journalWriting={journal.writing}
           retry={panelRetry}
           conflict={conflict}
           locked={journalLocked || !!pending || loading || projectDirty}
@@ -2382,6 +2397,10 @@ export function App() {
                   context: subtaskContext,
                   predecessorIds,
                 }))
+              }
+              inputDraft={subtaskDraft?.inputDraft}
+              onInputDraft={(inputDraft) =>
+                updateQuick(subtaskKey, (draft) => ({ ...draft, inputDraft }))
               }
               onRawEdit={() => noteQuickRawEdit(subtaskKey)}
               acknowledgement={quickAcknowledgements[subtaskKey] ?? 0}

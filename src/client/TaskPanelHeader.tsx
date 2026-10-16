@@ -39,6 +39,7 @@ export function TaskPanelHeader({
     setEditing(false);
     requestAnimationFrame(() => trigger.current?.focus());
   }
+  const TitleContainer = journalTitle === undefined ? 'h2' : 'div';
   return (
     <header className="panel-header">
       <div className="panel-header-actions">
@@ -54,15 +55,21 @@ export function TaskPanelHeader({
         </button>
       </div>
       {path}
-      {journalTitle !== undefined ? (
+      {journalTitle !== undefined && (
         <>
           <h2>{journalTitle}</h2>
           {unsavedTitle && journalTitle !== title && (
             <p className="field-hint">Несохранённое название: {title}</p>
           )}
         </>
-      ) : editing ? (
-        <h2 aria-label={journalTitle ?? title}>
+      )}
+      {editing ? (
+        <TitleContainer
+          aria-label={journalTitle === undefined ? title : undefined}
+        >
+          {journalTitle !== undefined && (
+            <p className="field-hint">Локальное название задачи</p>
+          )}
           <label className="panel-title-editor">
             <span className="sr-only">{strings.title}</span>
             <input
@@ -89,9 +96,13 @@ export function TaskPanelHeader({
               }}
             />
           </label>
-        </h2>
+        </TitleContainer>
       ) : (
-        <h2 aria-label={journalTitle ?? (title || strings.title)}>
+        <TitleContainer
+          aria-label={
+            journalTitle === undefined ? title || strings.title : undefined
+          }
+        >
           <button
             ref={trigger}
             type="button"
@@ -103,9 +114,11 @@ export function TaskPanelHeader({
               setEditing(true);
             }}
           >
-            {title || strings.title}
+            {journalTitle === undefined
+              ? title || strings.title
+              : strings.editTitle}
           </button>
-        </h2>
+        </TitleContainer>
       )}
       <label className="panel-status">
         {strings.status}

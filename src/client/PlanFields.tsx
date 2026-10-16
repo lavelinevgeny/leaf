@@ -22,6 +22,12 @@ import {
 import { strings } from './strings.js';
 import { useProjectToday } from './use-project-today.js';
 export type PlanFieldError = { field: keyof SourceFields; message: string };
+// Optional RAM snapshot shares the owning quick draft's lifetime, including remounts.
+export type PlanFieldsDraft = {
+  duration: { raw: string; source: number | null } | null;
+  error: (PlanFieldError & { source: string }) | null;
+  pending: Partial<SourceFields>;
+};
 export type PlanFieldsHandle = {
   finishInput: () => boolean;
   focusField: (field: keyof SourceFields) => void;
@@ -30,6 +36,8 @@ export type PlanFieldsHandle = {
 interface Props {
   ref?: Ref<PlanFieldsHandle>;
   resetKey?: number;
+  inputDraft?: PlanFieldsDraft | undefined;
+  onInputDraft?: ((draft: PlanFieldsDraft) => void) | undefined;
   externalError?: PlanFieldError | null;
   onErrorChange?: (error: PlanFieldError | null) => void;
   onRawChange?: (dirty: boolean) => void;
@@ -50,6 +58,8 @@ interface Props {
 export function PlanFields({
   ref,
   resetKey,
+  inputDraft,
+  onInputDraft,
   externalError,
   onErrorChange,
   onRawChange,
@@ -78,7 +88,7 @@ export function PlanFields({
   const [durationDraft, setDurationDraft] = useState<{
     raw: string;
     source: number | null;
-  } | null>(null);
+  } | null>(inputDraft?.duration ?? null);
   const durationBuffer = useRef(durationDraft);
   durationBuffer.current = durationDraft;
   function setDurationInput(value: typeof durationDraft) {
@@ -108,12 +118,12 @@ export function PlanFields({
     onErrorChange?.(value);
     onValidityChange?.(!value);
   }
-  const pending = useRef<Partial<SourceFields>>({});
+  const pending = useRef<Partial<SourceFields>>({ ...inputDraft?.pending });
   const [error, setError] = useState<{
     source: string;
     field: keyof SourceFields;
     message: string;
-  } | null>(null);
+  } | null>(inputDraft?.error ?? null);
   const [flash, setFlash] = useState<(keyof SourceFields)[]>([]);
   const [announcement, setAnnouncement] = useState('');
   const activeError =
@@ -125,7 +135,16 @@ export function PlanFields({
     onValidityChange?.(!activeError);
   }, [activeError, onValidityChange]);
   useLayoutEffect(() => {
-    if (resetKey === undefined) return;
+    onInputDraft?.({
+      duration: durationDraft,
+      error,
+      pending: { ...pending.current },
+    });
+  }, [durationDraft, error, plan]);
+  const previousReset = useRef(resetKey);
+  useLayoutEffect(() => {
+    if (resetKey === undefined || previousReset.current === resetKey) return;
+    previousReset.current = resetKey;
     pending.current = {};
     previousError.current = null;
     setDurationInput(null);

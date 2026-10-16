@@ -561,3 +561,199 @@ it('keeps actionable saved conflicts outside collapsed calculation on both plann
     screen.queryByText(/Полная пара дат не задана|Неполные сроки/),
   ).toBeNull();
 });
+
+it('edits the common title in Journal while saved heading/path remain visible and Escape restores only the edit session', async () => {
+  const user = userEvent.setup();
+  const tree = initial();
+  const parent = task(2, { title: 'Сохранённая ветка' });
+  tree.tasks[0]!.parentId = parent.id;
+  const metadata = {
+    projectId: tree.project.id,
+    revision: tree.project.revision,
+    tasks: [...tree.tasks, parent],
+  };
+  const onSave = vi.fn(async () => null);
+  render(
+    <Harness
+      tree={tree}
+      task={tree.tasks[0]!}
+      tab="journal"
+      journalMetadata={metadata}
+      onSave={onSave}
+    />,
+  );
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  expect(screen.getByText('Локальное название задачи')).toBeVisible();
+  await user.type(screen.getByLabelText('Название задачи'), ' черновик');
+  expect(screen.getByRole('heading', { name: 'Работа A' })).toHaveTextContent(
+    'Работа A',
+  );
+  expect(screen.getByText('Сохранённая ветка')).toBeVisible();
+  await user.keyboard('{Enter}');
+  expect(
+    screen.getByText('Несохранённое название: Работа A черновик'),
+  ).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' отменить');
+  await user.keyboard('{Escape}');
+  expect(
+    screen.getByText('Несохранённое название: Работа A черновик'),
+  ).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Работа A' })).toHaveTextContent(
+    'Работа A',
+  );
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  expect(onSave).toHaveBeenCalledExactlyOnceWith({
+    title: 'Работа A черновик',
+  });
+});
+it('returns matched task-save feedback to clean after a short interval and preserves newer edits', async () => {
+  vi.useFakeTimers();
+  try {
+    const tree = initial();
+    const ack = {
+      ...tree,
+      project: { ...tree.project, revision: tree.project.revision + 1 },
+      tasks: [{ ...tree.tasks[0]!, status: 'doing' as const }],
+    };
+    render(<Harness onSave={vi.fn(async () => ack)} />);
+    fireEvent.change(screen.getByLabelText('Статус'), {
+      target: { value: 'doing' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    });
+    expect(screen.getByText('Сохранено', { exact: true })).toBeVisible();
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
+    expect(
+      within(document.querySelector('.panel-footer')!).getByRole('status'),
+    ).toBeEmptyDOMElement();
+    fireEvent.change(screen.getByLabelText('Статус'), {
+      target: { value: 'todo' },
+    });
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(screen.getByText('Есть несохранённые изменения')).toBeVisible();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it.each(['status', 'source', 'raw', 'incoming'] as const)(
+  'labels saved diagnostics for %s edits on Task without duplicating Dependencies',
+  async (field) => {
+    const tree = initial();
+    tree.tasks.push(task(2, { title: 'Предшественник' }));
+    tree.schedule.diagnostics = [
+      {
+        code: 'EXPLICIT_PRECEDENCE_CONFLICT',
+        taskIds: [task(1).id],
+        dependencyIds: [],
+        messageKey: 'scheduling.EXPLICIT_PRECEDENCE_CONFLICT',
+      },
+    ];
+    const user = userEvent.setup();
+    render(<Harness tree={tree} tasks={tree.tasks} />);
+    await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+    await user.type(screen.getByLabelText('Название задачи'), ' draft{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Добавить описание' }));
+    await user.type(screen.getByLabelText('Описание'), 'Описание');
+    expect(screen.queryByText('По сохранённому плану')).toBeNull();
+    if (field === 'status')
+      await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
+    else if (field === 'incoming') {
+      await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Добавить предшественника' }),
+      );
+      await user.click(screen.getByRole('option', { name: /Предшественник/ }));
+      await user.click(screen.getByRole('tab', { name: 'Задача' }));
+    } else {
+      await user.click(screen.getByRole('button', { name: /^Сроки задачи:/ }));
+      const input = screen.getByRole('textbox', { name: /Длительность,/ });
+      await user.clear(input);
+      await user.type(input, field === 'raw' ? '3e' : '3');
+      await user.keyboard('{Escape}');
+    }
+    expect(screen.getByText('По сохранённому плану')).toBeVisible();
+    expect(
+      screen.getByText('Предшественник заканчивается после явного начала.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    expect(screen.getAllByText('По сохранённому плану')).toHaveLength(1);
+  },
+);
+
+it('cancels old success feedback on new drafts and unmount without clearing a newer task acknowledgement', async () => {
+  vi.useFakeTimers();
+  try {
+    const tree = initial();
+    const ack = {
+      ...tree,
+      project: { ...tree.project, revision: tree.project.revision + 1 },
+      tasks: [{ ...tree.tasks[0]!, status: 'doing' as const }],
+    };
+    const save = async () => {
+      fireEvent.change(screen.getByLabelText('Статус'), {
+        target: { value: 'doing' },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+      });
+    };
+    const view = render(
+      <Harness key="first" onSave={vi.fn(async () => ack)} />,
+    );
+    await save();
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    fireEvent.change(screen.getByLabelText('Статус'), {
+      target: { value: 'todo' },
+    });
+    expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(screen.getByText('Есть несохранённые изменения')).toBeVisible();
+    view.rerender(
+      <Harness key="first-again" onSave={vi.fn(async () => ack)} />,
+    );
+    await save();
+    expect(screen.getByText('Сохранено', { exact: true })).toBeVisible();
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    const second = task(2, { title: 'Работа B' });
+    const secondTree = { ...tree, tasks: [second] };
+    const secondAck = {
+      ...ack,
+      tasks: [{ ...second, status: 'doing' as const }],
+    };
+    view.rerender(
+      <Harness
+        key="second"
+        task={second}
+        tasks={secondTree.tasks}
+        tree={secondTree}
+        onSave={vi.fn(async () => secondAck)}
+      />,
+    );
+    await save();
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByText('Сохранено', { exact: true })).toBeVisible();
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -71,6 +71,8 @@ interface Props {
   onDirty: (dirty: boolean) => void;
   onClose: () => void;
   busy: boolean;
+  taskSaving?: boolean;
+  journalWriting?: boolean;
   retry: boolean;
   conflict: boolean;
   locked: boolean;
@@ -107,6 +109,8 @@ export function TaskPanel({
   onDirty,
   onClose,
   busy,
+  taskSaving = busy,
+  journalWriting = false,
   retry,
   conflict,
   locked,
@@ -206,6 +210,11 @@ export function TaskPanel({
     setSaved(false);
   }
   const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (!saved) return;
+    const timer = window.setTimeout(() => setSaved(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [saved, task.id]);
   const [incoming, setIncoming] = useState(() =>
     incomingPredecessorIds(tree, task.id),
   );
@@ -319,6 +328,8 @@ export function TaskPanel({
   const incomingDirty =
     canonicalPredecessorIds(incoming).join('\0') !==
     canonicalPredecessorIds(baselineIncoming).join('\0');
+  const scheduleDirty =
+    planDirty || rawDirty || incomingDirty || draft.status !== baseline.status;
   const dirty =
     JSON.stringify(draft) !== JSON.stringify(baseline) ||
     planDirty ||
@@ -448,8 +459,13 @@ export function TaskPanel({
     },
     [registerActions],
   );
-  const structuralReason = busy
+  const busyReason = taskSaving
     ? strings.saving
+    : journalWriting
+      ? 'Дождитесь сохранения записи журнала.'
+      : 'Дождитесь завершения операции.';
+  const structuralReason = busy
+    ? busyReason
     : locked
       ? strings.loading
       : removed
@@ -496,7 +512,7 @@ export function TaskPanel({
                 removed
                   ? removedReason
                   : busy
-                    ? strings.saving
+                    ? busyReason
                     : locked
                       ? strings.loading
                       : conflict
@@ -683,7 +699,11 @@ export function TaskPanel({
       >
         {removed && <p role="status">{removedReason}</p>}
         {visibleTab !== 'journal' && (
-          <ScheduleProblems tree={tree} task={task} />
+          <ScheduleProblems
+            tree={tree}
+            task={task}
+            savedPlan={visibleTab === 'details' && scheduleDirty}
+          />
         )}
         {visibleTab === 'journal' ? (
           <div role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
@@ -836,12 +856,7 @@ export function TaskPanel({
                 setSaved(false);
               }}
               taskDirty={dirty}
-              scheduleDirty={
-                planDirty ||
-                rawDirty ||
-                incomingDirty ||
-                draft.status !== baseline.status
-              }
+              scheduleDirty={scheduleDirty}
               disabled={busy || locked || conflict || removed}
               navigationDisabled={busy || locked || conflict || removed}
               onCommand={onDependency}
@@ -854,12 +869,13 @@ export function TaskPanel({
       <TaskPanelFooter
         dirty={dirty}
         busy={busy}
+        saving={taskSaving}
         retry={retry}
         saved={saved}
         canAdopt={canAdopt}
         disabledReason={
           busy
-            ? strings.saving
+            ? busyReason
             : removed
               ? metadataOnlyTask
                 ? removedReason

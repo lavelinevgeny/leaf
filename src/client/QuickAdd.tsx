@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import {
   sourceFieldsSchema,
   type Task,
@@ -9,7 +9,7 @@ import {
 import { PredecessorPicker } from './PredecessorPicker.js';
 import { ControlIcon } from './ControlIcon.js';
 import { canonicalPredecessorIds } from './predecessor-view.js';
-import { QuickSchedule } from './QuickSchedule.js';
+import { QuickSchedule, type QuickScheduleDraft } from './QuickSchedule.js';
 import { scheduleChip } from './quick-add-view.js';
 import { newTaskPlan } from './planning-view.js';
 import { orderedChildren } from './tree-view.js';
@@ -23,6 +23,8 @@ interface Props {
   predecessorIds: string[];
   onPredecessors: (ids: string[]) => void;
   acknowledgement?: number;
+  inputDraft?: QuickScheduleDraft | undefined;
+  onInputDraft?: ((draft: QuickScheduleDraft | undefined) => void) | undefined;
   tasks: Task[];
   context: AddContext;
   onContext: (context: AddContext) => void;
@@ -54,6 +56,8 @@ export function QuickAdd({
   predecessorIds,
   onPredecessors,
   acknowledgement,
+  inputDraft,
+  onInputDraft,
   tasks,
   context,
   onContext,
@@ -108,6 +112,7 @@ export function QuickAdd({
   const rawVersion = useRef(0);
   const sentRawVersion = useRef<number | null>(null);
   function resetFields() {
+    onInputDraft?.(undefined);
     rawVersion.current++;
     sentRawVersion.current = null;
     setResetVersion((version) => version + 1);
@@ -118,7 +123,15 @@ export function QuickAdd({
     if (sent !== null && sent === rawVersion.current) resetFields();
     else sentRawVersion.current = null;
   }
-  const [valid, setValid] = useState(true);
+  const [valid, setValid] = useState(
+    !inputDraft?.error && !inputDraft?.fields?.error,
+  );
+  const previousInputDraft = useRef(inputDraft);
+  useLayoutEffect(() => {
+    const previous = previousInputDraft.current;
+    previousInputDraft.current = inputDraft;
+    if (previous && !inputDraft) resetFields();
+  }, [inputDraft]);
   function validityChanged(nextValid: boolean) {
     setValid(nextValid);
   }
@@ -346,7 +359,8 @@ export function QuickAdd({
           title ||
           plan.inputStart !== null ||
           plan.inputFinish !== null ||
-          plan.durationDays !== 1) && (
+          plan.durationDays !== 1 ||
+          !valid) && (
           <>
             <span role="status">{strings.quickDirty}</span>
             {!inline && (
@@ -388,6 +402,8 @@ export function QuickAdd({
       )}
       {(scheduleOpen || scheduleMounted) && (
         <QuickSchedule
+          inputDraft={inputDraft}
+          onInputDraft={onInputDraft}
           open={scheduleOpen}
           resetVersion={resetVersion}
           onEdit={() => {
