@@ -527,7 +527,9 @@ h2 {
 }
 .task-panel {
   flex: 0 0 var(--leaf-task-panel-width);
-  width: var(--leaf-task-panel-width);
+  width: min(var(--leaf-task-panel-width), 100vw);
+  max-width: 100vw;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -537,6 +539,8 @@ h2 {
   box-shadow: -6px 0 18px #202a2605;
 }
 .panel-header {
+  min-width: 0;
+  overflow-wrap: anywhere;
   flex: 0 0 auto;
   padding: 16px 20px 14px;
 }
@@ -586,6 +590,9 @@ h2 {
   padding: 12px 20px;
   border-top: 1px solid var(--leaf-border);
   font-size: 12px;
+}
+.panel-footer > [role='status'] {
+  min-height: 1.5em;
 }
 .task-panel--scroll-shell {
   display: block;
@@ -687,12 +694,13 @@ h2 {
   .project-sidebar {
     flex-basis: 190px;
   }
+}
+@media (max-width: 899px) {
   .task-panel {
     position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: min(var(--leaf-task-panel-width), 100vw);
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
     z-index: 2;
     box-shadow: -8px 0 24px #202a2612;
   }

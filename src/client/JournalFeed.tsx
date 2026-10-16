@@ -6,6 +6,7 @@ import type {
   JournalFeedState,
   JournalPosition,
 } from './journal-state.js';
+import { journalFeedCoherent } from './journal-state.js';
 import { JournalEditor, JournalConflict } from './JournalEditor.js';
 import { ActionMenu } from './ActionMenu.js';
 export function JournalFeed({
@@ -46,11 +47,7 @@ export function JournalFeed({
   const previous = useRef(state);
   const scope = state.scope.taskId ? 'task' : 'project';
   const blocked = disabled || controller.writing || !!controller.pending;
-  const coherent =
-    state.page &&
-    state.metadata &&
-    state.page.projectRevision === state.metadata.revision &&
-    !['stale', 'metadata-error', 'error', 'loading'].includes(state.phase);
+  const coherent = journalFeedCoherent(state);
   function readPosition(): JournalPosition | null {
     const node = root.current;
     if (!node || node.closest('[hidden]')) return null;

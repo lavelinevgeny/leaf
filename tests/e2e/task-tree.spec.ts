@@ -95,6 +95,7 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await page.getByLabel('Новая задача').press('Shift+Tab');
   await add(page, 'Задача B');
   await row(page, 'Задача B').click();
+  const card = page.getByRole('complementary', { name: 'Задача', exact: true });
   await page
     .getByRole('button', { name: 'Изменить название', exact: true })
     .click();
@@ -109,16 +110,16 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
     .getByRole('combobox', { name: 'Статус', exact: true })
     .selectOption('doing');
   await openTaskDates(page);
-  await page.getByLabel('Начало', { exact: true }).fill('2026-10-07');
+  await card.getByLabel('Начало', { exact: true }).fill('2026-10-07');
   await openTaskDates(page);
-  await page.getByLabel('Окончание', { exact: true }).fill('2026-10-09');
+  await card.getByLabel('Окончание', { exact: true }).fill('2026-10-09');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   await expect(row(page, 'Задача B1')).toHaveAccessibleName(/В работе/);
   await openTaskDates(page);
-  await page.getByLabel('Начало', { exact: true }).fill('');
+  await card.getByLabel('Начало', { exact: true }).fill('');
   await openTaskDates(page);
-  await page.getByLabel('Окончание', { exact: true }).fill('');
+  await card.getByLabel('Окончание', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Закрыть панель' }).click();
@@ -163,8 +164,8 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await expect(
     page.getByRole('textbox', { name: 'Описание', exact: true }),
   ).toHaveValue('Синтетическое описание');
-  await expect(page.getByLabel('Начало', { exact: true })).toHaveValue('');
-  await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue('');
+  await expect(card.getByLabel('Начало', { exact: true })).toHaveValue('');
+  await expect(card.getByLabel('Окончание', { exact: true })).toHaveValue('');
   await expect(
     page.getByRole('combobox', { name: 'Статус', exact: true }),
   ).toHaveValue('doing');

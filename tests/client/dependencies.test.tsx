@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  act,
+} from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dependencies } from '../../src/client/Dependencies.js';
@@ -173,6 +179,63 @@ describe('direct dependency graph', () => {
       successorId: task(7).id,
     });
   });
+  it.each([false, true])(
+    'restores outgoing focus after busy clears unless the user focused then blurred: %s',
+    async (userChangedFocus) => {
+      let acknowledge!: (success: boolean) => void;
+      let finishBusy!: () => void;
+      const pending = new Promise<boolean>((resolve) => {
+        acknowledge = resolve;
+      });
+      function BusyGraph() {
+        const [busy, setBusy] = useState(false);
+        finishBusy = () => setBusy(false);
+        return (
+          <>
+            <button type="button">Другой контрол</button>
+            <Dependencies
+              task={current}
+              tree={{ ...tree, tasks: [...tree.tasks, task(7)] }}
+              incomingIds={[a.id, b.id]}
+              onIncomingChange={vi.fn()}
+              taskDirty={false}
+              scheduleDirty={false}
+              disabled={busy}
+              onCommand={() => {
+                setBusy(true);
+                return pending;
+              }}
+              onSelect={vi.fn()}
+              onShow={vi.fn()}
+            />
+          </>
+        );
+      }
+      render(<BusyGraph />);
+      const trigger = screen.getByRole('button', {
+        name: 'Добавить последователя',
+      });
+      fireEvent.click(trigger);
+      fireEvent.click(screen.getByRole('option', { name: /Работа 7/ }));
+      expect(trigger).toBeDisabled();
+      if (userChangedFocus) {
+        const other = screen.getByRole('button', { name: 'Другой контрол' });
+        other.focus();
+        other.blur();
+      }
+      await act(async () => {
+        acknowledge(true);
+        await pending;
+      });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      act(() => {
+        finishBusy();
+      });
+      expect(trigger).toBeEnabled();
+      if (userChangedFocus) expect(document.activeElement).toBe(document.body);
+      else expect(trigger).toHaveFocus();
+    },
+  );
   it('keeps the current card and remaining neighbors visible when the last page shrinks', () => {
     const neighbors = Array.from({ length: 5 }, (_, index) => task(index + 10));
     const dependencies = neighbors.map((item, index) => ({

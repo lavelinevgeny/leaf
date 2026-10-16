@@ -890,3 +890,30 @@ it('rebases unknown cancellation before later guards can trust old numeric indic
   expect(commandCalls).toHaveLength(0);
   expect(movement).not.toHaveBeenCalled();
 });
+
+it('permanently cancels branch return focus after another control focuses then blurs before the frame', async () => {
+  tree.tasks = [task(1, 'Работа A'), task(2, 'Работа C', id(1))];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole('treeitem', { name: /^Работа A,/ }));
+  await user.click(
+    within(screen.getByRole('tree', { name: 'Подзадачи' })).getByRole(
+      'treeitem',
+      { name: /^Работа C,/ },
+    ),
+  );
+  const frames: FrameRequestCallback[] = [];
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Назад: Работа A' }));
+  const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
+  search.focus();
+  search.blur();
+  expect(document.activeElement).toBe(document.body);
+  act(() => {
+    for (const callback of frames.splice(0)) callback(0);
+  });
+  expect(document.activeElement).toBe(document.body);
+});

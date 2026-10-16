@@ -209,3 +209,14 @@ export type JournalPosition = {
   top: number;
   left: number;
 };
+
+export function journalFeedCoherent(
+  state: JournalFeedState | null | undefined,
+): boolean {
+  return !!(
+    state?.page &&
+    state.metadata &&
+    state.page.projectRevision === state.metadata.revision &&
+    !['stale', 'metadata-error', 'error', 'loading'].includes(state.phase)
+  );
+}

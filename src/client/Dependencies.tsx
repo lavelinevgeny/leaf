@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import { PredecessorPicker } from './PredecessorPicker.js';
 import { canonicalPredecessorIds } from './predecessor-view.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
@@ -40,16 +40,45 @@ export function Dependencies({
     'predecessor' | 'successor' | null
   >(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const focusVersion = useRef(0);
+  useEffect(() => {
+    const changed = () => {
+      focusVersion.current++;
+    };
+    document.addEventListener('focusin', changed);
+    return () => document.removeEventListener('focusin', changed);
+  }, []);
   function open(
     direction: 'predecessor' | 'successor',
     anchor: HTMLButtonElement,
   ) {
     trigger.current = anchor;
+    setRestoreTrigger(null);
     setDirection(direction);
   }
+  const [restoreTrigger, setRestoreTrigger] =
+    useState<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!restoreTrigger) return;
+    const cancel = () => setRestoreTrigger(null);
+    document.addEventListener('focusin', cancel);
+    return () => document.removeEventListener('focusin', cancel);
+  }, [restoreTrigger]);
+  useLayoutEffect(() => {
+    if (!restoreTrigger || disabled || taskDirty) return;
+    if (
+      restoreTrigger.isConnected &&
+      !restoreTrigger.disabled &&
+      (document.activeElement === document.body ||
+        document.activeElement === restoreTrigger)
+    )
+      restoreTrigger.focus();
+    setRestoreTrigger(null);
+  }, [restoreTrigger, disabled, taskDirty]);
   function close() {
     setDirection(null);
-    trigger.current?.focus();
+    if (trigger.current?.disabled) setRestoreTrigger(trigger.current);
+    else trigger.current?.focus();
   }
   const [beforePage, setBeforePage] = useState(0),
     [afterPage, setAfterPage] = useState(0);
@@ -372,14 +401,19 @@ export function Dependencies({
             if (disabled) return;
             if (direction === 'predecessor')
               onIncomingChange(canonicalPredecessorIds([...incomingIds, id]));
-            else if (!taskDirty)
+            else if (!taskDirty) {
+              const sentFocusVersion = focusVersion.current;
               void onCommand({
                 type: 'dependency.create',
                 predecessorId: task.id,
                 successorId: id,
               }).then((success) => {
-                if (success) close();
+                if (success) {
+                  if (sentFocusVersion === focusVersion.current) close();
+                  else setDirection(null);
+                }
               });
+            }
           }}
           onRemove={(id) => {
             if (disabled) return;
@@ -402,7 +436,7 @@ export function Dependencies({
       {scheduleDirty && <p className="field-hint">{strings.savedPlan}</p>}
       <details className="dependency-calculation">
         <summary>{strings.calculation}</summary>
-        <ScheduleStatus tree={tree} task={task} />
+        <ScheduleStatus tree={tree} task={task} omitDiagnostics />
       </details>
     </div>
   );

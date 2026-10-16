@@ -9,7 +9,7 @@ import {
   type ProjectView,
   type WorkspaceVisit,
 } from './workspace-navigation.js';
-import type { JournalPosition } from './journal-state.js';
+import { journalFeedCoherent, type JournalPosition } from './journal-state.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
 import type {
   TimelineRestoreRequest,
@@ -2271,6 +2271,7 @@ export function App() {
           }}
           onJournal={openTaskJournal}
           journalMetadata={journal.taskFeed?.metadata}
+          journalNavigationDisabled={!journalFeedCoherent(journal.taskFeed)}
           onAncestor={selectAncestor}
           journalContent={(scrollContainer) => (
             <TaskJournal
@@ -2308,7 +2309,18 @@ export function App() {
               setPanelTab(backVisit.tab);
               setPanelHistory((previous) => previous.slice(0, -1));
               const token = ++branchRestore.current;
+              // A user focus choice owns the rest of this frame, even if it
+              // subsequently blurs back to body before restoration runs.
+              const cancelOnFocus = (event: FocusEvent) => {
+                if (
+                  !(event.target instanceof Element) ||
+                  !event.target.closest('.panel-back')
+                )
+                  ++branchRestore.current;
+              };
+              document.addEventListener('focusin', cancelOnFocus);
               requestAnimationFrame(() => {
+                document.removeEventListener('focusin', cancelOnFocus);
                 if (
                   token !== branchRestore.current ||
                   (document.activeElement !== document.body &&

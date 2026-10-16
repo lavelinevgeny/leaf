@@ -104,6 +104,10 @@ for (const viewport of [
     const editor = card.getByLabel('Название задачи', { exact: true });
     await expect(editor).toHaveValue(title);
     await expect(editor).toBeFocused();
+    // The reserved status line and natural chrome may still need shell scroll
+    // at the original low height. Grow explicitly to fit before switching back.
+    await page.setViewportSize({ width: viewport.width, height: 700 });
+    await expect(editor).toBeFocused();
     await expect(
       page.locator('.panel-content[data-panel-scroll-owner]'),
     ).toHaveCount(1);

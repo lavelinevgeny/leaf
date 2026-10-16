@@ -13,6 +13,8 @@ import userEvent from '@testing-library/user-event';
 import { useState, type ComponentProps } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { TaskPanel, type PanelTab } from '../../src/client/TaskPanel.js';
+import { page5 } from './journal-fixtures.js';
+import { journalFeedCoherent } from '../../src/client/journal-state.js';
 import { emptySchedule, optionalTreeFixture, task } from './fixtures.js';
 
 afterEach(cleanup);
@@ -142,6 +144,11 @@ it('explains empty title and keeps clean explicit legacy adoption available', as
       onSave={onSave}
     />,
   );
+  expect(
+    screen.getByText('Прежний интервал недоступен; полный расчёт неизвестен.', {
+      exact: true,
+    }),
+  ).toBeVisible();
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled();
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
   expect(onSave).toHaveBeenCalledExactlyOnceWith({
@@ -471,3 +478,86 @@ it.each([
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
   },
 );
+
+it.each(['ready', 'stale', 'metadata-error', 'error', 'loading'] as const)(
+  'keeps journal ancestor context visible but gates navigation during %s',
+  async (phase) => {
+    const parent = task(2, { title: 'Сохранённый родитель' });
+    const child = task(1, { parentId: parent.id });
+    const onAncestor = vi.fn();
+    const tree = { ...initial(), tasks: [parent, child] };
+    const metadata = {
+      projectId: tree.project.id,
+      revision: tree.project.revision,
+      tasks: tree.tasks,
+    };
+    render(
+      <Harness
+        task={child}
+        tree={tree}
+        tasks={tree.tasks}
+        tab="journal"
+        journalMetadata={metadata}
+        journalNavigationDisabled={
+          !journalFeedCoherent({
+            metadata,
+            page: { ...page5, projectRevision: metadata.revision },
+            phase,
+            scope: { projectId: tree.project.id, taskId: child.id, query: {} },
+            pendingPage: null,
+            error: null,
+          })
+        }
+        onAncestor={onAncestor}
+      />,
+    );
+    const ancestor = within(
+      screen.getByRole('navigation', { name: 'Путь задачи' }),
+    ).getByRole('button', { name: parent.title });
+    expect(ancestor).toBeVisible();
+    if (phase === 'ready') {
+      expect(ancestor).toBeEnabled();
+      fireEvent.click(ancestor);
+      expect(onAncestor).toHaveBeenCalledExactlyOnceWith(parent, 'journal');
+    } else {
+      expect(ancestor).toBeDisabled();
+      fireEvent.click(ancestor);
+      expect(onAncestor).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it('keeps actionable saved conflicts outside collapsed calculation on both planning tabs without missing-date warnings', async () => {
+  const tree = initial();
+  tree.schedule.analysisStatus = 'infeasible';
+  tree.schedule.feasibility = 'infeasible';
+  tree.schedule.diagnostics = [
+    {
+      code: 'EXPLICIT_PRECEDENCE_CONFLICT',
+      taskIds: [task(1).id],
+      dependencyIds: [],
+      messageKey: 'scheduling.EXPLICIT_PRECEDENCE_CONFLICT',
+    },
+    {
+      code: 'UNKNOWN_INTERVAL',
+      taskIds: [task(1).id],
+      dependencyIds: [],
+      messageKey: 'scheduling.UNKNOWN_INTERVAL',
+    },
+  ];
+  const user = userEvent.setup();
+  render(<Harness tree={tree} />);
+  const message = 'Предшественник заканчивается после явного начала.';
+  expect(screen.getByText(message, { exact: true })).toBeVisible();
+  await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+  const calculation = screen
+    .getByText('Расчёт', { exact: true })
+    .closest('details')!;
+  expect(calculation.open).toBe(false);
+  expect(screen.getByText(message, { exact: true })).toBeVisible();
+  await user.click(screen.getByText('Расчёт', { exact: true }));
+  expect(screen.getAllByText(message, { exact: true })).toHaveLength(1);
+  expect(
+    screen.queryByText(/Полная пара дат не задана|Неполные сроки/),
+  ).toBeNull();
+});

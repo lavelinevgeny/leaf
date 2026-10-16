@@ -48,12 +48,15 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
     name: 'Задача',
     exact: true,
   });
+  await panel.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await panel.getByText('Расчёт', { exact: true }).click();
   await expect(
     panel.getByText(
       'Анализ датированной части; полный критический путь неизвестен',
       { exact: true },
     ),
   ).toBeVisible();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
   await expect(page.getByLabel('Начало', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue('');
   await openTaskDates(page);

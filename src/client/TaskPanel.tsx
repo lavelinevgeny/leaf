@@ -21,6 +21,7 @@ import {
   type TaskPanelScheduleHandle,
 } from './TaskPanelSchedule.js';
 import { TaskPanelHeader } from './TaskPanelHeader.js';
+import { ScheduleProblems } from './ScheduleStatus.js';
 import { TaskPanelFooter } from './TaskPanelFooter.js';
 import type { JournalMetadata } from './journal-state.js';
 import { panelScrollOwner, visiblePanelTab } from './task-panel-view.js';
@@ -79,6 +80,7 @@ interface Props {
   journalContent?:
     ReactNode | ((scrollContainer: HTMLElement | null) => ReactNode);
   journalMetadata?: JournalMetadata | null | undefined;
+  journalNavigationDisabled?: boolean;
   onAncestor?: ((task: Task, tab: PanelTab) => void) | undefined;
   onJournal?:
     ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
@@ -113,6 +115,7 @@ export function TaskPanel({
   subtaskDraftActive = false,
   journalContent,
   journalMetadata,
+  journalNavigationDisabled = true,
   onAncestor,
   onJournal,
   registerActions,
@@ -530,7 +533,12 @@ export function TaskPanel({
                   <span aria-hidden="true"> / </span>
                   <button
                     type="button"
-                    disabled={busy || locked || !onAncestor}
+                    disabled={
+                      busy ||
+                      locked ||
+                      !onAncestor ||
+                      (visibleTab === 'journal' && journalNavigationDisabled)
+                    }
                     onClick={() =>
                       onAncestor?.(
                         item,
@@ -674,6 +682,9 @@ export function TaskPanel({
         data-panel-scroll-owner={layout.shellScroll ? undefined : ''}
       >
         {removed && <p role="status">{removedReason}</p>}
+        {visibleTab !== 'journal' && (
+          <ScheduleProblems tree={tree} task={task} />
+        )}
         {visibleTab === 'journal' ? (
           <div role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
             {typeof journalContent === 'function'

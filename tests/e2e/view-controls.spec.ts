@@ -316,7 +316,16 @@ test('view controls retain scrolled geometry, selected panel, dirty editor, peri
     await description.evaluate((node: HTMLTextAreaElement) =>
       node.setSelectionRange(3, 9),
     );
-    await expect(editor).toBeDisabled();
+    await expect(editor).toBeEnabled();
+    const quickForm = page.locator('form').filter({ has: editor });
+    await expect(
+      quickForm.getByRole('button', { name: 'Добавить задачу', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      quickForm.getByText('Сначала сохраните изменения задачи', {
+        exact: true,
+      }),
+    ).toBeVisible();
     const withDraft = await geometry(page, row);
     const draftPeriod = await page.locator('.gantt-month').allTextContents();
     const draftOffset = await horizontal.evaluate((node) => node.scrollLeft);
