@@ -17,6 +17,12 @@ import { page5 } from './journal-fixtures.js';
 import { journalFeedCoherent } from '../../src/client/journal-state.js';
 import { emptySchedule, optionalTreeFixture, task } from './fixtures.js';
 
+HTMLDialogElement.prototype.showModal = function () {
+  this.setAttribute('open', '');
+};
+HTMLDialogElement.prototype.close = function () {
+  this.removeAttribute('open');
+};
 afterEach(cleanup);
 const initial = () => ({
   ...optionalTreeFixture(),
@@ -68,7 +74,9 @@ it('keeps one controlled title/status and persistent save across three tabs with
   expect(screen.getByRole('heading', { name: 'Работа A' })).toBeVisible();
   expect(screen.queryByLabelText('Название задачи')).toBeNull();
   expect(
-    within(document.querySelector('.panel-header')!).getByLabelText('Статус'),
+    within(document.querySelector('.panel-header')!).getByRole('button', {
+      name: /^Статус:/,
+    }),
   ).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Изменить название' }));
   await user.clear(screen.getByLabelText('Название задачи'));
@@ -99,7 +107,9 @@ it('cancels only the title edit session with Escape and keeps description editin
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.getByRole('heading', { name: 'Работа A' })).toBeVisible();
   await user.click(screen.getByRole('tab', { name: 'Журнал' }));
-  await user.click(screen.getByRole('tab', { name: 'Задача' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
   expect(screen.getByLabelText('Описание')).toHaveValue('Строка 1\nСтрока 2');
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
   expect(onSave).toHaveBeenCalledExactlyOnceWith({
@@ -286,7 +296,7 @@ it('keeps a newer established baseline after an older frozen acknowledgement and
   expect(screen.getByLabelText('Название задачи')).toHaveValue(
     'New saved baseline',
   );
-  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Сохранить' })).toBeNull();
 });
 
 it('saves title source and graph incoming draft in exactly one task.edit', async () => {
@@ -416,8 +426,10 @@ it('labels only scheduling edits as saved-plan analysis and keeps hard locks on 
   await user.type(screen.getByLabelText('Название задачи'), ' draft');
   await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
   expect(screen.queryByText('По сохранённому плану')).toBeNull();
-  await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
-  expect(screen.getByText('По сохранённому плану')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: /^Статус:/ }));
+  await user.click(screen.getByRole('menuitem', { name: 'В работе' }));
+  expect(screen.queryByText('По сохранённому плану')).toBeNull();
+  expect(screen.getByRole('alert')).toBeVisible();
   for (const lock of [
     { busy: true },
     { locked: true },
@@ -614,11 +626,12 @@ it('returns matched task-save feedback to clean after a short interval and prese
     const ack = {
       ...tree,
       project: { ...tree.project, revision: tree.project.revision + 1 },
-      tasks: [{ ...tree.tasks[0]!, status: 'doing' as const }],
+      tasks: [{ ...tree.tasks[0]!, title: 'Saved title' }],
     };
     render(<Harness onSave={vi.fn(async () => ack)} />);
-    fireEvent.change(screen.getByLabelText('Статус'), {
-      target: { value: 'doing' },
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить название' }));
+    fireEvent.change(screen.getByLabelText('Название задачи'), {
+      target: { value: 'Saved title' },
     });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
@@ -629,9 +642,11 @@ it('returns matched task-save feedback to clean after a short interval and prese
     });
     expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
     expect(
-      within(document.querySelector('.panel-footer')!).getByRole('status'),
+      within(document.querySelector('.panel-footer')!).getByRole('status', {
+        hidden: true,
+      }),
     ).toBeEmptyDOMElement();
-    fireEvent.change(screen.getByLabelText('Статус'), {
+    fireEvent.change(screen.getByLabelText('Название задачи'), {
       target: { value: 'todo' },
     });
     act(() => {
@@ -659,12 +674,11 @@ it.each(['status', 'source', 'raw', 'incoming'] as const)(
     render(<Harness tree={tree} tasks={tree.tasks} />);
     await user.click(screen.getByRole('button', { name: 'Изменить название' }));
     await user.type(screen.getByLabelText('Название задачи'), ' draft{Enter}');
-    await user.click(screen.getByRole('button', { name: 'Добавить описание' }));
-    await user.type(screen.getByLabelText('Описание'), 'Описание');
     expect(screen.queryByText('По сохранённому плану')).toBeNull();
-    if (field === 'status')
-      await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
-    else if (field === 'incoming') {
+    if (field === 'status') {
+      await user.click(screen.getByRole('button', { name: /^Статус:/ }));
+      await user.click(screen.getByRole('menuitem', { name: 'В работе' }));
+    } else if (field === 'incoming') {
       await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
       await user.click(
         screen.getByRole('button', { name: 'Добавить предшественника' }),
@@ -678,14 +692,18 @@ it.each(['status', 'source', 'raw', 'incoming'] as const)(
       await user.type(input, field === 'raw' ? '3e' : '3');
       await user.keyboard('{Escape}');
     }
-    expect(screen.getByText('По сохранённому плану')).toBeVisible();
+    if (field === 'status')
+      expect(screen.queryByText('По сохранённому плану')).toBeNull();
+    else expect(screen.getByText('По сохранённому плану')).toBeVisible();
     expect(
       screen.getByText('Предшественник заканчивается после явного начала.', {
         exact: true,
       }),
     ).toBeVisible();
     await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
-    expect(screen.getAllByText('По сохранённому плану')).toHaveLength(1);
+    expect(screen.queryAllByText('По сохранённому плану')).toHaveLength(
+      field === 'status' ? 0 : 1,
+    );
   },
 );
 
@@ -696,11 +714,14 @@ it('cancels old success feedback on new drafts and unmount without clearing a ne
     const ack = {
       ...tree,
       project: { ...tree.project, revision: tree.project.revision + 1 },
-      tasks: [{ ...tree.tasks[0]!, status: 'doing' as const }],
+      tasks: [{ ...tree.tasks[0]!, title: 'Saved title' }],
     };
     const save = async () => {
-      fireEvent.change(screen.getByLabelText('Статус'), {
-        target: { value: 'doing' },
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Изменить название' }),
+      );
+      fireEvent.change(screen.getByLabelText('Название задачи'), {
+        target: { value: 'Saved title' },
       });
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
@@ -713,7 +734,7 @@ it('cancels old success feedback on new drafts and unmount without clearing a ne
     act(() => {
       vi.advanceTimersByTime(500);
     });
-    fireEvent.change(screen.getByLabelText('Статус'), {
+    fireEvent.change(screen.getByLabelText('Название задачи'), {
       target: { value: 'todo' },
     });
     expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
@@ -733,7 +754,7 @@ it('cancels old success feedback on new drafts and unmount without clearing a ne
     const secondTree = { ...tree, tasks: [second] };
     const secondAck = {
       ...ack,
-      tasks: [{ ...second, status: 'doing' as const }],
+      tasks: [{ ...second, title: 'Saved title' }],
     };
     view.rerender(
       <Harness

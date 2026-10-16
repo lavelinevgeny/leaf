@@ -332,7 +332,9 @@ test('second client metadata rename/move/create keeps dirty planning baseline an
     await page.keyboard.press('Escape');
     // Original baseline must conflict instead of silently overwriting remote planning.
     await panel.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(panel.getByRole('alert')).toBeVisible();
+    await expect(
+      panel.locator('.panel-footer').getByRole('alert'),
+    ).toBeVisible();
     expect(
       (await readTree(remote, runtime.origin, tree.project.id)).tasks.find(
         (t) => t.id === deepId,

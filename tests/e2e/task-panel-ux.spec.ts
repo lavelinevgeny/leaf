@@ -1,3 +1,4 @@
+import { setTaskStatus } from '../helpers/task-panel.js';
 import { type Locator, type Page } from '@playwright/test';
 import { test, expect, createJournalEntry } from '../helpers/journal-e2e.js';
 import {
@@ -194,7 +195,8 @@ test('whole task draft survives tabs, repairs raw error, saves one revision and 
 }) => {
   const { tree, current } = await seed(page, runtime);
   await row(page, current.id).click();
-  const cleanFooter = await panel(page).locator('.panel-footer').boundingBox();
+  await expect(panel(page).locator('.panel-footer')).toBeHidden();
+  const headerBefore = await panel(page).locator('.panel-header').boundingBox();
   await panel(page)
     .getByRole('button', { name: 'Изменить название', exact: true })
     .click();
@@ -204,18 +206,9 @@ test('whole task draft survives tabs, repairs raw error, saves one revision and 
   await panel(page)
     .getByLabel('Название задачи', { exact: true })
     .press('Enter');
-  await panel(page).getByLabel('Статус', { exact: true }).selectOption('doing');
-  await panel(page)
-    .getByRole('button', { name: 'Добавить описание', exact: true })
-    .click();
-  const description = panel(page).getByLabel('Описание', { exact: true });
-  await description.fill('Первая строка');
-  await description.press('Enter');
-  await description.pressSequentially('Вторая строка');
-  await expect(description).toHaveValue('Первая строка\nВторая строка');
-  expect(await panel(page).locator('.panel-footer').boundingBox()).toEqual(
-    cleanFooter,
-  );
+  await setTaskStatus(page, 'В работе');
+  const afterStatus = await readTree(page, runtime.origin, tree.project.id);
+  await expect(panel(page).locator('.panel-footer')).toBeVisible();
   await panel(page)
     .getByRole('button', { name: /^Сроки задачи:/ })
     .click();
@@ -261,16 +254,16 @@ test('whole task draft survives tabs, repairs raw error, saves one revision and 
   expect((await response).status()).toBe(200);
   await expect(
     panel(page).getByRole('button', { name: 'Сохранить', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   const saved = await readTree(page, runtime.origin, tree.project.id);
-  expect(saved.project.revision).toBe(before + 1);
-  expect(await panel(page).locator('.panel-footer').boundingBox()).toEqual(
-    cleanFooter,
+  expect(saved.project.revision).toBe(before + 2);
+  expect(await panel(page).locator('.panel-header').boundingBox()).toEqual(
+    headerBefore,
   );
   expect(saved.tasks.find((task) => task.id === current.id)).toMatchObject({
     title: 'Общий синтетический черновик',
     status: 'doing',
-    description: 'Первая строка\nВторая строка',
+    description: '',
     inputStart: '2026-10-05',
     inputFinish: '2026-10-06',
     durationDays: 2,
@@ -283,7 +276,7 @@ test('whole task draft survives tabs, repairs raw error, saves one revision and 
     current.title,
   );
   const restored = await readTree(page, runtime.origin, tree.project.id);
-  expect(restored.tasks).toEqual(tree.tasks);
+  expect(restored.tasks).toEqual(afterStatus.tasks);
   expect(restored.dependencies).toEqual(tree.dependencies);
 });
 
@@ -366,13 +359,7 @@ for (const viewport of [
       50,
     );
     await onlyMainScroller(page);
-    await panel(page)
-      .getByRole('button', { name: 'Сохранить', exact: true })
-      .scrollIntoViewIfNeeded();
-    await insideViewport(
-      panel(page).getByRole('button', { name: 'Сохранить', exact: true }),
-      page,
-    );
+    await expect(panel(page).locator('.panel-footer')).toBeHidden();
     await panel(page)
       .getByRole('button', { name: 'Закрыть панель', exact: true })
       .scrollIntoViewIfNeeded();
@@ -454,6 +441,10 @@ test('extreme title uses one shell scroll and keyboard text undo and journal sub
     (await readTree(page, runtime.origin, tree.project.id)).project.revision,
   ).toBe(before.project.revision);
   await panel(page).getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Несохранённые изменения задачи' })
+    .getByRole('button', { name: 'Не сохранять', exact: true })
+    .click();
   const editor = panel(page).getByLabel('Текст записи');
   await editor.fill('Первая строка');
   await editor.press('End');
@@ -464,12 +455,7 @@ test('extreme title uses one shell scroll and keyboard text undo and journal sub
   await expect(editor).toHaveValue('');
   await expect(panel(page).locator('[data-journal-entry-id]')).toHaveCount(1);
   await onlyMainScroller(page);
-  const save = panel(page).getByRole('button', {
-    name: 'Сохранить',
-    exact: true,
-  });
-  await save.scrollIntoViewIfNeeded();
-  await insideViewport(save, page);
+  await expect(panel(page).locator('.panel-footer')).toBeHidden();
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).project.revision,
   ).toBe(before.project.revision);

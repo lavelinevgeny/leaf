@@ -21,6 +21,8 @@ import {
   type TaskPanelScheduleHandle,
 } from './TaskPanelSchedule.js';
 import { TaskPanelHeader } from './TaskPanelHeader.js';
+import { TaskDescription } from './TaskDescription.js';
+import { TaskLeaveDialog } from './TaskLeaveDialog.js';
 import { ScheduleProblems } from './ScheduleStatus.js';
 import { TaskPanelFooter } from './TaskPanelFooter.js';
 import type { JournalMetadata } from './journal-state.js';
@@ -35,6 +37,7 @@ import { TaskMoveDialog } from './TaskMoveDialog.js';
 import { strings } from './strings.js';
 
 type Draft = Pick<Task, 'title' | 'description' | 'status'>;
+type SaveScope = 'all' | 'status' | 'description' | 'schedule';
 const draftOf = (task: Task): Draft => ({
   title: task.title,
   description: task.description,
@@ -157,26 +160,21 @@ export function TaskPanel({
         'Загрузка задачи…')
       : undefined;
   const [descriptionEditing, setDescriptionEditing] = useState(false);
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const descriptionSnapshot = useRef(task.description);
+  const [pendingTab, setPendingTab] = useState<PanelTab | null>(null);
+  const [localSaving, setLocalSaving] = useState(false);
+  const [saveError, setSaveError] = useState<{
+    scope: SaveScope;
+    message: string;
+  } | null>(null);
   const [subtaskOpen, setSubtaskOpen] = useState(
     tab === 'subtasks' || subtaskDraftActive,
   );
   useEffect(() => {
     if (tab === 'subtasks' || subtaskDraftActive) setSubtaskOpen(true);
   }, [tab, subtaskDraftActive]);
-  const descriptionEditor = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    if (descriptionEditing) descriptionEditor.current?.focus();
-  }, [descriptionEditing]);
   const latestTree = useRef(tree);
   latestTree.current = tree;
-  useEffect(() => {
-    const editor = descriptionEditor.current;
-    if (editor) {
-      editor.style.height = 'auto';
-      editor.style.height = `${editor.scrollHeight}px`;
-    }
-  });
   const [draft, setDraft] = useState<Draft>(() => draftOf(task));
   const [baseline, setBaseline] = useState<Draft>(() => draftOf(task));
   const [plan, setPlan] = useState<SourceFields>(() => sourceOf(task));
@@ -234,7 +232,13 @@ export function TaskPanel({
     rawVersion: rawVersion.current,
   };
   const acknowledgedRevision = useRef(tree.project.revision);
-  const submitted = useRef<typeof currentDraft.current | null>(null);
+  const submitted = useRef<
+    | (typeof currentDraft.current & {
+        scope: SaveScope;
+        baseline: typeof currentDraft.current;
+      })
+    | null
+  >(null);
   const saveResult = useRef<((saved: boolean) => void) | null>(null);
   const [returnedAcknowledgement, setReturnedAcknowledgement] = useState<{
     tree: ProjectTree;
@@ -282,7 +286,52 @@ export function TaskPanel({
           plan: sourceOf(newerTask),
           incoming: incomingPredecessorIds(current, task.id),
         }) !== draftKey({ details, plan: source, incoming: ids }));
-    if (
+    if (sent.scope !== 'all' && !conflict && !divergent) {
+      const currentValue = currentDraft.current;
+      const nextDetails = { ...currentValue.details };
+      for (const key of ['title', 'description', 'status'] as const) {
+        if (
+          currentValue.details[key] === sent.details[key] &&
+          (sent.scope === key ||
+            sent.details[key] === sent.baseline.details[key])
+        )
+          Object.assign(nextDetails, { [key]: details[key] });
+      }
+      setDraft(nextDetails);
+      const samePlan =
+        JSON.stringify(currentValue.plan) === JSON.stringify(sent.plan);
+      const cleanPlan =
+        JSON.stringify(sent.plan) === JSON.stringify(sent.baseline.plan);
+      if (
+        !rawDirtyRef.current &&
+        rawVersion.current === sent.rawVersion &&
+        samePlan &&
+        (sent.scope === 'schedule' || cleanPlan)
+      )
+        setPlan(source);
+      const sameIncoming =
+        canonicalPredecessorIds(currentValue.incoming).join('\0') ===
+        canonicalPredecessorIds(sent.incoming).join('\0');
+      const cleanIncoming =
+        canonicalPredecessorIds(sent.incoming).join('\0') ===
+        canonicalPredecessorIds(sent.baseline.incoming).join('\0');
+      if (sameIncoming && (sent.scope === 'schedule' || cleanIncoming))
+        setIncoming(ids);
+      const targetUnchanged =
+        sent.scope === 'status'
+          ? currentValue.details.status === sent.details.status
+          : sent.scope === 'description'
+            ? currentValue.details.description === sent.details.description
+            : samePlan &&
+              !rawDirtyRef.current &&
+              rawVersion.current === sent.rawVersion;
+      setSaved(targetUnchanged);
+      if (targetUnchanged && sent.scope === 'description')
+        setDescriptionEditing(false);
+      if (targetUnchanged && sent.scope === 'schedule')
+        scheduleEditor.current?.closeSaved();
+      saveResult.current?.(targetUnchanged);
+    } else if (
       !conflict &&
       !divergent &&
       !rawDirtyRef.current &&
@@ -290,6 +339,7 @@ export function TaskPanel({
       draftKey(currentDraft.current) === draftKey(sent)
     ) {
       setDraft(details);
+      setDescriptionEditing(false);
       setPlan(source);
       setIncoming(ids);
       setSaved(true);
@@ -368,58 +418,125 @@ export function TaskPanel({
     setDraft((previous) => ({ ...previous, [field]: value }));
     setSaved(false);
   }
-  async function save() {
+  async function save(scope: SaveScope = 'all', status?: Task['status']) {
     if (
       busy ||
+      localSaving ||
       (locked && !retry) ||
       removed ||
       conflict ||
-      (!retry && !draft.title.trim())
+      (!retry && scope === 'all' && !draft.title.trim())
     ) {
       focusInvalid();
       return false;
     }
-    if (!retry && !scheduleEditor.current?.finishInput()) {
+    const savingPlan = scope === 'all' || scope === 'schedule';
+    if (!retry && savingPlan && !scheduleEditor.current?.finishInput()) {
       focusInvalid();
       return false;
     }
     const source = currentDraft.current.plan;
-    if (!retry && !summary && !sourceFieldsSchema.safeParse(source).success) {
+    if (
+      !retry &&
+      savingPlan &&
+      !summary &&
+      !sourceFieldsSchema.safeParse(source).success
+    ) {
       focusInvalid();
       return false;
     }
     const fields = { ...draft, title: draft.title.trim() };
     const changes: Extract<Command, { type: 'task.edit' }>['changes'] = {};
     for (const key of ['title', 'description', 'status'] as const)
-      if (fields[key] !== baseline[key])
+      if ((scope === 'all' || scope === key) && fields[key] !== baseline[key])
         Object.assign(changes, { [key]: fields[key] });
-    if (!summary)
+    if (scope === 'status' && status !== undefined) changes.status = status;
+    if (savingPlan && !summary)
       for (const key of ['inputStart', 'inputFinish', 'durationDays'] as const)
         if (source[key] !== baselinePlan[key] || (canAdopt && !dirty))
           Object.assign(changes, { [key]: source[key] });
-    if (!summary && incomingDirty)
+    if (savingPlan && !summary && incomingDirty)
       changes.predecessorIds = canonicalPredecessorIds(incoming);
+    if (!retry && Object.keys(changes).length === 0) {
+      setSaveError(null);
+      return true;
+    }
     // An exact replay retains this original submitted draft, including post-send changes.
     if (!retry || !submitted.current)
       submitted.current = structuredClone({
         ...currentDraft.current,
+        scope,
+        baseline: {
+          details: baseline,
+          plan: baselinePlan,
+          incoming: baselineIncoming,
+          rawVersion: rawVersion.current,
+        },
         rawVersion: rawVersion.current,
       });
+    setSaveError(null);
+    setLocalSaving(true);
     const confirmed = new Promise<boolean>((resolve) => {
       saveResult.current = resolve;
     });
-    const ack = await onSave(changes);
-    if (!ack) {
+    try {
+      const ack = await onSave(changes);
+      if (!ack) {
+        saveResult.current?.(false);
+        saveResult.current = null;
+        setSaveError({
+          scope: submitted.current?.scope ?? scope,
+          message:
+            'Не удалось подтвердить сохранение. Введённые данные сохранены в карточке. Повторите сохранение.',
+        });
+        return false;
+      }
+      setReturnedAcknowledgement({ tree: ack });
+      const result = await confirmed;
+      if (result) setSaveError(null);
+      return result;
+    } catch {
       saveResult.current?.(false);
       saveResult.current = null;
+      setSaveError({
+        scope,
+        message:
+          'Не удалось сохранить. Проверьте соединение и повторите сохранение.',
+      });
       return false;
+    } finally {
+      setLocalSaving(false);
     }
-    setReturnedAcknowledgement({ tree: ack });
-    return confirmed;
   }
+  function cancelDescription() {
+    if (busy || localSaving || locked || retry) return;
+    update('description', descriptionSnapshot.current);
+    setDescriptionEditing(false);
+    setSaveError(null);
+  }
+  async function saveDescription() {
+    if (await save('description')) {
+      setDescriptionEditing(false);
+      descriptionSnapshot.current = currentDraft.current.details.description;
+    }
+  }
+  function requestTab(next: PanelTab) {
+    if (
+      visiblePanelTab(next) !== visibleTab &&
+      descriptionEditing &&
+      draft.description !== descriptionSnapshot.current
+    ) {
+      setPendingTab(next);
+      return;
+    }
+    onTab(next);
+  }
+
   function reset() {
     clearFields();
     rawVersion.current++;
+    descriptionSnapshot.current = baseline.description;
+    setSaveError(null);
     setDraft({ ...baseline });
     setPlan({ ...baselinePlan });
     setIncoming([...baselineIncoming]);
@@ -503,23 +620,26 @@ export function TaskPanel({
             <TaskPanelSchedule
               ref={scheduleEditor}
               plan={plan}
+              baselinePlan={baselinePlan}
               project={tree.project}
               summary={summary}
               computed={tree.schedule.summaries[task.id]}
               error={planError}
               resetKey={resetKey}
               disabledReason={
-                removed
-                  ? removedReason
-                  : busy
-                    ? busyReason
-                    : locked
-                      ? strings.loading
-                      : conflict
-                        ? strings.resolveTaskConflict
-                        : task.status === 'done' && draft.status === 'done'
-                          ? strings.doneHint
-                          : null
+                localSaving
+                  ? strings.saving
+                  : removed
+                    ? removedReason
+                    : busy
+                      ? busyReason
+                      : locked
+                        ? strings.loading
+                        : conflict
+                          ? strings.resolveTaskConflict
+                          : task.status === 'done' && draft.status === 'done'
+                            ? strings.doneHint
+                            : null
               }
               onChange={updatePlan}
               onValidityChange={setPlanValid}
@@ -530,14 +650,23 @@ export function TaskPanel({
                 setSaved(false);
               }}
               onResetFields={clearFields}
+              onSave={() => save('schedule')}
+              incomingDirty={incomingDirty}
+              saving={localSaving}
+              cancelDisabled={busy || localSaving || locked || retry}
+              saveError={
+                saveError?.scope === 'schedule' ? saveError.message : null
+              }
             />
           }
           title={draft.title}
           status={draft.status}
           onTitle={(title) => update('title', title)}
-          onStatus={(status) => update('status', status)}
-          disabled={busy || locked}
-          closeDisabled={busy || locked}
+          onStatus={(status) => {
+            if (status !== draft.status) void save('status', status);
+          }}
+          disabled={busy || locked || conflict || removed}
+          closeDisabled={busy || localSaving || locked}
           onClose={onClose}
           journalTitle={journalTitle}
           unsavedTitle={!!journalMetadata && draft.title !== journalTitle}
@@ -651,7 +780,7 @@ export function TaskPanel({
             aria-selected={visibleTab === value}
             tabIndex={visibleTab === value ? 0 : -1}
             onClick={() => {
-              onTab(value);
+              requestTab(value);
             }}
             onKeyDown={(event) => {
               if (
@@ -669,8 +798,12 @@ export function TaskPanel({
                             (event.key === 'ArrowRight' ? 1 : 2)) %
                           3
                   ]!;
-                onTab(next);
-                document.getElementById(`tab-${next}`)?.focus();
+                requestTab(next);
+                if (
+                  !descriptionEditing ||
+                  draft.description === descriptionSnapshot.current
+                )
+                  document.getElementById(`tab-${next}`)?.focus();
               }
             }}
           >
@@ -713,105 +846,68 @@ export function TaskPanel({
           </div>
         ) : visibleTab === 'details' ? (
           <div role="tabpanel" id="panel-details" aria-labelledby="tab-details">
-            <section className="panel-description-section">
-              {descriptionEditing ? (
-                <>
-                  <label>
-                    {strings.description}
-                    <textarea
-                      form="task-panel-edit"
-                      aria-label={strings.description}
-                      ref={descriptionEditor}
-                      disabled={busy || locked}
-                      value={draft.description}
-                      maxLength={10000}
-                      rows={1}
-                      onChange={(event) =>
-                        update('description', event.target.value)
-                      }
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="quiet"
-                    onClick={() => setDescriptionEditing(false)}
-                  >
-                    {strings.confirmSchedule}
-                  </button>
-                </>
-              ) : draft.description ? (
-                <>
-                  <p
-                    className={`panel-description${descriptionExpanded ? '' : ' is-collapsed'}`}
-                  >
-                    {draft.description}
-                  </p>
-                  <button
-                    type="button"
-                    className="quiet"
-                    onClick={() => setDescriptionExpanded((value) => !value)}
-                  >
-                    {descriptionExpanded
-                      ? strings.collapseDescription
-                      : strings.expandDescription}
-                  </button>
-                  <button
-                    type="button"
-                    className="quiet"
-                    disabled={busy || locked}
-                    onClick={() => setDescriptionEditing(true)}
-                  >
-                    {strings.editDescription}
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="quiet"
-                  disabled={busy || locked}
-                  onClick={() => setDescriptionEditing(true)}
-                >
-                  {strings.addDescription}
-                </button>
-              )}
-            </section>
+            <TaskDescription
+              changed={draft.description !== baseline.description}
+              value={draft.description}
+              editing={descriptionEditing}
+              disabled={busy || locked || conflict || removed}
+              cancelDisabled={busy || localSaving || locked || retry}
+              saving={localSaving}
+              error={
+                saveError?.scope === 'description' ? saveError.message : null
+              }
+              onChange={(description) => update('description', description)}
+              onEdit={() => {
+                descriptionSnapshot.current = draft.description;
+                setSaveError(null);
+                setDescriptionEditing(true);
+              }}
+              onCancel={cancelDescription}
+              onSave={() => void saveDescription()}
+            />
             <section
               className="panel-subtasks"
               aria-labelledby="panel-subtasks-heading"
             >
-              <h3 id="panel-subtasks-heading">
-                {strings.subtasks}{' '}
-                <span>
-                  ({tasks.filter((child) => child.parentId === task.id).length})
-                </span>
-              </h3>
+              <div className="panel-section-heading">
+                <h3 id="panel-subtasks-heading">
+                  {strings.subtasks}{' '}
+                  <span>
+                    (
+                    {tasks.filter((child) => child.parentId === task.id).length}
+                    )
+                  </span>
+                </h3>
+                {!subtaskOpen && subtaskInput && (
+                  <button
+                    type="button"
+                    className="quiet panel-add-subtask"
+                    aria-label={strings.addChild}
+                    disabled={busy || locked || removed}
+                    aria-describedby={
+                      dirty ? 'panel-subtasks-blocked' : undefined
+                    }
+                    onClick={(event) => {
+                      const trigger = event.currentTarget;
+                      setSubtaskOpen(true);
+                      onTab('subtasks');
+                      requestAnimationFrame(() => {
+                        if (
+                          document.activeElement === document.body ||
+                          document.activeElement === trigger
+                        )
+                          document.getElementById('quick-subtask')?.focus();
+                      });
+                    }}
+                  >
+                    + Добавить
+                  </button>
+                )}
+              </div>
               {dirty && (
                 <p id="panel-subtasks-blocked" className="field-hint">
                   {strings.saveTaskBeforeSubtask}
                 </p>
-              )}
-              {!subtaskOpen && subtaskInput && (
-                <button
-                  type="button"
-                  disabled={busy || locked || removed}
-                  aria-describedby={
-                    dirty ? 'panel-subtasks-blocked' : undefined
-                  }
-                  onClick={(event) => {
-                    const trigger = event.currentTarget;
-                    setSubtaskOpen(true);
-                    onTab('subtasks');
-                    requestAnimationFrame(() => {
-                      if (
-                        document.activeElement === document.body ||
-                        document.activeElement === trigger
-                      )
-                        document.getElementById('quick-subtask')?.focus();
-                    });
-                  }}
-                >
-                  {strings.addChild}
-                </button>
               )}
               {!summary && !removed && (
                 <p className="empty-state">{strings.emptySubtasks}</p>
@@ -894,12 +990,55 @@ export function TaskPanel({
                       ? strings.loading
                       : null
         }
-        resetDisabled={busy || locked}
-        feedback={feedback}
+        resetDisabled={busy || localSaving || locked}
+        editorOwnsSave={
+          descriptionEditing &&
+          visibleTab === 'details' &&
+          draft.title === baseline.title &&
+          draft.status === baseline.status &&
+          !planDirty &&
+          !rawDirty &&
+          !incomingDirty
+        }
+        descriptionEditing={descriptionEditing && visibleTab === 'details'}
+        feedback={
+          <>
+            {feedback}
+            {saveError &&
+              saveError.scope !== 'description' &&
+              saveError.scope !== 'schedule' && (
+                <p role="alert" className="error-message">
+                  {saveError.message}
+                </p>
+              )}
+          </>
+        }
+        hasFeedback={!!feedback || !!saveError}
         onSave={() => void save()}
         onReset={reset}
         onRepair={focusInvalid}
       />
+      {pendingTab && (
+        <TaskLeaveDialog
+          blocked={busy || localSaving || locked || retry}
+          saving={busy || localSaving}
+          onContinue={() => setPendingTab(null)}
+          onDiscard={() => {
+            cancelDescription();
+            onTab(pendingTab);
+            setPendingTab(null);
+          }}
+          onSave={() => {
+            void save('description').then((ok) => {
+              if (ok) {
+                setDescriptionEditing(false);
+                onTab(pendingTab);
+                setPendingTab(null);
+              } else setPendingTab(null);
+            });
+          }}
+        />
+      )}
       {moveOpen && (
         <TaskMoveDialog
           task={task}

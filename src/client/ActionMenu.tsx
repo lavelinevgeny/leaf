@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { placeMenu, type MenuPlacement } from './menu-position.js';
@@ -19,6 +20,7 @@ export interface ActionMenuItem {
   disabledReason?: string | undefined;
   tone?: 'danger';
   separatorBefore?: boolean;
+  selected?: boolean;
 }
 // The trigger stays in the row; the open menu is portaled and fixed so it never
 // changes row geometry and is not clipped by scrolling containers.
@@ -30,6 +32,7 @@ export function ActionMenu({
   className,
   disabled = false,
   triggerData,
+  triggerContent,
 }: {
   label: string;
   items: ActionMenuItem[];
@@ -38,6 +41,7 @@ export function ActionMenu({
   className: string;
   disabled?: boolean;
   triggerData?: Record<`data-${string}`, string>;
+  triggerContent?: ReactNode;
 }) {
   const id = useId();
   const triggerId = `${id}trigger`,
@@ -197,7 +201,7 @@ export function ActionMenu({
         onClick={() => change.current(!open)}
         {...triggerData}
       >
-        ⋯
+        {triggerContent ?? '⋯'}
       </button>
       {open &&
         createPortal(
@@ -238,6 +242,7 @@ export function ActionMenu({
                   role="menuitem"
                   className={item.tone === 'danger' ? 'danger' : undefined}
                   disabled={item.disabled}
+                  aria-current={item.selected ? 'true' : undefined}
                   aria-describedby={
                     item.disabledReason
                       ? `${menuId}-${item.id}-reason`
@@ -255,6 +260,7 @@ export function ActionMenu({
                   }}
                 >
                   {item.label}
+                  {item.selected && <span aria-hidden="true"> ✓</span>}
                 </button>
                 {item.disabledReason && (
                   <p id={`${menuId}-${item.id}-reason`} className="field-hint">

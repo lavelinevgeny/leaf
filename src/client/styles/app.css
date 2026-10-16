@@ -586,7 +586,6 @@ h2 {
 }
 .panel-footer {
   flex: 0 0 auto;
-  min-height: 4.5rem;
   padding: 12px 20px;
   border-top: 1px solid var(--leaf-border);
   font-size: 12px;
@@ -612,14 +611,126 @@ h2 {
   overflow-wrap: anywhere;
   background: transparent;
 }
-.panel-status {
-  margin: 12px 0 0;
+.panel-properties {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
 }
-.panel-status select {
-  width: auto;
-  margin-left: 10px;
+.panel-properties > * {
+  min-width: 0;
+  max-width: 100%;
 }
+.panel-properties button {
+  min-height: 38px;
+  border-radius: 9px;
+}
+.panel-status > button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--leaf-accent-soft);
+}
+.panel-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--leaf-text-muted);
+}
+.panel-status--doing .panel-status-dot {
+  background: #4b87ce;
+}
+.panel-status--done .panel-status-dot {
+  background: var(--leaf-accent);
+}
+.panel-properties .panel-schedule {
+  margin: 0;
+}
+.panel-properties .panel-schedule > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: normal;
+  text-align: start;
+}
+.panel-chip-icon {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--leaf-text-muted);
+}
+.panel-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panel-section-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.panel-edit-description {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  color: var(--leaf-text-muted);
+}
+.panel-edit-description:hover {
+  color: var(--leaf-accent);
+  background: var(--leaf-accent-soft);
+}
+.panel-description-section textarea {
+  margin-top: 8px;
+  min-height: 100px;
+}
+.panel-description-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.panel-description-actions .field-hint {
+  flex: 1 1 180px;
+}
+.panel-add-description {
+  margin-top: 8px;
+  padding-inline: 0;
+  color: var(--leaf-text-muted);
+}
+.panel-description-expand {
+  padding: 0;
+  min-height: 32px;
+  color: var(--leaf-accent);
+}
+.panel-description-section {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--leaf-border);
+}
+.panel-content {
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+}
+.panel-footer[hidden] {
+  display: none;
+}
+.action-menu [aria-current='true'] {
+  background: var(--leaf-accent-soft);
+}
+@media (hover: none) {
+  .panel-edit-description {
+    width: 44px;
+    min-height: 44px;
+  }
+}
+
 .panel-description {
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -982,4 +1093,52 @@ h2 {
 }
 .panel-action-menu {
   margin-inline-start: auto;
+}
+
+.task-panel-schedule .quick-schedule-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.task-panel-schedule .quick-schedule-actions button {
+  white-space: nowrap;
+}
+.task-panel-schedule .quick-schedule-actions button:first-child {
+  margin-right: auto;
+}
+@media (max-width: 480px) {
+  .quick-schedule.task-panel-schedule .plan-fields {
+    grid-template-columns: 1fr;
+  }
+  .quick-schedule.task-panel-schedule .calendar-field:first-child,
+  .quick-schedule.task-panel-schedule .calendar-field:nth-child(2),
+  .quick-schedule.task-panel-schedule .duration-field {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .task-panel-schedule .calendar-input input {
+    font-size: 16px;
+  }
+  .task-panel-schedule .duration-input input {
+    font-size: 16px;
+  }
+}
+
+.panel-subtasks {
+  margin-top: 16px;
+}
+.panel-add-subtask {
+  white-space: nowrap;
+  color: var(--leaf-accent);
+  padding-inline: 4px;
+}
+
+@media (max-width: 480px) {
+  .task-panel-schedule .quick-schedule-actions button:first-child {
+    flex-basis: 100%;
+    margin-right: 0;
+    text-align: start;
+  }
+  .task-panel-schedule .quick-schedule-actions button:nth-child(2) {
+    margin-left: auto;
+  }
 }

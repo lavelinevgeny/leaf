@@ -1,3 +1,4 @@
+import { setTaskStatus } from '../helpers/task-panel.js';
 import { openTaskDates } from '../helpers/task-panel.js';
 import { test as base, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -683,12 +684,7 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: /^B,/ })
     .press('Enter');
-  await page.getByLabel('Статус', { exact: true }).selectOption('done');
-  const saved = page.waitForResponse(
-    (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
-  );
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  expect((await saved).status()).toBe(200);
+  await setTaskStatus(page, 'Готово');
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   const done = await readTree(page, runtime.origin, seeded.tree.project.id);
   if (done.schedule.analysisStatus !== 'ready')

@@ -333,7 +333,7 @@ it('takes canonical Details source and relation baseline from a relation-only Sa
   });
   expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
   expect(screen.getByLabelText('Окончание')).toHaveValue('13.10.2026');
-  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Сохранить' })).toBeNull();
 });
 it('keeps a newer full panel draft dirty after deferred Save and reconciles its baseline without claiming success', async () => {
   const { tree, ack } = fsPanelFixture();
@@ -372,7 +372,9 @@ it('keeps a newer full panel draft dirty after deferred Save and reconciles its 
   view.rerender(<TaskPanel {...p} tab="details" />);
   expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик');
   onSave.mockImplementationOnce(async () => ack);
-  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Сохранить все изменения' }),
+  );
   expect(onSave).toHaveBeenLastCalledWith({
     description: 'Новый черновик',
     inputStart: '2026-10-08',

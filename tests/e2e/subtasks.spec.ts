@@ -1,3 +1,4 @@
+import { setTaskStatus } from '../helpers/task-panel.js';
 import { test as base, expect, type Page } from '@playwright/test';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 import {
@@ -74,11 +75,11 @@ for (const viewport of [
     await expect(
       card.getByLabel('Название задачи', { exact: true }),
     ).toHaveValue(title);
-    await card.getByLabel('Статус', { exact: true }).selectOption('doing');
+    await setTaskStatus(page, 'В работе');
     await card.getByLabel('Название задачи', { exact: true }).press('Enter');
-    const save = card.getByRole('button', { name: 'Сохранить', exact: true });
-    await expect(save).toBeEnabled();
-    await save.click({ timeout: 3000 });
+    await expect(
+      card.getByRole('button', { name: 'Сохранить', exact: true }),
+    ).toHaveCount(0);
     await expect(card.getByText('Сохранено', { exact: true })).toBeVisible();
     const current = await readTree(page, runtime.origin, tree.project.id);
     expect(current.project.revision).toBe(tree.project.revision + 1);
@@ -88,15 +89,14 @@ for (const viewport of [
     });
     const owner = page.locator('[data-panel-scroll-owner]');
     await expect(owner).toHaveCount(1);
-    expect(
-      await owner.evaluate((node) => node.classList.contains('task-panel')),
-    ).toBe(true);
-    expect(await owner.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    const shell = await owner.evaluate((node) =>
+      node.classList.contains('task-panel'),
+    );
     expect(
       await card
         .locator('.panel-content')
         .evaluate((node) => getComputedStyle(node).overflowY),
-    ).toBe('visible');
+    ).toBe(shell ? 'visible' : 'auto');
     // The full title remains available; changing editor/viewport must retain focus.
     await card
       .getByRole('button', { name: 'Изменить название', exact: true })
@@ -104,7 +104,7 @@ for (const viewport of [
     const editor = card.getByLabel('Название задачи', { exact: true });
     await expect(editor).toHaveValue(title);
     await expect(editor).toBeFocused();
-    // The reserved status line and natural chrome may still need shell scroll
+    // The natural chrome may still need shell scroll
     // at the original low height. Grow explicitly to fit before switching back.
     await page.setViewportSize({ width: viewport.width, height: 700 });
     await expect(editor).toBeFocused();

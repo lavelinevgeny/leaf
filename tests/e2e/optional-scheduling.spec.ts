@@ -1,4 +1,4 @@
-import { openTaskDates } from '../helpers/task-panel.js';
+import { openTaskDates, setTaskStatus } from '../helpers/task-panel.js';
 import { test as base, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
@@ -68,7 +68,7 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
       .getByRole('dialog', { name: 'Сроки задачи', exact: true })
       .isVisible()
   )
-    await page.getByRole('button', { name: 'Готово', exact: true }).click();
+    await page.keyboard.press('Escape');
   await page
     .getByRole('button', { name: /Добавить описание|Изменить описание/ })
     .click();
@@ -108,7 +108,9 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
   ).toBe(tree.project.revision);
   await openTaskDates(page);
   await page.getByLabel('Длительность, рабочих дней', { exact: true }).fill('');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Сохранить все изменения', exact: true })
+    .click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   tree = await readTree(page, runtime.origin, tree.project.id);
   expect(tree.tasks.find((t) => t.id === c)).toMatchObject({
@@ -268,8 +270,7 @@ test('unavailable original done must reopen, explicitly adopts equal source, und
   await expect(
     page.getByRole('button', { name: /^Сроки задачи:/ }),
   ).toBeDisabled();
-  await page.getByLabel('Статус', { exact: true }).selectOption('doing');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await setTaskStatus(page, 'В работе');
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   tree = await readTree(page, runtime.origin, tree.project.id);
   expect(tree.schedule.tasks[id]!.startDate).toBeNull();

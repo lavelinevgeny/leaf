@@ -433,7 +433,6 @@ test('unfinished duration keyboard buffer survives Done, Escape, tabs and repair
     await expect(
       page.getByRole('dialog', { name: 'Сроки задачи', exact: true }),
     ).toBeHidden();
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
     expect(
       (await readTree(page, runtime.origin, before.project.id)).tasks.find(

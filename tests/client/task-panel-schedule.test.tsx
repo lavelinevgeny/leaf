@@ -265,9 +265,19 @@ it('shows summary only from both computed endpoints and no own editor', () => {
 it('keeps done dates locked until explicit doing and supplies a deleted reason', async () => {
   const user = userEvent.setup();
   const tree = panelTree({ status: 'done' });
-  const view = render(<Panel tree={tree} />);
+  const ack = structuredClone(tree);
+  ack.tasks[0]!.status = 'doing';
+  ack.project.revision++;
+  const onSave = vi.fn(async () => ack);
+  const view = render(<Panel tree={tree} onSave={onSave} />);
   expect(screen.getByRole('button', { name: /^Сроки задачи:/ })).toBeDisabled();
-  await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
+  await user.click(screen.getByRole('button', { name: /^Статус:/ }));
+  await user.click(screen.getByRole('menuitem', { name: 'В работе' }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: /^Сроки задачи:/ }),
+    ).toBeEnabled(),
+  );
   await openDates(user);
   expect(screen.getByLabelText('Начало')).toBeEnabled();
   view.rerender(<Panel tree={tree} removed />);
@@ -291,14 +301,14 @@ it.each([
     );
     const view = render(<Panel tree={tree} onSave={onSave} />);
     await openDates(user);
-    await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
+    await user.click(screen.getByRole('button', { name: /^Статус:/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'В работе' }));
     await openDates(user);
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await act(async () => resolve(null));
     const field = screen.getByLabelText(label);
     await user.click(field);
     fireEvent.change(field, { target: { value: raw } });
-    await user.tab();
+    fireEvent.blur(field);
     expect(field).toHaveAttribute('aria-invalid', 'true');
     view.rerender(<Panel tree={tree} onSave={onSave} retry locked />);
     expect(field).toHaveAttribute('aria-invalid', 'true');

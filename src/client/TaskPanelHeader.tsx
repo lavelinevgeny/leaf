@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../shared/contracts.js';
 import { statusLabels, strings } from './strings.js';
+import { ActionMenu } from './ActionMenu.js';
 
 interface Props {
   title: string;
@@ -33,6 +34,7 @@ export function TaskPanelHeader({
   unsavedTitle,
 }: Props) {
   const [editing, setEditing] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const snapshot = useRef(title);
   const trigger = useRef<HTMLButtonElement>(null);
   function finish() {
@@ -55,13 +57,9 @@ export function TaskPanelHeader({
         </button>
       </div>
       {path}
-      {journalTitle !== undefined && (
-        <>
-          <h2>{journalTitle}</h2>
-          {unsavedTitle && journalTitle !== title && (
-            <p className="field-hint">Несохранённое название: {title}</p>
-          )}
-        </>
+      {journalTitle !== undefined && editing && <h2>{journalTitle}</h2>}
+      {journalTitle !== undefined && unsavedTitle && journalTitle !== title && (
+        <p className="field-hint">Несохранённое название: {title}</p>
       )}
       {editing ? (
         <TitleContainer
@@ -98,11 +96,7 @@ export function TaskPanelHeader({
           </label>
         </TitleContainer>
       ) : (
-        <TitleContainer
-          aria-label={
-            journalTitle === undefined ? title || strings.title : undefined
-          }
-        >
+        <h2 aria-label={journalTitle ?? (title || strings.title)}>
           <button
             ref={trigger}
             type="button"
@@ -114,28 +108,49 @@ export function TaskPanelHeader({
               setEditing(true);
             }}
           >
-            {journalTitle === undefined
-              ? title || strings.title
-              : strings.editTitle}
+            {journalTitle ?? (title || strings.title)}
           </button>
-        </TitleContainer>
+        </h2>
       )}
-      <label className="panel-status">
-        {strings.status}
-        <select
-          aria-label={strings.status}
-          value={status}
+      <div className="panel-properties">
+        <ActionMenu
+          label={`${strings.status}: ${statusLabels[status]}`}
+          className={`panel-status panel-status--${status}`}
+          open={statusOpen}
+          onOpenChange={setStatusOpen}
           disabled={disabled}
-          onChange={(event) => onStatus(event.target.value as Task['status'])}
-        >
-          {Object.entries(statusLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {schedule}
+          triggerContent={
+            <>
+              <span className="panel-status-dot" aria-hidden="true" />
+              {statusLabels[status]}
+              <svg
+                className="panel-chip-icon"
+                width="16"
+                height="16"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m5 7.5 5 5 5-5" />
+              </svg>
+            </>
+          }
+          items={Object.entries(statusLabels).map(([value, label]) => ({
+            id: value,
+            label,
+            selected: value === status,
+            onSelect: (trigger) => {
+              onStatus(value as Task['status']);
+              trigger.focus({ preventScroll: true });
+            },
+          }))}
+        />
+        {schedule}
+      </div>
     </header>
   );
 }

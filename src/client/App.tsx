@@ -2385,7 +2385,11 @@ export function App() {
           retry={panelRetry}
           conflict={conflict}
           locked={journalLocked || !!pending || loading || projectDirty}
-          feedback={projectControlsOpen ? null : errorView}
+          feedback={
+            projectControlsOpen || (!notice && !error && !conflict)
+              ? null
+              : errorView
+          }
           subtaskDraftActive={!!subtaskDraft && hasQuickDraft(subtaskDraft)}
           subtaskInput={
             <QuickAdd

@@ -63,7 +63,7 @@ export const strings = {
   titleRequired: 'Укажите название задачи',
   addDescription: 'Добавить описание',
   editDescription: 'Изменить описание',
-  expandDescription: 'Развернуть',
+  expandDescription: 'Показать ещё',
   collapseDescription: 'Свернуть',
   resetTask: 'Сбросить изменения',
   repairTask: 'Исправить…',

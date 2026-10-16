@@ -91,7 +91,13 @@ async function save(page: Page, status = 200) {
   const response = page.waitForResponse(
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page
+    .locator('.panel-footer')
+    .getByRole('button', {
+      name: /^Сохранить(?: все изменения)?$/,
+      exact: true,
+    })
+    .click();
   const result = await response;
   expect(result.status()).toBe(status);
   return result;
@@ -320,11 +326,24 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   await start.press('Tab');
   await finish.fill('12.10.2026');
   await finish.press('Tab');
-  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  await page.keyboard.press('Escape');
   await openIncoming(page);
   await choose(page, 'A');
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
-  await save(page);
+  await openTaskDates(page);
+  await expect(
+    page.getByText(
+      '«Готово» сохранит сроки и изменения входящих связей одной операцией.',
+    ),
+  ).toBeVisible();
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  expect((await response).status()).toBe(200);
+  await expect(
+    page.getByRole('dialog', { name: 'Сроки задачи', exact: true }),
+  ).toBeHidden();
   const saved = await readTree(page, runtime.origin, tree.project.id);
   expect(saved.project.revision).toBe(tree.project.revision + 1);
   expect(saved.tasks.find((t) => t.title === 'B')).toMatchObject({
@@ -815,6 +834,10 @@ test('real stale 409 keeps Details source and IDs through reload and corrected r
     'Синтетический черновик',
   );
   await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Несохранённые изменения задачи' })
+    .getByRole('button', { name: 'Сохранить', exact: true })
+    .click();
   await expect(
     panel(page).locator('[data-dependency-direction="incoming"] strong'),
   ).toHaveText('A обновлена');
@@ -824,7 +847,7 @@ test('real stale 409 keeps Details source and IDs through reload and corrected r
   await save(page);
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   const current = await readTree(page, runtime.origin, tree.project.id);
-  expect(current.project.revision).toBe(tree.project.revision + 1);
+  expect(current.project.revision).toBe(tree.project.revision + 2);
   expect(current.dependencies).toEqual([
     expect.objectContaining({
       predecessorId: taskId(tree, 'A обновлена'),
@@ -952,7 +975,13 @@ for (const failure of ['done', 'cycle', 'calendar'] as const)
     const response = page.waitForResponse(
       (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await page
+      .locator('.panel-footer')
+      .getByRole('button', {
+        name: /^Сохранить(?: все изменения)?$/,
+        exact: true,
+      })
+      .click();
     const failed = await response;
     expect(failed.status()).toBe(400);
     const body = await failed.json();
@@ -1375,7 +1404,7 @@ test('C25 graph saves title source incoming in one revision and Undo; cycle enve
   await page
     .getByLabel('Длительность, рабочих дней', { exact: true })
     .press('Tab');
-  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  await page.keyboard.press('Escape');
   await openIncoming(page);
   await choose(page, 'A');
   await expect(

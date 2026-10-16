@@ -1,4 +1,4 @@
-import { openTaskDates } from '../helpers/task-panel.js';
+import { openTaskDates, setTaskStatus } from '../helpers/task-panel.js';
 import { test, expect } from '@playwright/test';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 import {
@@ -130,13 +130,12 @@ test('project settings preserve dirty calendar draft, done requires return and p
     await page.keyboard.press('Escape');
     await expect(projectActions).toBeFocused();
     await page.getByRole('treeitem', { name: /Работа A,/ }).click();
-    await page.getByLabel('Статус', { exact: true }).selectOption('done');
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await setTaskStatus(page, 'Готово');
     await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
     await expect(
       page.getByRole('button', { name: /^Сроки задачи:/ }),
     ).toBeDisabled();
-    await page.getByLabel('Статус', { exact: true }).selectOption('doing');
+    await setTaskStatus(page, 'В работе');
     await expect(page.getByLabel('Начало', { exact: true })).toBeEnabled();
     await openTaskDates(page);
     await page.getByLabel('Начало', { exact: true }).fill('2026-10-06');

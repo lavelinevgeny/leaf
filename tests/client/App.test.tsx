@@ -378,7 +378,7 @@ it.each([
       expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled();
     } else if (variant === 'clean') {
-      expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Сохранить' })).toBeNull();
       expect(
         screen.queryByRole('button', { name: 'Повторить' }),
       ).not.toBeInTheDocument();
@@ -820,7 +820,9 @@ describe('client HTTP interactions', () => {
     await editTaskDescription(user);
     await user.type(panel.getByLabelText('Описание'), 'Черновик деталей');
     await user.click(panel.getByRole('tab', { name: 'Журнал' }));
-    await user.click(panel.getByRole('tab', { name: 'Задача' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Продолжить редактирование' }),
+    );
     await openPanelQuick(user);
     expect(panel.getByLabelText('Новая задача')).toHaveValue('Черновик ветки');
     expect(panel.getByLabelText('Новая задача')).toBeEnabled();
@@ -1530,7 +1532,7 @@ describe('client HTTP interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Изменить название' }));
     screen.getByLabelText('Название задачи').focus();
     await user.tab();
-    expect(screen.getByLabelText('Статус')).toHaveFocus();
+    expect(screen.getByRole('button', { name: /^Статус:/ })).toHaveFocus();
     expect(
       screen.getByRole('button', { name: /^Сроки задачи:/ }),
     ).toBeDisabled();
@@ -1852,8 +1854,8 @@ describe('client HTTP interactions', () => {
     expect(
       await within(
         screen.getByRole('complementary', { name: 'Задача' }),
-      ).findByRole('alert'),
-    ).toHaveTextContent('Проверьте поля запроса.');
+      ).findByText('Проверьте поля запроса.'),
+    ).toBeVisible();
     expect(screen.getByLabelText('Описание')).toHaveValue('Черновик');
   });
   it('saves title, status, description and optional dates, then clears a date to null', async () => {
@@ -1872,22 +1874,33 @@ describe('client HTTP interactions', () => {
       screen.getByLabelText('Описание'),
       'Синтетическое описание',
     );
-    await user.selectOptions(screen.getByLabelText('Статус'), 'doing');
+    await user.click(screen.getByRole('button', { name: /^Статус:/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'В работе' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Статус: В работе' }),
+      ).toBeEnabled(),
+    );
     fireEvent.change(screen.getByLabelText('Начало'), {
       target: { value: '2026-10-07' },
     });
     fireEvent.change(screen.getByLabelText('Окончание'), {
       target: { value: '2026-10-08' },
     });
-    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Сохранить все изменения' }),
+    );
     await screen.findByText('Сохранено');
     expect(commands[0]?.command).toMatchObject({
+      type: 'task.edit',
+      changes: { status: 'doing' },
+    });
+    expect(commands[1]?.command).toMatchObject({
       type: 'task.edit',
       taskId: id(1),
       changes: {
         title: 'Задача A1',
         description: 'Синтетическое описание',
-        status: 'doing',
         inputStart: '2026-10-07',
         inputFinish: '2026-10-08',
       },
@@ -1897,8 +1910,8 @@ describe('client HTTP interactions', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     await screen.findByText('Сохранено');
-    expect(commands[1]).toMatchObject({
-      expectedRevision: 1,
+    expect(commands[2]).toMatchObject({
+      expectedRevision: 2,
       command: { changes: { inputStart: null } },
     });
   });
@@ -2658,7 +2671,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     await screen.findByText('Сохранено');
     expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
     expect(screen.getByLabelText('Окончание')).toHaveValue('13.10.2026');
-    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Сохранить' })).toBeNull();
     expect(
       fetchMock.mock.calls
         .filter(([url]) => String(url).endsWith('/commands'))
@@ -2857,17 +2870,8 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
     await user.click(
       screen.getByRole('button', { name: 'Добавить подзадачу' }),
     );
-  if (
-    screen.queryByRole('button', {
-      name: /Добавить описание|Изменить описание/,
-    })
-  )
-    await user.click(
-      screen.getByRole('button', {
-        name: /Добавить описание|Изменить описание/,
-      }),
-    );
-  await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
+  await user.click(screen.getByRole('button', { name: 'Изменить название' }));
+  await user.type(screen.getByLabelText('Название задачи'), ' черновик{Enter}');
   const mainRow = within(
     screen.getByRole('tree', { name: 'Задачи' }),
   ).getByRole('treeitem', { name: /^A,/ });
@@ -3096,7 +3100,7 @@ it('keeps task dirty status and all write locks while a Journal POST is pending'
     footer.getByRole('button', { name: 'Сбросить изменения' }),
   ).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Закрыть панель' })).toBeDisabled();
-  expect(screen.getByLabelText('Статус')).toBeDisabled();
+  expect(screen.getByRole('button', { name: /^Статус:/ })).toBeDisabled();
   expect(
     screen.getByRole('button', { name: /^Сроки задачи:/ }),
   ).toHaveAttribute('aria-description', 'Дождитесь сохранения записи журнала.');

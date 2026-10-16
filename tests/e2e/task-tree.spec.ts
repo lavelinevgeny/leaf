@@ -1,4 +1,4 @@
-import { openTaskDates } from '../helpers/task-panel.js';
+import { openTaskDates, setTaskStatus } from '../helpers/task-panel.js';
 import {
   test as base,
   expect,
@@ -106,14 +106,14 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await page
     .getByRole('textbox', { name: 'Описание', exact: true })
     .fill('Синтетическое описание');
-  await page
-    .getByRole('combobox', { name: 'Статус', exact: true })
-    .selectOption('doing');
+  await setTaskStatus(page, 'В работе');
   await openTaskDates(page);
   await card.getByLabel('Начало', { exact: true }).fill('2026-10-07');
   await openTaskDates(page);
   await card.getByLabel('Окончание', { exact: true }).fill('2026-10-09');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Сохранить все изменения', exact: true })
+    .click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   await expect(row(page, 'Задача B1')).toHaveAccessibleName(/В работе/);
   await openTaskDates(page);
@@ -167,8 +167,8 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await expect(card.getByLabel('Начало', { exact: true })).toHaveValue('');
   await expect(card.getByLabel('Окончание', { exact: true })).toHaveValue('');
   await expect(
-    page.getByRole('combobox', { name: 'Статус', exact: true }),
-  ).toHaveValue('doing');
+    page.getByRole('button', { name: 'Статус: В работе', exact: true }),
+  ).toBeVisible();
   const header = page.locator('.panel-header');
   await expect(header).toBeInViewport();
   const bounds = await header.boundingBox();
@@ -236,7 +236,9 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
     name: 'Задача',
     exact: true,
   });
-  await expect(panel.getByRole('alert')).toContainText('Нет связи с сервером');
+  await expect(panel.locator('.panel-footer').getByRole('alert')).toContainText(
+    'Нет связи с сервером',
+  );
   await expect(
     page.getByRole('textbox', { name: 'Описание', exact: true }),
   ).toHaveValue('Черновик при сбое');

@@ -1,3 +1,4 @@
+import { setTaskStatus } from '../helpers/task-panel.js';
 import { test as base, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
@@ -384,14 +385,7 @@ test('keyboard, dirty drafts, Show on Gantt and edit/undo work under a filter', 
   });
   await page.getByRole('tab', { name: 'Задача', exact: true }).click();
   await search.fill('Монтаж A');
-  await page.getByLabel('Статус', { exact: true }).selectOption('todo');
-  const saved = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/commands') &&
-      response.request().method() === 'POST',
-  );
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  expect((await saved).status()).toBe(200);
+  await setTaskStatus(page, 'К выполнению');
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   const after = await readTree(page, runtime.origin, tree.project.id);
   expect(after.project.revision).toBe(tree.project.revision + 1);
