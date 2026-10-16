@@ -848,6 +848,8 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
       expect(feed.querySelectorAll('[data-journal-entry]')).toHaveLength(count),
     );
   }
+  // A real manual scroll cancels the preview's pending layout restoration.
+  fireEvent.wheel(feed);
   feed.scrollTop = 10025;
   fireEvent.scroll(feed);
   await userEvent.click(document.getElementById('project-tab-tasks')!);
@@ -863,7 +865,7 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
   await waitFor(() =>
     expect(feed.querySelectorAll('[data-journal-entry]')).toHaveLength(125),
   );
-  expect(feed.scrollTop).toBe(10025);
+  await waitFor(() => expect(feed.scrollTop).toBe(10025));
   expect(
     feed
       .querySelector(`[data-journal-entry="${entries[100]!.id}"]`)!
@@ -871,13 +873,14 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
   ).toBe(175);
   await travel('back');
   await travel('forward');
-  expect(feed.scrollTop).toBe(10025);
+  await waitFor(() => expect(feed.scrollTop).toBe(10025));
+  fireEvent.wheel(feed);
   feed.scrollTop = 7525;
   fireEvent.scroll(feed);
   await userEvent.click(document.getElementById('project-tab-tasks')!);
   await userEvent.click(document.getElementById('project-tab-journal')!);
-  expect(feed.scrollTop).toBe(7525);
+  await waitFor(() => expect(feed.scrollTop).toBe(7525));
   await travel('back');
   await travel('forward');
-  expect(feed.scrollTop).toBe(7525);
+  await waitFor(() => expect(feed.scrollTop).toBe(7525));
 });

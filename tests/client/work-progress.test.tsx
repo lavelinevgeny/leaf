@@ -51,6 +51,53 @@ it('names the task tab Ход работы, retains project Журнал and sta
   ).toBeNull();
 });
 
+it('collapses project journal previews independently and preserves the original text on refresh', async () => {
+  const server = mockJournalApp();
+  const original = '\n\nСинтетический абзац A\n  \n\t\nАбзац B\n\n';
+  server.entries[0]!.body = original;
+  server.entries.push({
+    ...server.entries[0]!,
+    id: '66666666-6666-4666-8666-666666666666',
+    body: '\nДругая синтетическая запись\n\n',
+  });
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Демо-проект' });
+  await userEvent.click(screen.getByRole('tab', { name: 'Журнал' }));
+  const feed = document.querySelector<HTMLElement>('#project-view-journal')!;
+  await waitFor(() =>
+    expect(feed.querySelector('.journal-body')?.textContent).toBe(
+      'Синтетический абзац A\n\nАбзац B',
+    ),
+  );
+  const toggles = within(feed).getAllByRole('button', {
+    name: 'Показать полностью',
+  });
+  expect(toggles).toHaveLength(2);
+  await userEvent.click(toggles[0]!);
+  expect(toggles[0]).toHaveAttribute('aria-expanded', 'true');
+  expect(toggles[1]).toHaveAttribute('aria-expanded', 'false');
+  expect(feed.querySelector('.journal-body')?.textContent).toBe(original);
+  const reads = vi.mocked(api.journalProject).mock.calls.length;
+  act(() => window.dispatchEvent(new Event('focus')));
+  await waitFor(() =>
+    expect(vi.mocked(api.journalProject).mock.calls.length).toBeGreaterThan(
+      reads,
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      within(feed).getByRole('button', { name: 'Свернуть' }),
+    ).toBeEnabled(),
+  );
+  expect(feed.querySelector('.journal-body')?.textContent).toBe(original);
+  await userEvent.click(within(feed).getByRole('button', { name: 'Свернуть' }));
+  expect(feed.querySelector('.journal-body')?.textContent).toBe(
+    'Синтетический абзац A\n\nАбзац B',
+  );
+  expect(api.journalUpdate).not.toHaveBeenCalled();
+  expect(api.command).not.toHaveBeenCalled();
+});
+
 it('preserves composer height while hidden and synchronously remeasures its changed metrics on reveal', async () => {
   let measuredHeight = 200;
   const observers = new Map<Element, () => void>();

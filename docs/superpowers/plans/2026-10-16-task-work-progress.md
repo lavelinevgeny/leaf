@@ -4,7 +4,7 @@
 
 **Goal:** Упростить добавление и чтение ручных записей во вкладке задачи «Ход работы».
 
-**Architecture:** Существующие journal controller/API остаются источником данных. Новая task-only компоновка включается через компактный режим JournalEditor, сворачивание — отдельным компонентом JournalEntryBody и opt-in пропом JournalFeed. Проектный журнал сохраняет прежнее представление.
+**Architecture:** Существующие journal controller/API остаются источником данных. Новая task-only компоновка включается через компактный режим JournalEditor, сворачивание — отдельным компонентом JournalEntryBody и opt-in пропом JournalFeed. Уточнение владельца распространяет тот же preview на проектный журнал; его форма/toolbar сохраняют прежнее представление.
 
 **Tech Stack:** TypeScript, React, CSS, Vitest/Testing Library, Playwright; существующие зависимости.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Меняются только вкладка задачи и её composer/предпросмотр.
+- Меняются форма задачи и предпросмотр обеих лент.
 - Внутренние journal identifiers, URL `panel=journal`, API, схема, scheduler, CPM, FS и Undo плана сохраняются.
 - Нормализация — исключительно представление, не содержимое запросов и БД.
 - Enter — перенос строки; Ctrl/Cmd+Enter — сохранение.
@@ -90,3 +90,14 @@ Task 1 and Task 2 share scoped journal CSS, editor/panel and new browser tests; 
 Task 1: `c3e689a`, независимое spec/quality review Approved. Task 2: `3bb3764`, исправление hidden reveal `032b44d`; scoped re-review Approved. Форматирование regression test: `b6cdc00`. Итоговое feature review `bcb1c86..b6cdc00` Approved, открытых находок нет.
 
 Root gates PASS: verify 1294/1294 unit/integration tests в 75 файлах, typecheck/lint/build; full E2E 328/328 в двух разрешениях без skips/retries; настоящий browser zoom 200%; format:check, check:kit, check:package, diff/staged guard/Gitleaks. Workspace privacy scan остаётся FAIL из-за прежних приватных локальных артефактов; history/preflight не запускались, внешних действий нет. Полные факты и ограничения — в [STATUS](../../STATUS.md), W01–W10 — в [ACCEPTANCE](../../ACCEPTANCE.md).
+
+
+### Task 3: Такой же предпросмотр в общем журнале — уточнение владельца 2026-10-16
+
+Tasks 1–2 фиксируют первоначальную реализацию. Этот пункт заменяет прежнее исключение проектной ленты из сворачивания; название и форма проекта остаются прежними.
+
+**Files:** `src/client/ProjectJournal.tsx`, поясняющие комментарии `JournalFeed.tsx`, `tests/client/work-progress.test.tsx`, ожидания отложенной прокрутки `tests/client/journal-navigation.test.tsx`, `tests/e2e/work-progress.spec.ts`, текущие UI/DECISIONS/ACCEPTANCE/STATUS/START_HERE и спецификация.
+
+- [x] Tests-first: client App/project case нормализованного preview и независимого раскрытия; actual-server project case с 55 записями, страницами, refresh/anchor, вкладками и поиском. Уточнить существующий общий сценарий обеих лент: четыре строки, keyboard toggle, исходный текст и полный editor. Red до реализации: client 1 fail/5 pass (сырой preview вместо компактного), новый browser case не находит toggle.
+- [x] Включить существующий `<JournalFeed collapseBodies ... />` в ProjectJournal. Переиспользовать тот же компонент, set раскрытых IDs, visible/reveal measurement и отменяемое восстановление scroll anchor, без дублирования нормализации и записей API.
+- [ ] Проверить `npm run verify`, `npm run format:check`, `npm run check:kit`, `npm run check:package` и профильные journal/work-progress E2E; исправить вызванные изменением сбои без ослабления assertions. Обновить фактический STATUS и сделать локальный scoped commit с включёнными guard/hooks.

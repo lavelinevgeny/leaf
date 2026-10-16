@@ -314,6 +314,7 @@ export function ProjectJournal({
       </p>
       {feed ? (
         <JournalFeed
+          collapseBodies
           disabled={disabled}
           state={feed}
           controller={controller}

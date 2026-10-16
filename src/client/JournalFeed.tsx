@@ -43,7 +43,7 @@ export function JournalFeed({
   });
   const [menu, setMenu] = useState<string | null>(null);
   // Tail-page rows may briefly disappear during refresh and editor rows replace
-  // their body component. Keep disclosure state with this task-scoped feed.
+  // their body component. Keep disclosure state with this mounted feed.
   const [expandedEntries, setExpandedEntries] = useState<Set<string>>(
     () => new Set(),
   );
@@ -185,7 +185,7 @@ export function JournalFeed({
       }
       capturePosition();
     };
-    // Task bodies measure on mount/reveal and may add their disclosure button
+    // Entry bodies measure on mount/reveal and may add their disclosure button
     // in a second commit. Restore against that final height.
     if (collapseBodies && restoration.current) {
       const frame = requestAnimationFrame(restore);

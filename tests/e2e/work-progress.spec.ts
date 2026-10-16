@@ -5,6 +5,8 @@ import {
   createJournalEntry,
   readJournalPage,
   mutateJournal,
+  openProjectJournal,
+  projectFeed,
 } from '../helpers/journal-e2e.js';
 import { readTree } from '../helpers/optional-e2e.js';
 
@@ -261,7 +263,7 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
   });
 });
 
-test('task previews disclose independently, retain refresh state and leave the original editor and project feed intact', async ({
+test('task and project previews disclose independently and retain the original text and editor', async ({
   page,
   runtime,
 }) => {
@@ -415,13 +417,137 @@ test('task previews disclose independently, retain refresh state and leave the o
   await expect(feed.locator('[data-journal-entry-id]')).toHaveCount(5);
   await expect(
     feed.getByRole('button', { name: 'Показать полностью' }),
-  ).toHaveCount(0);
-  for (const [index, original] of originals.entries())
-    expect(
-      await feed
-        .locator(`[data-journal-entry-id="${ids[index]}"] .journal-body`)
-        .textContent(),
-    ).toBe(original);
+  ).toHaveCount(4);
+  const projectPreview = test
+    .info()
+    .outputPath('synthetic-project-preview.png');
+  await feed.screenshot({ path: projectPreview });
+  console.log(`Synthetic project preview: ${projectPreview}`);
+  for (const [index, original] of originals.entries()) {
+    const entry = feed.locator(`[data-journal-entry-id="${ids[index]}"]`);
+    if (index !== 0) {
+      if (index !== 3) {
+        const geometry = await entry
+          .locator('.journal-body')
+          .evaluate((node) => ({
+            height: node.clientHeight,
+            full: node.scrollHeight,
+            limit: 4 * parseFloat(getComputedStyle(node).lineHeight),
+          }));
+        expect(geometry.height).toBeLessThanOrEqual(geometry.limit);
+        expect(geometry.full).toBeGreaterThan(geometry.height);
+      }
+      const show = entry.getByRole('button', { name: 'Показать полностью' });
+      await show.focus();
+      await expect(show).toBeInViewport();
+      await show.press('Enter');
+      await expect(entry.locator('.journal-body-toggle')).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    }
+    expect(await entry.locator('.journal-body').textContent()).toBe(original);
+  }
+  const projectEntry = feed.locator(`[data-journal-entry-id="${ids[3]}"]`);
+  await projectEntry.getByRole('button', { name: /Действия записи/ }).click();
+  await page.getByRole('menuitem', { name: 'Редактировать запись' }).click();
+  await expect(projectEntry.getByLabel('Текст записи')).toHaveValue(
+    originals[3]!.replaceAll('\r\n', '\n'),
+  );
+  await projectEntry.getByRole('button', { name: 'Закрыть редактор' }).click();
+  expect(await projectEntry.locator('.journal-body').textContent()).toBe(
+    originals[3],
+  );
+});
+
+test('project previews preserve independent disclosure and scroll through pagination, refresh and project tabs', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  for (let revision = 0; revision < 55; revision++)
+    await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      doneId,
+      revision,
+      `Синтетическая запись ${revision}\nВторая строка\nТретья строка\nЧетвёртая строка\nСкрытый маркер ${revision}`,
+      '2026-10-10',
+    );
+  await openProjectJournal(page, runtime.origin);
+  const feed = projectFeed(page);
+  const entries = feed.locator('[data-journal-entry-id]');
+  await expect(entries).toHaveCount(50);
+  const firstId = await entries.first().getAttribute('data-journal-entry-id');
+  await entries
+    .first()
+    .getByRole('button', { name: 'Показать полностью' })
+    .click();
+  await expect(entries.nth(1).locator('.journal-body-toggle')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await feed.getByRole('button', { name: 'Показать ещё', exact: true }).click();
+  await expect(entries).toHaveCount(55);
+  const lastId = await entries.last().getAttribute('data-journal-entry-id');
+  await entries
+    .last()
+    .getByRole('button', { name: 'Показать полностью' })
+    .click();
+  const scroll = feed.locator('[data-journal-scroll]');
+  await scroll.evaluate((node) => {
+    node.scrollTop = 900;
+  });
+  const position = () =>
+    scroll.evaluate((node) => {
+      const top = node.getBoundingClientRect().top;
+      const entry = [
+        ...node.querySelectorAll<HTMLElement>('[data-journal-entry-id]'),
+      ].find((item) => item.getBoundingClientRect().bottom > top)!;
+      return {
+        id: entry.dataset.journalEntryId,
+        offset: entry.getBoundingClientRect().top - top,
+      };
+    });
+  const before = await position();
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url().endsWith(`/api/projects/${tree.project.id}/journal`),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect((await refreshed).status()).toBe(200);
+  await expect.poll(position).toEqual(before);
+  await expect(
+    feed.locator(`[data-journal-entry-id="${firstId}"] .journal-body-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await expect(entries).toHaveCount(50);
+  await feed.getByRole('button', { name: 'Показать ещё', exact: true }).click();
+  await expect(entries).toHaveCount(55);
+  await expect(
+    feed.locator(`[data-journal-entry-id="${lastId}"] .journal-body-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true');
+  const tabs = page.getByRole('tablist', { name: 'Представление проекта' });
+  await tabs.getByRole('tab', { name: 'Задачи', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await expect(
+    feed.locator(`[data-journal-entry-id="${firstId}"] .journal-body-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await page
+    .getByLabel('Поиск записей', { exact: true })
+    .fill('Скрытый маркер 53');
+  await expect(entries).toHaveCount(1);
+  const filteredToggle = entries.first().locator('.journal-body-toggle');
+  if ((await filteredToggle.getAttribute('aria-expanded')) !== 'true')
+    await filteredToggle.click();
+  await expect(filteredToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(entries.first().locator('.journal-body')).toContainText(
+    'Скрытый маркер 53',
+  );
+  expect(
+    (await readTree(page, runtime.origin, tree.project.id)).project.revision,
+  ).toBe(tree.project.revision);
 });
 
 test('four visual lines remeasure wrapping and font metrics while clamped', async ({

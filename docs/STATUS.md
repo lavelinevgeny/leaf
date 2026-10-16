@@ -1,5 +1,17 @@
 # Статус разработки
 
+## Общий журнал — сворачивание записей, 2026-10-16
+
+По уточнению владельца одинаковый четырёхстрочный предпросмотр включён и в общем журнале проекта: `ProjectJournal` передаёт существующий `collapseBodies` в `JournalFeed`. Переиспользованы JournalEntryBody, нормализация пустых строк только для preview, независимый set раскрытых IDs, measured reveal и отменяемое восстановление scroll anchor. Название «Журнал», toolbar, фильтры, формы, исходный plain text и серверные контракты сохранены. Затронуты один prop в ProjectJournal, общие поясняющие комментарии, client/browser tests и документы D23; scheduler/storage/API/controller не менялись.
+
+Спецификация D23 и UI/DECISIONS/START_HERE уточнены, в существующий план добавлен Task 3; W10 теперь проверяет одинаковый preview обеих лент и полный исходный editor. Новый client case до реализации падал на сыром тексте, browser case не находил toggle; после включения режима профильные body/anchor/client проверки проходят. Старый jsdom navigation test приведён к асинхронному measured restore: ручной scroll обозначен wheel, точные прежние значения scrollTop проверяются с ожиданием кадра, без ослабления ожидаемых ID/offset.
+
+PASS итоговый `npm run verify`: typecheck, lint, 1295/1295 unit/integration tests в 75 файлах и production build; прежнее предупреждение chunk >500 kB сохраняется. PASS новые work-progress browser cases 16/16 и focused navigation после уточнения ожидания кадра. Первый 90-case browser regression дал 88 PASS/2 FAIL (возврат фокуса и task scroll anchor), оба сценария отдельно прошли в обоих viewport 4/4; production-код вне включения project preview не менялся. Итоговый последовательный набор 106 journal/work-progress/menu E2E выполняется, результат будет записан перед завершением. Форматирование, kit/package и diff checks PASS; staged guard/hooks выполняются перед коммитом.
+
+Все fixtures и runtime синтетические, пользовательские данные/БД/локальные настройки не читались. Существующие ограничения public workspace scan и underlying mobile header остаются за пределами этой правки; текущие history/preflight/full application E2E не запускались. Ветка `feat/task-panel-ux`, worktree не создавались; остаются `main` и `docs/task-panel-ux-spec`. Push/deploy не выполнялись. Следующий шаг — завершить проверки и локальное review, затем визуальная проверка общего журнала владельцем.
+
+
+
 ## Ход работы задачи — D23, 2026-10-16
 
 По поручению владельца исходные незакоммиченные изменения карточки сначала зафиксированы отдельно (`bcb1c86`, verify 1273/1273 и staged guard/Gitleaks PASS). Затем подготовлены [спецификация](superpowers/specs/2026-10-16-task-work-progress-design.md) и [план](superpowers/plans/2026-10-16-task-work-progress.md), коммит `49a390b`. Реализация: `c3e689a` — компактная форма и название вкладки; `3bb3764` — четырёхстрочный предпросмотр; `032b44d` — синхронное измерение при возврате в скрытую вкладку.
