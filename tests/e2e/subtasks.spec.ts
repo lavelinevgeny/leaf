@@ -158,7 +158,7 @@ for (const fixture of [
     expect(await panel(page).getByRole('tab').allTextContents()).toEqual([
       'Задача',
       'Зависимости',
-      'Журнал',
+      'Ход работы',
     ]);
     await expect(
       panel(page).getByRole('tab', { name: 'Задача', exact: true }),

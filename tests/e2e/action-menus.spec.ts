@@ -340,7 +340,7 @@ test('U07 feed dates align with the first toolbar action', async ({
     exact: true,
   });
   await expect(
-    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+    panel.getByRole('tab', { name: 'Ход работы', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   await expect(panel.getByLabel('Текст записи')).toBeVisible();
   await expect(hint).toHaveCount(0);

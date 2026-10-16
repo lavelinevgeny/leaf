@@ -115,7 +115,7 @@ test('project visits preserve Gantt/filter/scale/collapse/two-axis scroll, stabl
     exact: true,
   });
   await expect(
-    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+    panel.getByRole('tab', { name: 'Ход работы', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   await panel.getByRole('button', { name: 'Закрыть панель' }).click();
   await expect(

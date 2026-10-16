@@ -271,7 +271,7 @@ test('persistent editor keeps invalid raw across tabs and layout changes, native
     ).toBeVisible();
     await page
       .getByRole('tablist', { name: 'Задача', exact: true })
-      .getByRole('tab', { name: 'Журнал', exact: true })
+      .getByRole('tab', { name: 'Ход работы', exact: true })
       .click();
     await page
       .getByRole('button', { name: 'Исправить сроки', exact: true })
@@ -402,7 +402,7 @@ test('unfinished duration keyboard buffer survives Done, Escape, tabs and repair
     await page.keyboard.press('Escape');
     await page
       .getByRole('tablist', { name: 'Задача', exact: true })
-      .getByRole('tab', { name: 'Журнал', exact: true })
+      .getByRole('tab', { name: 'Ход работы', exact: true })
       .click();
     await page
       .getByRole('button', { name: 'Исправить сроки', exact: true })

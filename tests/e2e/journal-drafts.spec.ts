@@ -331,7 +331,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await panel.getByLabel('Текст записи').fill('Отдельный task черновик');
   await panel.getByLabel('Текст записи').press('Enter');
   await panel.getByLabel('Текст записи').press('End');
@@ -339,7 +339,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
     'Отдельный task черновик\n',
   );
   await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(panel.getByLabel('Текст записи')).toHaveValue(
     'Отдельный task черновик\n',
   );
@@ -421,7 +421,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
   await page.getByLabel('Пароль', { exact: true }).fill(runtime.password);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(panel.getByLabel('Текст записи')).toHaveValue('');
 });
 
@@ -771,7 +771,7 @@ test('saved breadcrumb and journal metadata navigation guard dirty task title wi
   await leave
     .getByRole('button', { name: 'Продолжить редактирование' })
     .click();
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await panel.getByLabel('Текст записи').fill('Независимый RAM черновик');
   tree = await send(page, runtime.origin, tree, {
     type: 'task.create',
@@ -831,7 +831,7 @@ test('saved breadcrumb and journal metadata navigation guard dirty task title wi
     'Новый сохранённый родитель',
   );
   await expect(
-    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+    panel.getByRole('tab', { name: 'Ход работы', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   expect(
     planContent(await readTree(page, runtime.origin, tree.project.id)),
@@ -852,7 +852,7 @@ test('late read A cannot hide uncertain write B and its real exact replay', asyn
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(panel.getByText('Записей пока нет')).toBeVisible();
   const projectUrl = `${runtime.origin}/api/projects/${tree.project.id}/journal`;
   const taskUrl = `${runtime.origin}/api/projects/${tree.project.id}/tasks/${doneId}/journal`;

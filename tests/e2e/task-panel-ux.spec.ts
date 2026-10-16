@@ -151,7 +151,7 @@ test('desktop geometry keeps one title, fixed chrome, one scroll and mounted wor
     .getByRole('button', { name: 'Закрыть панель', exact: true })
     .click();
   await row(page, current.id).click();
-  for (const name of ['Задача', 'Зависимости', 'Журнал']) {
+  for (const name of ['Задача', 'Зависимости', 'Ход работы']) {
     await panel(page).getByRole('tab', { name, exact: true }).click();
     await expect(panel(page).getByRole('heading', { level: 2 })).toHaveCount(1);
   }
@@ -220,7 +220,9 @@ test('whole task draft survives tabs, repairs raw error, saves one revision and 
     .getByLabel('Длительность, рабочих дней', { exact: true })
     .press('Tab');
   await page.keyboard.press('Escape');
-  await panel(page).getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel(page)
+    .getByRole('tab', { name: 'Ход работы', exact: true })
+    .click();
   await expect(
     panel(page).getByRole('button', { name: 'Сохранить', exact: true }),
   ).toBeDisabled();
@@ -354,7 +356,9 @@ for (const viewport of [
       await insideViewport(input, page);
     }
     await page.keyboard.press('Escape');
-    await panel(page).getByRole('tab', { name: 'Журнал', exact: true }).click();
+    await panel(page)
+      .getByRole('tab', { name: 'Ход работы', exact: true })
+      .click();
     await expect(panel(page).locator('[data-journal-entry-id]')).toHaveCount(
       50,
     );
@@ -376,7 +380,9 @@ test('journal header ancestor follows actual feed error and coherent refresh whi
 }) => {
   const { current, tree, group } = await seed(page, runtime, true);
   await row(page, current.id).click();
-  await panel(page).getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel(page)
+    .getByRole('tab', { name: 'Ход работы', exact: true })
+    .click();
   const path = panel(page).getByRole('navigation', { name: 'Путь задачи' });
   const ancestor = path.getByRole('button', {
     name: tree.tasks.find((task) => task.id === group.id)!.title,
@@ -403,7 +409,7 @@ test('journal header ancestor follows actual feed error and coherent refresh whi
     tree.tasks.find((task) => task.id === group.id)!.title,
   );
   await expect(
-    panel(page).getByRole('tab', { name: 'Журнал', exact: true }),
+    panel(page).getByRole('tab', { name: 'Ход работы', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
 });
 
@@ -440,7 +446,9 @@ test('extreme title uses one shell scroll and keyboard text undo and journal sub
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).project.revision,
   ).toBe(before.project.revision);
-  await panel(page).getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel(page)
+    .getByRole('tab', { name: 'Ход работы', exact: true })
+    .click();
   await page
     .getByRole('dialog', { name: 'Несохранённые изменения задачи' })
     .getByRole('button', { name: 'Не сохранять', exact: true })

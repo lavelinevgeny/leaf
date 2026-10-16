@@ -69,7 +69,7 @@ it('keeps one controlled title/status and persistent save across three tabs with
   expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
     'Задача',
     'Зависимости',
-    'Журнал',
+    'Ход работы',
   ]);
   expect(screen.getByRole('heading', { name: 'Работа A' })).toBeVisible();
   expect(screen.queryByLabelText('Название задачи')).toBeNull();
@@ -81,7 +81,7 @@ it('keeps one controlled title/status and persistent save across three tabs with
   await user.click(screen.getByRole('button', { name: 'Изменить название' }));
   await user.clear(screen.getByLabelText('Название задачи'));
   await user.type(screen.getByLabelText('Название задачи'), 'Работа B');
-  for (const name of ['Зависимости', 'Журнал', 'Задача', 'Журнал']) {
+  for (const name of ['Зависимости', 'Ход работы', 'Задача', 'Ход работы']) {
     await user.click(screen.getByRole('tab', { name }));
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeVisible();
     expect(onSave).not.toHaveBeenCalled();
@@ -106,7 +106,7 @@ it('cancels only the title edit session with Escape and keeps description editin
   await user.keyboard('{Escape}');
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.getByRole('heading', { name: 'Работа A' })).toBeVisible();
-  await user.click(screen.getByRole('tab', { name: 'Журнал' }));
+  await user.click(screen.getByRole('tab', { name: 'Ход работы' }));
   await user.click(
     screen.getByRole('button', { name: 'Продолжить редактирование' }),
   );

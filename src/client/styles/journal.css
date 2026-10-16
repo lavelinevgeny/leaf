@@ -141,6 +141,17 @@
   width: 100%;
   min-height: 72px;
 }
+/* Intrinsic font metrics notify autogrow when inherited fonts change while
+   the textarea itself still has its previous explicit height. */
+.journal-font-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+}
+.journal-font-probe::before {
+  content: 'M';
+}
 .journal-editor-footer {
   display: flex;
   flex-wrap: wrap;
@@ -288,6 +299,71 @@
   max-height: none;
   overflow: hidden;
   resize: none;
+}
+.task-journal {
+  container-type: inline-size;
+}
+.journal-editor--compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.journal-editor--compact > label {
+  min-width: 0;
+  margin: 0;
+}
+.journal-editor--compact textarea {
+  min-height: calc(2lh + 14px);
+  margin-top: 0;
+}
+.journal-editor--compact > :not(label):not(.journal-editor-footer) {
+  grid-column: 1 / -1;
+}
+.journal-editor--compact .journal-editor-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 150px) 32px;
+  justify-content: end;
+  align-items: start;
+}
+.journal-editor--compact .calendar-field > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.journal-editor--compact .journal-editor-actions {
+  display: contents;
+}
+.journal-editor--compact .journal-editor-actions > button {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+.journal-editor--compact .journal-editor-actions > .primary {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 36px;
+  padding: 0;
+}
+@container (min-width: 500px) {
+  .journal-editor--compact {
+    grid-template-columns: minmax(0, 1fr) 190px;
+  }
+  .journal-editor--compact > label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .journal-editor--compact .journal-editor-footer {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
 .panel-task-path {
   font-size: 12px;

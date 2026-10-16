@@ -319,7 +319,7 @@ it.each([
     await user.click(
       within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
         'tab',
-        { name: 'Журнал' },
+        { name: 'Ход работы' },
       ),
     );
     fireEvent(window, new Event('focus'));
@@ -819,7 +819,7 @@ describe('client HTTP interactions', () => {
     await openPanelQuick(user);
     await editTaskDescription(user);
     await user.type(panel.getByLabelText('Описание'), 'Черновик деталей');
-    await user.click(panel.getByRole('tab', { name: 'Журнал' }));
+    await user.click(panel.getByRole('tab', { name: 'Ход работы' }));
     await user.click(
       screen.getByRole('button', { name: 'Продолжить редактирование' }),
     );
@@ -861,7 +861,7 @@ describe('client HTTP interactions', () => {
     await user.keyboard('{Escape}');
     for (const destination of ['journal', 'child'] as const) {
       if (destination === 'journal') {
-        await user.click(panel().getByRole('tab', { name: 'Журнал' }));
+        await user.click(panel().getByRole('tab', { name: 'Ход работы' }));
         await user.click(panel().getByRole('tab', { name: 'Задача' }));
       } else {
         await user.click(panel().getByRole('treeitem', { name: /^Ребёнок,/ }));
@@ -906,7 +906,7 @@ describe('client HTTP interactions', () => {
       parentId: id(1),
       durationDays: 4,
     });
-    await user.click(panel().getByRole('tab', { name: 'Журнал' }));
+    await user.click(panel().getByRole('tab', { name: 'Ход работы' }));
     await user.click(panel().getByRole('tab', { name: 'Задача' }));
     expect(panel().getByLabelText('Новая задача')).toHaveValue('');
     await user.click(
@@ -923,7 +923,7 @@ describe('client HTTP interactions', () => {
     await user.click(
       panel().getByRole('button', { name: 'Очистить быстрый ввод' }),
     );
-    await user.click(panel().getByRole('tab', { name: 'Журнал' }));
+    await user.click(panel().getByRole('tab', { name: 'Ход работы' }));
     await user.click(panel().getByRole('tab', { name: 'Задача' }));
     await user.click(
       panel().getByRole('button', { name: 'Сроки новой задачи' }),

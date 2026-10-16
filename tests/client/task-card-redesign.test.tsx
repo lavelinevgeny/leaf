@@ -224,7 +224,7 @@ it('dirty description tab navigation offers save, discard and continue', async (
   render(<Harness write={write} />);
   await user.click(screen.getByRole('button', { name: 'Изменить описание' }));
   await user.type(screen.getByLabelText('Описание'), ' черновик');
-  await user.click(screen.getByRole('tab', { name: 'Журнал' }));
+  await user.click(screen.getByRole('tab', { name: 'Ход работы' }));
   const dialog = screen.getByRole('dialog');
   expect(screen.getByRole('tab', { name: 'Задача' })).toHaveAttribute(
     'aria-selected',

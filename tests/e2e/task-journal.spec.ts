@@ -29,7 +29,7 @@ test('real task create, project edit/date/delete, plain text, independent plan a
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await panel.getByLabel('Дата записи', { exact: true }).fill('2026-10-09');
   const body =
     '  Синтетическая работа\n<script>window.journalInjected = true</script>\nстрока %/_  ';
@@ -400,14 +400,14 @@ test('nested row menu, keyboard tabs and picker include done/summary/undated dup
   await expect(
     panel.getByText('Запись глубокой задачи', { exact: true }),
   ).toBeVisible();
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).focus();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(
     panel.getByRole('tab', { name: 'Задача', exact: true }),
   ).toBeFocused();
   await page.keyboard.press('End');
   await expect(
-    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+    panel.getByRole('tab', { name: 'Ход работы', exact: true }),
   ).toBeFocused();
   expect(
     await panel
@@ -699,7 +699,7 @@ test('U08 compact composer: date and actions share a row; Ctrl+Enter save keeps 
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   const editor = panel.locator('[data-journal-editor]');
   const body = editor.getByLabel('Текст записи');
   const save = editor.getByRole('button', {
@@ -715,7 +715,7 @@ test('U08 compact composer: date and actions share a row; Ctrl+Enter save keeps 
       .querySelector('.journal-editor-footer .calendar-field')!
       .getBoundingClientRect();
     const actions = form
-      .querySelector('.journal-editor-actions')!
+      .querySelector('button[type="submit"]')!
       .getBoundingClientRect();
     const footer = form.querySelector<HTMLElement>('.journal-editor-footer')!;
     return {
@@ -778,7 +778,7 @@ test('task panel inline entry editor keeps footer labels on one line without ove
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   const card = panel.locator('[data-journal-entry-id]').first();
   await card.getByRole('button', { name: /Действия записи/ }).click();
   await page.getByRole('menuitem', { name: 'Редактировать запись' }).click();
@@ -838,7 +838,7 @@ test('acknowledged task write survives failed feed GET and retry reads without a
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(panel.getByText('Записей пока нет')).toBeVisible();
   let acknowledged = false;
   let writes = 0;
@@ -910,7 +910,7 @@ test('task journal autosizes and preserves anchors and pagination in the actual 
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(panel.locator('[data-journal-entry]')).toHaveCount(50);
   const editor = panel.getByLabel('Текст записи');
   await editor.fill('Большой черновик\n'.repeat(24));

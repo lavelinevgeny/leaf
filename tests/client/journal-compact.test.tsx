@@ -361,7 +361,7 @@ it('U08 untouched task composer has no actions; erased text keeps only clear', a
   fireEvent.change(body, { target: { value: 'Проверил сборку' } });
   expect(save()).toBeEnabled();
   expect(clear()).toBeInTheDocument();
-  expect(hint).not.toHaveClass('sr-only');
+  expect(hint).toHaveClass('sr-only');
   fireEvent.change(body, { target: { value: '' } });
   expect(save()).toBeNull();
   expect(clear()).toBeInTheDocument();
@@ -749,7 +749,7 @@ it('journal primary title and ancestor path come from coherent metadata while un
   fireEvent.keyDown(within(panel).getByLabelText('Название задачи'), {
     key: 'Enter',
   });
-  await userEvent.click(within(panel).getByRole('tab', { name: 'Журнал' }));
+  await userEvent.click(within(panel).getByRole('tab', { name: 'Ход работы' }));
   server.projects[0]!.revision = 1;
   server.tree.project.revision = 1;
   const remote = task(3, { title: 'Remote parent' });

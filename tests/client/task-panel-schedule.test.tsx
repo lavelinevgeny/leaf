@@ -153,7 +153,7 @@ it('preserves invalid raw, error, DOM and dirty across Escape and tabs; footer r
   await user.keyboard('{Escape}');
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
-  await user.click(screen.getByRole('tab', { name: 'Журнал' }));
+  await user.click(screen.getByRole('tab', { name: 'Ход работы' }));
   await user.click(screen.getByRole('button', { name: 'Исправить сроки' }));
   await waitFor(() => expect(input).toHaveFocus());
   expect(screen.getByLabelText('Начало')).toBe(input);
@@ -460,7 +460,7 @@ it('retains an unfinished duration string as raw draft through close and repair'
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
   await user.click(field);
   await user.keyboard('{Escape}');
-  await user.click(screen.getByRole('tab', { name: 'Журнал' }));
+  await user.click(screen.getByRole('tab', { name: 'Ход работы' }));
   await user.click(screen.getByRole('button', { name: 'Исправить сроки' }));
   await waitFor(() => expect(field).toHaveFocus());
   expect(field).toHaveValue('1e');

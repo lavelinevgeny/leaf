@@ -807,7 +807,11 @@ export function TaskPanel({
               }
             }}
           >
-            {value === 'details' ? strings.task : strings[value]}
+            {value === 'details'
+              ? strings.task
+              : value === 'journal'
+                ? strings.workProgress
+                : strings[value]}
             {value === 'dependencies' && savedDependencyCount > 0 && (
               <span id="saved-dependency-count"> ({savedDependencyCount})</span>
             )}

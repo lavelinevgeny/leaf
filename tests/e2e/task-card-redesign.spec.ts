@@ -29,7 +29,7 @@ test('journal uses the task heading to rename without an extra row', async ({
   const panel = card(page);
   const header = panel.locator('.panel-header');
   const initialHeight = (await header.boundingBox())!.height;
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   const heading = header.getByRole('heading', {
     name: task.title,
     exact: true,
@@ -166,7 +166,7 @@ test('compact card independently saves status, dates and description with cancel
       exact: true,
     }),
   ).toBeVisible();
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(
     panel.getByText('Записей пока нет', { exact: true }),
   ).toBeVisible();
