@@ -49,7 +49,7 @@ it('completes dates and duration after blur or Enter, keeps clearing optional', 
   expect(finish).toHaveValue('12.10.2026');
   await user.tab();
   expect(finish).toHaveValue('13.10.2026');
-  expect(duration).toHaveValue(2);
+  expect(duration).toHaveValue('2');
   expect(screen.getByRole('status')).toHaveTextContent(
     'Пересчитано: Окончание',
   );
@@ -57,7 +57,7 @@ it('completes dates and duration after blur or Enter, keeps clearing optional', 
   fireEvent.change(finish, { target: { value: '14.10.2026' } });
   await user.keyboard('{Enter}');
   expect(start).toHaveValue('12.10.2026');
-  expect(duration).toHaveValue(3);
+  expect(duration).toHaveValue('3');
   expect(screen.getByRole('status')).toHaveTextContent(
     'Пересчитано: Длительность',
   );
@@ -69,7 +69,7 @@ it('completes dates and duration after blur or Enter, keeps clearing optional', 
   await user.click(duration);
   await user.clear(duration);
   await user.tab();
-  expect(duration).toHaveValue(null);
+  expect(duration).toHaveValue('');
   expect(finish).toHaveValue('15.10.2026');
   expect(onChange).toHaveBeenLastCalledWith({
     inputStart: '2026-10-12',
@@ -93,7 +93,7 @@ it('does not fill fields on focus or during unanchored duration input', async ()
   );
   await user.click(screen.getByLabelText('Окончание'));
   await user.tab();
-  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(null);
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue('');
   cleanup();
   render(<Editor source={task(1)} />);
   await user.type(screen.getByLabelText('Длительность, рабочих дней'), '6');
@@ -123,7 +123,7 @@ it('uses the finish anchor and calendar picker, and reports invalid input withou
   await user.tab();
   expect(screen.getByRole('alert')).toBeVisible();
   expect(screen.getByLabelText('Начало')).toHaveValue('09.10.2026');
-  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(3);
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue('3');
   expect(screen.getByLabelText('Окончание')).toHaveAttribute(
     'aria-invalid',
     'true',
@@ -137,7 +137,7 @@ it('uses the finish anchor and calendar picker, and reports invalid input withou
 it('labels all-days duration accurately and retains malformed date text until corrected', async () => {
   const user = userEvent.setup();
   render(<Editor calendar="all-days" />);
-  expect(screen.getByLabelText('Длительность, дней')).toHaveValue(2);
+  expect(screen.getByLabelText('Длительность, дней')).toHaveValue('2');
   await user.click(screen.getByLabelText('Начало'));
   fireEvent.change(screen.getByLabelText('Начало'), {
     target: { value: '31.02.2026' },
@@ -185,7 +185,7 @@ it.each([0, -1, 1.5, 1000001])(
     await user.click(duration);
     fireEvent.change(duration, { target: { value: String(value) } });
     await user.tab();
-    expect(duration).toHaveValue(value);
+    expect(duration).toHaveValue(String(value));
     expect(screen.getByRole('alert')).toBeVisible();
     expect(screen.getByLabelText('Начало')).toHaveValue('09.10.2026');
     expect(screen.getByLabelText('Окончание')).toHaveValue('12.10.2026');
@@ -254,7 +254,7 @@ function panelProps(
     task: tree.tasks[1]!,
     tasks: tree.tasks,
     removed: false,
-    tab: 'details' as const,
+    tab: 'dependencies' as const,
     onTab: vi.fn(),
     onDependency: vi.fn(async () => true),
     onNeighbor: vi.fn(),
@@ -314,7 +314,9 @@ function fsPanelFixture() {
   return { tree, ack };
 }
 async function choosePanelA(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'После окончания' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
   await user.type(screen.getByRole('searchbox'), 'A');
   await user.keyboard('{ArrowDown}{Enter}{Escape}');
 }
@@ -331,7 +333,7 @@ it('takes canonical Details source and relation baseline from a relation-only Sa
   });
   expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
   expect(screen.getByLabelText('Окончание')).toHaveValue('13.10.2026');
-  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Сохранить' })).toBeNull();
 });
 it('keeps a newer full panel draft dirty after deferred Save and reconciles its baseline without claiming success', async () => {
   const { tree, ack } = fsPanelFixture();
@@ -342,20 +344,37 @@ it('keeps a newer full panel draft dirty after deferred Save and reconciles its 
         resolve = done;
       }),
   );
-  render(<TaskPanel {...panelProps(tree, onSave)} />);
+  const p = panelProps(tree, onSave);
+  const view = render(<TaskPanel {...p} />);
   const user = userEvent.setup();
   await choosePanelA(user);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  view.rerender(<TaskPanel {...p} tab="details" />);
+  if (
+    screen.queryByRole('button', {
+      name: /Добавить описание|Изменить описание/,
+    })
+  )
+    await user.click(
+      screen.getByRole('button', {
+        name: /Добавить описание|Изменить описание/,
+      }),
+    );
   await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
+  view.rerender(<TaskPanel {...p} tab="journal" />);
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled();
   resolve(ack);
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
   );
-  expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик');
   expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
   expect(screen.getByText('Есть несохранённые изменения')).toBeInTheDocument();
+  view.rerender(<TaskPanel {...p} tab="details" />);
+  expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик');
   onSave.mockImplementationOnce(async () => ack);
-  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Сохранить все изменения' }),
+  );
   expect(onSave).toHaveBeenLastCalledWith({
     description: 'Новый черновик',
     inputStart: '2026-10-08',
@@ -372,6 +391,17 @@ it('handles global acknowledged replay without replacing newer edits, then expli
   const user = userEvent.setup();
   await choosePanelA(user);
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+  view.rerender(<TaskPanel {...p} tab="details" />);
+  if (
+    screen.queryByRole('button', {
+      name: /Добавить описание|Изменить описание/,
+    })
+  )
+    await user.click(
+      screen.getByRole('button', {
+        name: /Добавить описание|Изменить описание/,
+      }),
+    );
   await user.type(screen.getByLabelText('Описание'), 'Новый черновик');
   view.rerender(
     <TaskPanel
@@ -379,6 +409,7 @@ it('handles global acknowledged replay without replacing newer edits, then expli
       task={ack.tasks[1]!}
       tree={ack}
       tasks={ack.tasks}
+      tab="details"
       saveAcknowledgement={ack}
     />,
   );
@@ -386,11 +417,16 @@ it('handles global acknowledged replay without replacing newer edits, then expli
     expect(screen.getByLabelText('Описание')).toHaveValue('Новый черновик'),
   );
   expect(screen.queryByText('Сохранено')).not.toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'Отбросить изменения' }));
+  await user.click(screen.getByRole('button', { name: 'Сбросить изменения' }));
   expect(screen.getByLabelText('Начало')).toHaveValue('12.10.2026');
   expect(screen.getByLabelText('Описание')).toHaveValue('');
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
-  await user.click(screen.getByRole('button', { name: 'После окончания' }));
+  view.rerender(
+    <TaskPanel {...p} task={ack.tasks[1]!} tree={ack} tasks={ack.tasks} />,
+  );
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить предшественника' }),
+  );
   expect(
     screen.getByRole('button', { name: 'Убрать предшественника: A' }),
   ).toBeInTheDocument();

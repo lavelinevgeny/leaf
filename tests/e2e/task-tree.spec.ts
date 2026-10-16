@@ -1,4 +1,10 @@
-import { test as base, expect, type Page } from '@playwright/test';
+import { openTaskDates, setTaskStatus } from '../helpers/task-panel.js';
+import {
+  test as base,
+  expect,
+  type Page,
+  type Locator,
+} from '@playwright/test';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 
 const test = base.extend<{
@@ -38,13 +44,13 @@ function row(page: Page, title: string) {
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: new RegExp(`^${title},`) });
 }
-async function add(page: Page, title: string) {
+async function add(page: Page, title: string, scope: Page | Locator = page) {
   // These are hierarchy-only fixtures; C19 defaults are covered separately.
-  const quick = page.locator('form.quick-add');
+  const quick = scope.locator('form.quick-add');
   await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
   await quick.getByLabel('Длительность, рабочих дней').fill('');
-  await quick.getByRole('button', { name: 'Сроки новой задачи' }).click();
-  const input = page.getByLabel('Новая задача', { exact: true });
+  await quick.getByRole('button', { name: 'Готово', exact: true }).click();
+  const input = scope.getByLabel('Новая задача', { exact: true });
   await input.fill(title);
   await input.press('Enter');
   await expect(row(page, title)).toBeVisible();
@@ -60,9 +66,8 @@ test('creates a root immediately after confirmed deletion of the only task', asy
   await add(page, 'Задача A');
   await row(page, 'Задача A').click();
   page.once('dialog', (dialog) => dialog.accept());
-  await page
-    .getByRole('button', { name: 'Удалить ветку', exact: true })
-    .click();
+  await page.getByRole('button', { name: 'Действия задачи' }).click();
+  await page.getByRole('menuitem', { name: 'Удалить задачу…' }).click();
   await expect(page.getByText('В проекте пока нет задач.')).toBeVisible();
   await add(page, 'Задача B');
   await expect(row(page, 'Задача B')).toHaveAttribute('aria-level', '1');
@@ -90,20 +95,31 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await page.getByLabel('Новая задача').press('Shift+Tab');
   await add(page, 'Задача B');
   await row(page, 'Задача B').click();
+  const card = page.getByRole('complementary', { name: 'Задача', exact: true });
+  await page
+    .getByRole('button', { name: 'Изменить название', exact: true })
+    .click();
   await page.getByLabel('Название задачи').fill('Задача B1');
+  await page
+    .getByRole('button', { name: 'Добавить описание', exact: true })
+    .click();
   await page
     .getByRole('textbox', { name: 'Описание', exact: true })
     .fill('Синтетическое описание');
+  await setTaskStatus(page, 'В работе');
+  await openTaskDates(page);
+  await card.getByLabel('Начало', { exact: true }).fill('2026-10-07');
+  await openTaskDates(page);
+  await card.getByLabel('Окончание', { exact: true }).fill('2026-10-09');
   await page
-    .getByRole('combobox', { name: 'Статус', exact: true })
-    .selectOption('doing');
-  await page.getByLabel('Начало', { exact: true }).fill('2026-10-07');
-  await page.getByLabel('Окончание', { exact: true }).fill('2026-10-09');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    .getByRole('button', { name: 'Сохранить все изменения', exact: true })
+    .click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   await expect(row(page, 'Задача B1')).toHaveAccessibleName(/В работе/);
-  await page.getByLabel('Начало', { exact: true }).fill('');
-  await page.getByLabel('Окончание', { exact: true }).fill('');
+  await openTaskDates(page);
+  await card.getByLabel('Начало', { exact: true }).fill('');
+  await openTaskDates(page);
+  await card.getByLabel('Окончание', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Закрыть панель' }).click();
@@ -115,7 +131,9 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await page.keyboard.press('ArrowRight');
   await expect(row(page, 'Ребёнок A')).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByLabel('Название задачи')).toHaveValue('Ребёнок A');
+  await expect(
+    page.getByRole('heading', { name: 'Ребёнок A', exact: true }),
+  ).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(row(page, 'Ребёнок A')).toBeFocused();
   await row(page, 'Задача B1').focus();
@@ -140,14 +158,17 @@ test('real CRUD, tree keyboard, moves, branch undo and restart persistence', asy
   await page.reload();
   await expect(row(page, 'Внук A')).toBeVisible();
   await row(page, 'Задача B1').click();
+  await page
+    .getByRole('button', { name: 'Изменить описание', exact: true })
+    .click();
   await expect(
     page.getByRole('textbox', { name: 'Описание', exact: true }),
   ).toHaveValue('Синтетическое описание');
-  await expect(page.getByLabel('Начало', { exact: true })).toHaveValue('');
-  await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue('');
+  await expect(card.getByLabel('Начало', { exact: true })).toHaveValue('');
+  await expect(card.getByLabel('Окончание', { exact: true })).toHaveValue('');
   await expect(
-    page.getByRole('combobox', { name: 'Статус', exact: true }),
-  ).toHaveValue('doing');
+    page.getByRole('button', { name: 'Статус: В работе', exact: true }),
+  ).toBeVisible();
   const header = page.locator('.panel-header');
   await expect(header).toBeInViewport();
   const bounds = await header.boundingBox();
@@ -191,6 +212,9 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
   await add(page, 'Задача A');
   await row(page, 'Задача A').click();
   await page
+    .getByRole('button', { name: 'Добавить описание', exact: true })
+    .click();
+  await page
     .getByRole('textbox', { name: 'Описание', exact: true })
     .fill('Черновик при сбое');
   let dropped = false;
@@ -212,7 +236,9 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
     name: 'Задача',
     exact: true,
   });
-  await expect(panel.getByRole('alert')).toContainText('Нет связи с сервером');
+  await expect(panel.locator('.panel-footer').getByRole('alert')).toContainText(
+    'Нет связи с сервером',
+  );
   await expect(
     page.getByRole('textbox', { name: 'Описание', exact: true }),
   ).toHaveValue('Черновик при сбое');
@@ -220,6 +246,9 @@ test('rejects foreign origin and keeps a failed save visible until exact retry',
   await expect(panel.getByText('Сохранено', { exact: true })).toBeVisible();
   await page.reload();
   await row(page, 'Задача A').click();
+  await page
+    .getByRole('button', { name: 'Изменить описание', exact: true })
+    .click();
   await expect(
     page.getByRole('textbox', { name: 'Описание', exact: true }),
   ).toHaveValue('Черновик при сбое');
@@ -248,8 +277,16 @@ test('child and sibling controls expose an accessible quick editor at narrow wid
     await page.setViewportSize({ width, height: 800 });
     for (const action of ['Добавить подзадачу', 'Добавить соседнюю задачу']) {
       await row(page, 'Задача A').click();
-      await page.getByRole('button', { name: action, exact: true }).click();
-      const quick = page.getByLabel('Новая задача', { exact: true });
+      if (action === 'Добавить соседнюю задачу') {
+        await page.getByRole('button', { name: 'Действия задачи' }).click();
+        await page.getByRole('menuitem', { name: action, exact: true }).click();
+      } else
+        await page.getByRole('button', { name: action, exact: true }).click();
+      const child = action === 'Добавить подзадачу';
+      const scope = child
+        ? page.getByRole('complementary', { name: 'Задача', exact: true })
+        : page;
+      const quick = scope.getByLabel('Новая задача', { exact: true });
       await expect(quick).toBeFocused();
       const accessible = await quick.evaluate((input) => {
         const rect = input.getBoundingClientRect();
@@ -264,7 +301,12 @@ test('child and sibling controls expose an accessible quick editor at narrow wid
       await add(
         page,
         `${action === 'Добавить подзадачу' ? 'Ребёнок A' : 'Сосед A'} ${width}`,
+        scope,
       );
+      if (child)
+        await page
+          .getByRole('button', { name: 'Закрыть панель', exact: true })
+          .click();
     }
   }
 });

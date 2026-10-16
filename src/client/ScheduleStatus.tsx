@@ -4,12 +4,15 @@ import {
   isAbsenceOnlyDiagnostic,
 } from './schedule-diagnostics.js';
 import { diagnosticLabels, strings } from './strings.js';
+
 export function ScheduleStatus({
   tree,
   task,
+  omitDiagnostics = false,
 }: {
   tree: ProjectTree;
   task?: Task;
+  omitDiagnostics?: boolean;
 }) {
   const { schedule } = tree;
   const partial =
@@ -24,11 +27,13 @@ export function ScheduleStatus({
       : undefined;
   const known = partial && task ? partial.tasks[task.id] : undefined;
   const names = new Map(tree.tasks.map((item) => [item.id, item.title]));
-  const diagnostics = schedule.diagnostics.filter(
-    (item) =>
-      !isAbsenceOnlyDiagnostic(item) &&
-      (!task || item.taskIds.includes(task.id)),
-  );
+  const diagnostics = omitDiagnostics
+    ? []
+    : schedule.diagnostics.filter(
+        (item) =>
+          !isAbsenceOnlyDiagnostic(item) &&
+          (!task || item.taskIds.includes(task.id)),
+      );
   return (
     <div className="schedule-status" aria-live="polite">
       {!task && (
@@ -97,6 +102,38 @@ export function ScheduleStatus({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// The calculation may be collapsed; real errors and unavailable legacy intervals stay visible.
+export function ScheduleProblems({
+  tree,
+  task,
+  savedPlan = false,
+}: {
+  tree: ProjectTree;
+  task: Task;
+  savedPlan?: boolean;
+}) {
+  const diagnostics = tree.schedule.diagnostics.filter(
+    (item) => !isAbsenceOnlyDiagnostic(item) && item.taskIds.includes(task.id),
+  );
+  if (!diagnostics.length) return null;
+  return (
+    <div className="schedule-status" aria-live="polite">
+      {savedPlan && <p>По сохранённому плану</p>}
+      {tree.schedule.feasibility === 'infeasible' &&
+        actionableDiagnostics(diagnostics).length > 0 && (
+          <p className="schedule-error">{strings.infeasible}</p>
+        )}
+      <ul className="schedule-diagnostics">
+        {diagnostics.map((item, index) => (
+          <li key={index}>
+            {diagnosticLabels[item.code] ?? 'Проверьте сроки связанных задач.'}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

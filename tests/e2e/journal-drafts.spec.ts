@@ -11,6 +11,7 @@ import {
   editEntry,
   chooseTask,
   assertPrivateBrowserState,
+  planContent,
 } from '../helpers/journal-e2e.js';
 import { readTree, send } from '../helpers/optional-e2e.js';
 
@@ -330,15 +331,15 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await panel.getByLabel('Текст записи').fill('Отдельный task черновик');
   await panel.getByLabel('Текст записи').press('Enter');
   await panel.getByLabel('Текст записи').press('End');
   await expect(panel.getByLabel('Текст записи')).toHaveValue(
     'Отдельный task черновик\n',
   );
-  await panel.getByRole('tab', { name: 'Детали', exact: true }).click();
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(panel.getByLabel('Текст записи')).toHaveValue(
     'Отдельный task черновик\n',
   );
@@ -420,7 +421,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
   await page.getByLabel('Пароль', { exact: true }).fill(runtime.password);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
-  await panel.getByRole('tab', { name: 'Журнал', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
   await expect(panel.getByLabel('Текст записи')).toHaveValue('');
 });
 
@@ -738,5 +739,223 @@ test('native conflict replacement protects own body/date until confirmation and 
     ).toBe(3);
   } finally {
     await context.close();
+  }
+});
+
+test('saved breadcrumb and journal metadata navigation guard dirty task title without saving independent drafts', async ({
+  page,
+  runtime,
+}) => {
+  let { tree } = await seedJournal(page, runtime);
+  const child = tree.tasks.find((task) => task.title === 'Уровень 1')!;
+  await page.goto(runtime.origin);
+  await page.locator(`[role="treeitem"][data-task-id="${child.id}"]`).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  const path = panel.getByRole('navigation', { name: 'Путь задачи' });
+  await expect(
+    path.getByRole('button', { name: 'Без дат', exact: true }),
+  ).toBeVisible();
+  await panel.getByRole('button', { name: 'Изменить название' }).click();
+  await panel
+    .getByLabel('Название задачи', { exact: true })
+    .fill('Локальный заголовок');
+  await panel.getByLabel('Название задачи', { exact: true }).press('Enter');
+  await path.getByRole('button', { name: 'Без дат', exact: true }).click();
+  const leave = page.getByRole('dialog', {
+    name: 'Несохранённые изменения задачи',
+  });
+  await expect(leave).toBeVisible();
+  await leave
+    .getByRole('button', { name: 'Продолжить редактирование' })
+    .click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  await panel.getByLabel('Текст записи').fill('Независимый RAM черновик');
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.create',
+    parentId: null,
+    title: 'Новый сохранённый родитель',
+  });
+  const remoteParent = tree.tasks.find(
+    (task) => task.title === 'Новый сохранённый родитель',
+  )!;
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.move',
+    taskId: child.id,
+    parentId: remoteParent.id,
+    position: 0,
+  });
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.edit',
+    taskId: child.id,
+    changes: { title: 'Сохранённое удалённое название' },
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(panel.getByRole('heading', { level: 2 })).toHaveText(
+    'Сохранённое удалённое название',
+  );
+  await expect(
+    panel.getByText('Несохранённое название: Локальный заголовок', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    path.getByRole('button', { name: 'Без дат', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    path.getByRole('button', {
+      name: 'Новый сохранённый родитель',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(panel.getByLabel('Текст записи')).toHaveValue(
+    'Независимый RAM черновик',
+  );
+  await path
+    .getByRole('button', { name: 'Новый сохранённый родитель', exact: true })
+    .click();
+  await expect(leave).toBeVisible();
+  await leave
+    .getByRole('button', { name: 'Продолжить редактирование' })
+    .click();
+  await expect(panel.getByRole('heading', { level: 2 })).toHaveText(
+    'Сохранённое удалённое название',
+  );
+  await path
+    .getByRole('button', { name: 'Новый сохранённый родитель', exact: true })
+    .click();
+  await leave.getByRole('button', { name: 'Не сохранять' }).click();
+  await expect(panel.getByRole('heading', { level: 2 })).toHaveText(
+    'Новый сохранённый родитель',
+  );
+  await expect(
+    panel.getByRole('tab', { name: 'Ход работы', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  expect(
+    planContent(await readTree(page, runtime.origin, tree.project.id)),
+  ).toEqual(planContent(tree));
+  expect(
+    (await readJournalPage(page, runtime.origin, tree.project.id)).entries,
+  ).toHaveLength(0);
+});
+
+test('late read A cannot hide uncertain write B and its real exact replay', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  await expect(panel.getByText('Записей пока нет')).toBeVisible();
+  const projectUrl = `${runtime.origin}/api/projects/${tree.project.id}/journal`;
+  const taskUrl = `${runtime.origin}/api/projects/${tree.project.id}/tasks/${doneId}/journal`;
+  let releaseReadA!: () => void;
+  let loseResponseB!: () => void;
+  const readGate = new Promise<void>((resolve) => {
+    releaseReadA = resolve;
+  });
+  const writeGate = new Promise<void>((resolve) => {
+    loseResponseB = resolve;
+  });
+  let acknowledgedA = false;
+  let heldReadA = false;
+  let committedB = false;
+  const writes: { operationId: string; expectedJournalRevision: number }[] = [];
+  await page.route(taskUrl, async (route) => {
+    if (route.request().method() === 'GET' && acknowledgedA && !heldReadA) {
+      heldReadA = true;
+      await readGate;
+    }
+    await route.continue();
+  });
+  await page.route(projectUrl, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    writes.push(route.request().postDataJSON());
+    if (writes.length === 1) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      acknowledgedA = true;
+      return route.fulfill({ response });
+    }
+    if (writes.length === 2) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committedB = true;
+      await writeGate;
+      return route.abort('failed');
+    }
+    await route.continue();
+  });
+  try {
+    await panel.getByLabel('Текст записи').fill('Подтверждённая операция A');
+    await panel
+      .getByRole('button', { name: 'Сохранить запись', exact: true })
+      .click();
+    await expect.poll(() => heldReadA).toBe(true);
+    await expect(
+      projectFeed(page).getByText('Подтверждённая операция A', { exact: true }),
+    ).toHaveCount(1);
+    // These are normal enabled controls: no imperative unlock or hook state edits.
+    const add = panel.getByRole('button', {
+      name: 'Добавить запись',
+      exact: true,
+    });
+    if (await add.isVisible()) await add.click();
+    await panel
+      .getByLabel('Текст записи')
+      .fill('Сохранённая один раз операция B');
+    await expect(
+      panel.getByRole('button', { name: 'Сохранить запись', exact: true }),
+    ).toBeEnabled();
+    await panel
+      .getByRole('button', { name: 'Сохранить запись', exact: true })
+      .click();
+    await expect.poll(() => committedB).toBe(true);
+    const readFinished = page.waitForResponse(
+      (response) =>
+        response.url() === taskUrl && response.request().method() === 'GET',
+    );
+    releaseReadA();
+    await readFinished;
+    loseResponseB();
+    await expect(
+      panel.getByRole('button', { name: 'Повторить сохранение', exact: true }),
+    ).toBeVisible();
+    await expect(panel.getByLabel('Текст записи')).toHaveValue(
+      'Сохранённая один раз операция B',
+    );
+    await expect(panel.getByLabel('Текст записи')).toBeDisabled();
+    expect(writes).toHaveLength(2);
+    await panel
+      .getByRole('button', { name: 'Повторить сохранение', exact: true })
+      .click();
+    await expect(panel.getByLabel('Текст записи')).toHaveValue('');
+    await expect(panel.getByLabel('Текст записи')).toBeEnabled();
+    expect(writes).toHaveLength(3);
+    expect(JSON.stringify(writes[2]) === JSON.stringify(writes[1])).toBe(true);
+    expect(writes[1]!.operationId).not.toBe(writes[0]!.operationId);
+    expect(writes[1]!.expectedJournalRevision).toBe(1);
+    const stored = await readJournalPage(page, runtime.origin, tree.project.id);
+    expect(stored.journalRevision).toBe(2);
+    expect(
+      stored.entries.filter(
+        (entry) => entry.body === 'Сохранённая один раз операция B',
+      ),
+    ).toHaveLength(1);
+    await expect(
+      panel.getByText('Сохранённая один раз операция B', { exact: true }),
+    ).toBeVisible();
+  } finally {
+    releaseReadA();
+    loseResponseB();
+    await page.unroute(taskUrl);
+    await page.unroute(projectUrl);
   }
 });

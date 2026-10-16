@@ -102,3 +102,74 @@ L01–L09 из [спецификации](superpowers/specs/2026-10-08-fs-link-p
 Компактные меню и журналы U01–U13 ([спецификация 2026-10-12](superpowers/specs/2026-10-12-journal-menu-ux-design.md)): `tests/client/menu-position.test.ts` (U01), `tests/client/action-menu.test.tsx` (U02), `tests/client/journal-compact.test.tsx` (U05 jsdom, U06, U08, U09), `tests/client/inline-add.test.tsx` (U10 jsdom), `tests/e2e/action-menus.spec.ts` (U03, U04, U07, U10–U12), `tests/e2e/task-journal.spec.ts` (U05, U09, U09b), `tests/e2e/journal-drafts.spec.ts` (U09: регион «Новая запись журнала», Escape и сохранение черновика после закрытия); U13 — итоговые проверки в [STATUS](STATUS.md).
 
 Public export/import и контейнерная приёмка не подменяются этими suites. S4–S6 остаются незавершёнными; production migration/deployment не выполняются этой задачей.
+
+## Компактная карточка D22 — P01–P28
+
+Нормативный контракт — [спецификация D22](superpowers/specs/2026-10-15-task-panel-ux-design.md#13-критерии-приёмки). Ниже проверенное синтетическое evidence 2026-10-16; итоговые команды и числа — в [STATUS](STATUS.md). Browser suites работают с настоящими HTTP/SQLite runtime, каждый test изолирован. Новая приёмка использует длинные название/описание, 30 потомков с глубокой веткой, fan-in/out и 55 записей на двух страницах. Строки таблицы означают покрытие перечисленными тестами, не завершение продуктовых S4–S6.
+
+| ID | Test paths, результат | Проверенное поведение |
+|---|---|---|
+| P01 | PASS `tests/e2e/task-panel-ux.spec.ts`: desktop geometry | Одно название; 480 px при 1440×900/1280×800, видимые дерево/Гант. |
+| P02 | PASS `tests/e2e/task-panel-ux.spec.ts`: desktop geometry, extreme title; `tests/e2e/task-journal.spec.ts`: actual panel scroll owner | Длинная ветка/описание/55 записей, один основной scroll; при нехватке высоты весь shell. |
+| P03 | PASS `tests/e2e/task-panel-ux.spec.ts`: desktop geometry, whole task draft | Menu/date не меняют header/tabs/ширину; чистый footer скрыт, глобальные действия появляются для несохранённых полей/связей и retry. |
+| P04 | PASS `tests/client/task-panel.test.tsx`; `tests/e2e/task-panel-ux.spec.ts`: whole task draft | Название/source/incoming сохраняются в RAM через три вкладки; статус сохраняется отдельно после выбора. Изменённое описание защищено трёхвариантным диалогом; его сохранение не отправляет остальные черновики. |
+| P05 | PASS `tests/e2e/fs-dependencies.spec.ts`: C25 graph saves title source incoming; `tests/e2e/task-panel-ux.spec.ts`: whole task draft | Одна task.edit/revision/Undo, canonical даты 05–06.10.2026; цикл откатывает все поля. |
+| P06 | PASS `tests/e2e/linked-plan-fields.spec.ts`; `tests/client/task-panel-schedule.test.tsx` | Literal C18, оба календаря, очистка и nullable без второго Apply. |
+| P07 | PASS `tests/client/task-panel-schedule.test.tsx`; `tests/e2e/linked-plan-fields.spec.ts`: duration-only | Подписи start-only/finish-only/duration-only/empty, условные даты не source. |
+| P08 | PASS `tests/client/task-panel-schedule.test.tsx`; `tests/e2e/optional-scheduling.spec.ts` | Summary full/incomplete, done reopen и tombstone, реальные locks. |
+| P09 | PASS `tests/client/task-panel-schedule.test.tsx`; `tests/e2e/linked-plan-fields.spec.ts`; `tests/e2e/task-panel-ux.spec.ts`: whole task draft | Raw/format/weekend/order ошибки сохраняются; repair фокусирует поле. |
+| P10 | PASS `tests/e2e/linked-plan-fields.spec.ts`: persistent editor; `tests/e2e/task-panel-ux.spec.ts` | Calendar Escape → date editor → panel; mounted DOM/raw сохраняются. |
+| P11 | PASS `tests/e2e/subtasks.spec.ts`: scoped keyboard creation; `tests/client/App.test.tsx` | Enter создаёт один раз, root-bound Tab/Shift+Tab, отдельный draft. |
+| P12 | PASS `tests/client/task-panel-navigation.test.tsx`; `tests/e2e/subtasks.spec.ts` | Dirty блокирует только создание с причиной; preserveWork и draft сохранены. |
+| P13 | PASS `tests/e2e/subtasks.spec.ts`: full depth under main filter; `tests/client/task-panel-navigation.test.tsx`: branch return | Полная ветка под фильтром, обе оси scroll, фокус ребёнка; focus→blur отменяет deferred restore. |
+| P14 | PASS `tests/e2e/fs-dependencies.spec.ts`: fan-in/fan-out arrows, whole-project picker; `tests/e2e/task-panel-ux.spec.ts` | Отдельные реальные рёбра/card endpoints; self/summary/duplicate/cycle запрещены. |
+| P15 | PASS `tests/client/dependencies.test.tsx`; `tests/e2e/fs-dependencies.spec.ts`: C25 graph | Draft edges подписаны, incoming атомарны с task, dirty outgoing заблокирован. |
+| P16 | PASS `tests/e2e/task-panel-ux.spec.ts`: outgoing success; `tests/client/dependencies.test.tsx`; `tests/e2e/fs-dependencies.spec.ts` | Отдельный outgoing command, cascade/retry/Undo, trigger получает фокус после busy; пользовательский фокус отменяет restore. |
+| P17 | PASS `tests/client/task-panel.test.tsx`; `tests/client/dependencies.test.tsx`; `tests/e2e/fs-dependencies.spec.ts`: synthetic infeasible snapshot; `tests/e2e/compact-workspace.spec.ts`: local diagnostics | Saved CPM отделён от draft; partial/global/infeasible подписи и конфликт. |
+| P18 | PASS `tests/e2e/task-journal.spec.ts`: real task create, branch deletion/Undo; `tests/e2e/task-panel-ux.spec.ts`: extreme title | Независимые task/journal drafts; journal submit не меняет plan revision; Undo-конфликты сохраняются. |
+| P19 | PASS `tests/e2e/task-journal.spec.ts`: acknowledged task write survives failed feed GET; `tests/client/journal-compact.test.tsx` | Успех write отделён от GET; повторяет только чтение; новый composer не сбрасывается поздним GET. |
+| P20 | PASS `tests/e2e/journal-drafts.spec.ts`: late read A/exact replay B; `tests/e2e/fs-dependencies.spec.ts`: uncertain create; `tests/client/App.test.tsx` | Exact operationId/envelope, один эффект, новые drafts и current revision переживают frozen ack. |
+| P21 | PASS `tests/e2e/journal-drafts.spec.ts`: pinned revision5, saved breadcrumb; `tests/e2e/journal-navigation.spec.ts`; `tests/e2e/task-panel-ux.spec.ts`: journal header ancestor | Pinned baselines; ready→failed GET→coherent refresh переключает живую header-ссылку и сохраняет читаемый контекст. |
+| P22 | PASS `tests/client/task-panel-navigation.test.tsx`: move targets, ordering boundaries; `tests/e2e/action-menus.spec.ts` | Поиск полного пути, корень, перестановка/уровни, запрет себя/потомка и Cancel. |
+| P23 | PASS `tests/e2e/task-journal.spec.ts`: branch deletion and plan undo; `tests/journal-lifecycle.test.ts` | Предупреждение об удалении ветки/записей, exact restore и journal conflict. |
+| P24 | PASS `tests/client/task-panel-navigation.test.tsx`; `tests/e2e/journal-navigation.spec.ts`; `tests/e2e/journal-drafts.spec.ts`: saved breadcrumb | Три решения, deferred/failing Save, project/parent/neighbor/Back/Forward guard; без перехода до ack. |
+| P25 | PASS `tests/client/task-panel.test.tsx`: old subtasks alias; `tests/client/journal-navigation.test.tsx`; `tests/e2e/journal-navigation.spec.ts` | Старые details/subtasks URL, сохранение underlying view/двух осей/фокуса, coherent unknown-history rebase. |
+| P26 | PASS `tests/e2e/task-panel-ux.spec.ts`: whole task draft, extreme title; `tests/e2e/linked-plan-fields.spec.ts`; `tests/e2e/action-menus.spec.ts` | Локальный Escape/Undo/Enter, Ctrl+Enter journal, keyboard menus/tabs/ошибки/disabled reasons. |
+| P27 | PASS `tests/e2e/task-panel-ux.spec.ts`: 375×812, 375×420, 850×650, extreme title; native zoom ниже | Controls/overlays в viewport, один scroll, панель не добавляет document width; полный длинный ввод доступен. |
+| P28 | PASS `tests/e2e/task-journal.spec.ts`: empty/loading/error/load-more; `tests/e2e/journal-drafts.spec.ts`: expired session/deleted task; `tests/e2e/optional-scheduling.spec.ts`; `tests/client/task-panel.test.tsx` | Различимы empty/loading/no-match/offline/deleted; stale metadata выключает ссылки; 401/logout очищают private RAM. |
+
+Настоящий browser zoom 200% проверен в свежем headed Chromium на отдельном Xvfb display с syntheticRuntime. Пять нативных Control+equal переводят `innerWidth` 1440→720, `devicePixelRatio` 1→2 и `innerHeight` 813→406. Панель 480×813 становится fullscreen 720×406.5 CSS px (дробный CSS-пиксель при DPR2); общий document width при том же zoom равен 786 и с закрытой, и с открытой карточкой. Это существующая ширина underlying workspace, карточка её не увеличивает. Шапка с 300 символами, полное описание, все три поля дат, Save/Close и journal editor доступны; временный редактор 440×335 расположен в пределах viewport. Единственный постоянный scroller — shell. Enter добавляет перенос, Ctrl+Enter сохраняет journal entry. CSS zoom и page-scale emulation не использовались. Воспроизведение: свежий синтетический вход, открыть длинную задачу, выставить в меню Chromium 200%, проверить эти размеры, прокрутить к каждому полю/действию и отправить синтетическую запись с клавиатуры. Контекст/браузер/Xvfb/runtime после проверки закрыты; изображения/трассы/профили не сохранялись.
+
+Ограничение history после reload: неизвестный в RAM visit не имеет надёжного физического index delta. UI/URL согласуются через новый visit и rebase; восстановление потерянного browser index не заявляется. Общая мобильная шапка и ширина underlying workspace, доска, restore/import/export и релизная S6 не входят в этот этап. D22 остаётся рабочим default.
+
+
+## Уточнение карточки D22 — 2026-10-16
+
+Актуальные правила — [UI](UI.md#правая-панель). `tests/client/task-card-redesign.test.tsx` содержит 15 независимых проверок отмены/сохранения, сохранности постороннего и более нового черновика, отката статуса при ошибке, последних подтверждённых сроков после общего Save и закрытия обоих редакторов после exact retry. `tests/e2e/task-card-redesign.spec.ts` проверяет с настоящим HTTP/SQLite: компактное состояние, раздельные записи, однодневный интервал и очистку, ошибки без потери текста, dirty-navigation, фактические четыре строки/переносы/увеличенный шрифт, изменение ширины textarea, отсутствие document scroll и потерянный уже committed ответ с тем же envelope/revision при повторе. Оба desktop projects также открывают карточку при 375×812. Синтетические screenshots состояний 01–08 сохраняются вне checkout и просматриваются вручную.
+
+`tests/e2e/fs-dependencies.spec.ts`, сценарий C25 Details, теперь подтверждает одну task.edit сроков и нового предшественника именно по «Готово», canonical даты и общий Undo. Сценарий C25 graph отдельно сохраняет название/source/incoming общей кнопкой: fallback не утрачен. Одна отмена общего изменения не отменяет отдельно сохранённый статус — это самостоятельная подтверждённая операция.
+
+Для новой карточки дополнительно проверен нативный 200% в свежем headed Chromium на отдельном Xvfb: пять X11 Ctrl+equal, DPR 2, viewport 719×406 CSS px, fullscreen panel 719.5×406. Одинаковая ширина underlying документа 786 CSS px до/после открытия остаётся прежним ограничением общей мобильной шапки. Inline-описание, явная отмена, все три поля сроков и переход в пустой журнал доступны; CSS zoom и page-scale emulation не применялись. Профиль и runtime синтетические, без доступа к пользовательским сессиям.
+
+
+## Ход работы задачи D23 — W01–W10
+
+Спецификация: [task work progress](superpowers/specs/2026-10-16-task-work-progress-design.md). Приёмка использует независимую синтетику, существующий сервер и два browser projects 1440×900/1280×800; внутри сценариев также 375×812, 375×240, 1440×180 и расширенная панель. Новые client evidence: `tests/client/work-progress.test.tsx`, `journal-entry-body.test.tsx`, `journal-preview-anchor.test.tsx`. Browser evidence: `tests/e2e/work-progress.spec.ts`, действующие journal/navigation/draft suites. Общие итоги команд — в STATUS.
+
+| ID | Проверенное поведение и evidence |
+| --- | --- |
+| W01 | Task tab «Ход работы», project tab «Журнал», прежние внутренние IDs/URL; client и browser navigation. |
+| W02 | Две исходные строки, autogrow ввода/вставки/ширины/шрифта, полная ширина в 480 px панели, side-by-side только от 500 px контейнера; browser geometry/clear/focus. |
+| W03 | Enter переносит строку, Ctrl/Cmd+Enter сохраняет точный body/workDate; IME и невалидная дата/пустой текст/лимит не отправляются; client и actual-server browser. |
+| W04 | Короткий текст без toggle; пятистрочный, переносимый и длинный URL ограничены четырьмя визуальными строками; ResizeObserver/font events обновляют основание toggle. |
+| W05 | LF/CRLF, пустые крайние строки и серии из пробелов/табуляции сокращаются только в preview; normalized-short доступен полностью, server/editor и раскрытые записи обеих лент показывают исходный body. |
+| W06 | Независимые раскрытые IDs переживают refresh, вкладки, edit-close и временную выгрузку tail pages; новая задача сбрасывает раскрытие. Hidden short→long/long→short измеряется при reveal. |
+| W07 | Backdated группы, пагинация и точный anchor ID/offset сохраняются. В hidden browser regression 25 записей и пять изменённых верхних body возвращаются к исходному offset −17 px. Следующая страница загружается только при нехватке высоты для offset; reachable и exhausted-cursor ветви покрыты. |
+| W08 | Existing journal/draft/replay/coherence/navigation проверки сохраняют независимость task draft, retry и сохранность текста; общий результат full suites записывается в STATUS. |
+| W09 | Keyboard toggle/меню/date/save/clear, узкая/низкая панель, реальный browser zoom 200% — без горизонтального переполнения панели. |
+| W10 | По уточнению владельца project feed использует тот же четырёхстрочный preview, независимые toggle и исходный текст при раскрытии; существующий full editor обеих лент показывает raw body и текстовые действия. |
+
+Нативный zoom 200% проверен root в свежем headed Chromium на отдельном Xvfb display, с disposable syntheticRuntime и новым browser context. Пять нативных X11 Ctrl+equal изменили innerWidth 1439→719, innerHeight 812→406 и DPR 1→2. Панель clientWidth/scrollWidth равны 719 CSS px. Из существовавшей underlying ширины документа 786 CSS px не выводится отсутствие общего mobile overflow; сама панель не переполняется. Раскрытие/сворачивание записи, меню и возврат фокуса, дата, save/clear доступны с клавиатуры и проверены в viewport. Enter добавляет перенос, Ctrl+Enter создаёт ровно одну новую запись с полным текстом; plan revision неизменна. CSS zoom/page-scale emulation не применялись. Browser/runtime/Xvfb закрыты; личные профили, sessions и данные не использовались.
+
+
+Уточнение W10, 2026-10-16: новый project-specific client scenario в `work-progress.test.tsx` проверяет нормализацию только preview, независимое раскрытие и refresh без записи API. Browser `work-progress.spec.ts` проверяет обе ленты, полный исходный CRLF/editor и общий журнал из 55 записей: четыре строки, независимые toggle, две страницы, сохранение anchor/раскрытия после refresh и смены project tabs, поиск по скрытой строке и неизменную plan revision. Результат команд фиксируется в актуальной записи STATUS.

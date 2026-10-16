@@ -112,8 +112,18 @@ test('Q04 visible row actions keep rows exactly 38px in the main and subtask tre
   await expectRowHeights(main.locator('[role="treeitem"][data-task-id]'));
   await main.getByRole('treeitem', { name: /^Этап P,/ }).click();
   const panel = page.getByRole('complementary', { name: 'Задача' });
-  await panel.getByRole('tab', { name: 'Подзадачи' }).click();
-  await expectRowHeights(page.locator('#panel-subtasks [role="treeitem"]'));
+  await panel.getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
+  await expectRowHeights(
+    page.locator('#panel-details .panel-subtasks [role="treeitem"]'),
+  );
 });
 
 test('Q04 row actions fit 375px and 200% zoom without adding horizontal scroll', async ({
@@ -330,7 +340,7 @@ test('U07 feed dates align with the first toolbar action', async ({
     exact: true,
   });
   await expect(
-    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+    panel.getByRole('tab', { name: 'Ход работы', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   await expect(panel.getByLabel('Текст записи')).toBeVisible();
   await expect(hint).toHaveCount(0);
@@ -377,7 +387,15 @@ test('Q01 rows offer subtask and entry actions without a row menu', async ({
   await page.getByRole('button', { name: 'Гант', exact: true }).click();
   expect(await rowButtons(row)).toEqual(actions('Без дат'));
   await row.click();
-  await page.getByRole('tab', { name: 'Подзадачи', exact: true }).click();
+  await page.getByRole('tab', { name: 'Задача', exact: true }).click();
+  if (
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await page
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   const subtaskRow = page
     .getByRole('tree', { name: 'Подзадачи', exact: true })
     .locator(`[data-task-id="${childId}"]`);
@@ -417,4 +435,104 @@ test('U10 date column heading aligns with row dates', async ({
       `${view}: heading ${edges.heading}, date ${edges.date}`,
     ).toBeLessThanOrEqual(1);
   }
+});
+
+test('task menu move dialog traps focus, explains boundaries and restores its trigger on Escape', async ({
+  page,
+  runtime,
+}) => {
+  const { deepId } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.locator(`[role="treeitem"][data-task-id="${deepId}"]`).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  const trigger = panel.getByRole('button', { name: 'Действия задачи' });
+  const commands: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/commands'))
+      commands.push(request.url());
+  });
+  await trigger.click();
+  await page.getByRole('menuitem', { name: 'Переместить…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Переместить задачу' });
+  const search = dialog.getByRole('textbox', { name: 'Поиск родителя' });
+  await expect(search).toBeFocused();
+  await dialog.getByText('Порядок и уровень').click();
+  await expect(
+    dialog.getByRole('button', { name: 'Выше', exact: true }),
+  ).toBeDisabled();
+  await expect(dialog.getByText('Задача уже первая в группе.')).toBeVisible();
+  await search.fill('Без дат');
+  await expect(
+    dialog.getByRole('button', { name: 'Без дат / Уровень 1', exact: true }),
+  ).toBeVisible();
+  const cancel = dialog.getByRole('button', { name: 'Отмена', exact: true });
+  await cancel.focus();
+  await page.keyboard.press('Tab');
+  await expect(search).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(commands).toHaveLength(0);
+});
+
+test('dirty task navigation has three decisions and saves exactly once before selecting the target', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, deepId, summaryId } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.locator(`[role="treeitem"][data-task-id="${deepId}"]`).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('button', { name: 'Изменить название' }).click();
+  await panel
+    .getByLabel('Название задачи', { exact: true })
+    .fill('Изменённая синтетическая задача');
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/commands'))
+      requests.push(request.url());
+  });
+  const target = page
+    .locator(`[role="treeitem"][data-task-id="${summaryId}"]`)
+    .first();
+  await target.click();
+  const dialog = page.getByRole('dialog', {
+    name: 'Несохранённые изменения задачи',
+  });
+  await expect(
+    dialog.getByRole('button', { name: 'Не сохранять' }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole('button', { name: 'Продолжить редактирование' }),
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    panel.getByLabel('Название задачи', { exact: true }),
+  ).toHaveValue('Изменённая синтетическая задача');
+  expect(requests).toHaveLength(0);
+  await target.click();
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(
+    panel.getByRole('heading', { name: 'Этап P', exact: true }),
+  ).toBeVisible();
+  expect(requests).toHaveLength(1);
+  const response = await page.request.get(
+    `${runtime.origin}/api/projects/${tree.project.id}/tree`,
+    { headers: { 'X-Leaf-Contract-Version': '2' } },
+  );
+  expect(response.status()).toBe(200);
+  const saved = await response.json();
+  expect(
+    saved.tasks.find((task: { id: string }) => task.id === deepId).title,
+  ).toBe('Изменённая синтетическая задача');
+  expect(saved.project.revision).toBe(tree.project.revision + 1);
 });

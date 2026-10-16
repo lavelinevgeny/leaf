@@ -9,11 +9,11 @@ import type { ProjectTree } from '../shared/contracts.js';
 import {
   canonicalPredecessorIds,
   predecessorCandidates,
+  successorCandidates,
 } from './predecessor-view.js';
 import { strings } from './strings.js';
-export interface PredecessorPickerProps {
+interface SharedPickerProps {
   tree: ProjectTree | null;
-  successorId: string | null;
   selectedIds: readonly string[];
   disabled: boolean;
   error?: string;
@@ -21,16 +21,20 @@ export interface PredecessorPickerProps {
   onRemove: (id: string) => void;
   onClose: () => void;
 }
-export function PredecessorPicker({
-  tree,
-  successorId,
-  selectedIds,
-  disabled,
-  error,
-  onAdd,
-  onRemove,
-  onClose,
-}: PredecessorPickerProps): ReactNode {
+export type PredecessorPickerProps = SharedPickerProps &
+  (
+    | {
+        direction?: 'predecessor';
+        successorId: string | null;
+        predecessorId?: never;
+      }
+    | { direction: 'successor'; predecessorId: string; successorId?: never }
+  );
+export function PredecessorPicker(props: PredecessorPickerProps): ReactNode {
+  const { tree, selectedIds, disabled, error, onAdd, onRemove, onClose } =
+    props;
+  const successor = props.direction === 'successor';
+  const heading = successor ? strings.addSuccessor : strings.afterFinish;
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(-1);
   const popup = useRef<HTMLDivElement>(null);
@@ -83,7 +87,9 @@ export function PredecessorPicker({
     };
   }, []);
   const candidates = tree
-    ? predecessorCandidates(tree, successorId, selectedIds, query)
+    ? props.direction === 'successor'
+      ? successorCandidates(tree, props.predecessorId, query)
+      : predecessorCandidates(tree, props.successorId, selectedIds, query)
     : [];
   const index = Math.min(active, candidates.length - 1);
   const activeId = candidates[index]?.task.id;
@@ -98,7 +104,7 @@ export function PredecessorPicker({
       }
       className="predecessor-picker"
       role="dialog"
-      aria-label={strings.afterFinish}
+      aria-label={heading}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -110,10 +116,12 @@ export function PredecessorPicker({
       }}
     >
       <div className="predecessor-heading">
-        <strong>{strings.afterFinish}</strong>
+        <strong>{heading}</strong>
         <button
           type="button"
-          aria-label={strings.closePredecessors}
+          aria-label={
+            successor ? strings.closeSuccessors : strings.closePredecessors
+          }
           onClick={onClose}
         >
           ×
@@ -129,7 +137,7 @@ export function PredecessorPicker({
               {title}
               <button
                 type="button"
-                aria-label={`${strings.removePredecessor}: ${title}`}
+                aria-label={`${successor ? strings.removeSuccessor : strings.removePredecessor}: ${title}`}
                 disabled={disabled}
                 onClick={() => onRemove(selected)}
               >
@@ -143,7 +151,9 @@ export function PredecessorPicker({
         ref={search}
         type="search"
         role="searchbox"
-        aria-label={strings.searchPredecessor}
+        aria-label={
+          successor ? strings.searchSuccessor : strings.searchPredecessor
+        }
         aria-controls={id}
         aria-activedescendant={index >= 0 ? `${id}-${index}` : undefined}
         value={query}
@@ -189,7 +199,7 @@ export function PredecessorPicker({
           id={id}
           ref={results}
           role="listbox"
-          aria-label={strings.predecessors}
+          aria-label={successor ? strings.successors : strings.predecessors}
           className="predecessor-results"
         >
           {candidates.map((candidate, candidateIndex) => (

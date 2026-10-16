@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
+HTMLDialogElement.prototype.showModal = function () {
+  this.setAttribute('open', '');
+};
+HTMLDialogElement.prototype.close = function () {
+  this.removeAttribute('open');
+};
 import {
   act,
   cleanup,
@@ -17,7 +23,6 @@ import {
   type TimelineViewState,
 } from '../../src/client/TaskTimeline.js';
 import { api, ApiError } from '../../src/client/api.js';
-import { strings } from '../../src/client/strings.js';
 import {
   parseWorkspaceUrl,
   workspaceUrl,
@@ -219,12 +224,18 @@ it('blocks Back for a dirty planning baseline and restores the prior history pos
   render(<App />);
   await screen.findByRole('heading', { name: 'Демо-проект' });
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Изменить название' }),
+  );
   fireEvent.change(screen.getByLabelText('Название задачи'), {
     target: { value: 'Pinned own plan title' },
   });
   const before = window.location.search;
   await travel('back');
-  await screen.findByText(strings.unsaved);
+  await screen.findByRole('dialog', { name: 'Несохранённые изменения задачи' });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Продолжить редактирование' }),
+  );
   await waitFor(() => expect(window.location.search).toBe(before));
   expect(screen.getByLabelText('Название задачи')).toHaveValue(
     'Pinned own plan title',
@@ -383,11 +394,19 @@ it.each(['main', 'subtasks'])(
     let row: HTMLElement;
     if (scope === 'subtasks') {
       await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
-      await userEvent.click(screen.getByRole('tab', { name: 'Подзадачи' }));
-      row = within(document.getElementById('panel-subtasks')!).getByRole(
-        'treeitem',
-        { name: /Работа 2/ },
-      );
+      await userEvent.click(screen.getByRole('tab', { name: 'Задача' }));
+      if (
+        screen.queryByRole('button', { name: 'Добавить подзадачу' }) &&
+        !screen
+          .getByRole('button', { name: 'Добавить подзадачу' })
+          .hasAttribute('disabled')
+      )
+        await userEvent.click(
+          screen.getByRole('button', { name: 'Добавить подзадачу' }),
+        );
+      row = within(
+        document.querySelector<HTMLElement>('#panel-details .panel-subtasks')!,
+      ).getByRole('treeitem', { name: /Работа 2/ });
     } else row = screen.getByRole('treeitem', { name: /Работа 1/ });
     row.focus();
     fireEvent.keyDown(row, { key: 'Delete' });
@@ -431,6 +450,9 @@ it('dirty plan stays on its original title/source baseline while refreshed journ
   render(<App />);
   await screen.findByRole('treeitem', { name: /Работа 1/ });
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Изменить название' }),
+  );
   fireEvent.change(screen.getByLabelText('Название задачи'), {
     target: { value: 'Own plan title' },
   });
@@ -826,6 +848,8 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
       expect(feed.querySelectorAll('[data-journal-entry]')).toHaveLength(count),
     );
   }
+  // A real manual scroll cancels the preview's pending layout restoration.
+  fireEvent.wheel(feed);
   feed.scrollTop = 10025;
   fireEvent.scroll(feed);
   await userEvent.click(document.getElementById('project-tab-tasks')!);
@@ -841,7 +865,7 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
   await waitFor(() =>
     expect(feed.querySelectorAll('[data-journal-entry]')).toHaveLength(125),
   );
-  expect(feed.scrollTop).toBe(10025);
+  await waitFor(() => expect(feed.scrollTop).toBe(10025));
   expect(
     feed
       .querySelector(`[data-journal-entry="${entries[100]!.id}"]`)!
@@ -849,13 +873,14 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
   ).toBe(175);
   await travel('back');
   await travel('forward');
-  expect(feed.scrollTop).toBe(10025);
+  await waitFor(() => expect(feed.scrollTop).toBe(10025));
+  fireEvent.wheel(feed);
   feed.scrollTop = 7525;
   fireEvent.scroll(feed);
   await userEvent.click(document.getElementById('project-tab-tasks')!);
   await userEvent.click(document.getElementById('project-tab-journal')!);
-  expect(feed.scrollTop).toBe(7525);
+  await waitFor(() => expect(feed.scrollTop).toBe(7525));
   await travel('back');
   await travel('forward');
-  expect(feed.scrollTop).toBe(7525);
+  await waitFor(() => expect(feed.scrollTop).toBe(7525));
 });

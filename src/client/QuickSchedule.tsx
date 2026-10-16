@@ -5,9 +5,18 @@ import { shiftDate } from './gantt-view.js';
 import { fridayPlan, scheduleChip } from './quick-add-view.js';
 import { useProjectToday } from './use-project-today.js';
 import { strings } from './strings.js';
-import { PlanFields } from './PlanFields.js';
+import { PlanFields, type PlanFieldsDraft } from './PlanFields.js';
+export type QuickScheduleDraft = {
+  fields?: PlanFieldsDraft | undefined;
+  error?: string | undefined;
+};
 
 interface Props {
+  open: boolean;
+  inputDraft?: QuickScheduleDraft | undefined;
+  onInputDraft?: ((draft: QuickScheduleDraft) => void) | undefined;
+  resetVersion: number;
+  onEdit: () => void;
   id: string;
   plan: SourceFields;
   parentPlan: SourceFields | null;
@@ -20,6 +29,11 @@ interface Props {
   onClose: () => void;
 }
 export function QuickSchedule({
+  open,
+  inputDraft,
+  onInputDraft,
+  resetVersion,
+  onEdit,
   id,
   plan,
   parentPlan,
@@ -35,10 +49,27 @@ export function QuickSchedule({
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const today = useProjectToday(timezone);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(inputDraft?.error ?? '');
+  const input = useRef(inputDraft);
+  input.current = inputDraft;
+  function updateInput(patch: Partial<QuickScheduleDraft>) {
+    input.current = { ...input.current, ...patch };
+    onInputDraft?.(input.current);
+  }
+  function reportError(value: string) {
+    setError(value);
+    updateInput({ error: value });
+  }
+  const [resetKey, setResetKey] = useState(0);
+  const previousReset = useRef(resetVersion);
+  useLayoutEffect(() => {
+    if (previousReset.current === resetVersion) return;
+    previousReset.current = resetVersion;
+    reportError('');
+  }, [resetVersion]);
   useLayoutEffect(() => {
     const node = popup.current;
-    if (!node || !anchor) return;
+    if (!open || !node || !anchor) return;
     const position = () => {
       const rect = anchor.getBoundingClientRect();
       const width = Math.min(440, window.innerWidth - 24);
@@ -61,25 +92,30 @@ export function QuickSchedule({
     window.addEventListener('resize', position);
     window.addEventListener('scroll', position, true);
     return () => {
+      node.hidePopover?.();
       document.removeEventListener('pointerdown', dismiss);
       window.removeEventListener('resize', position);
       window.removeEventListener('scroll', position, true);
     };
-  }, [anchor]);
+  }, [anchor, open]);
   function preset(make: () => SourceFields, fallback?: SourceFields) {
+    onEdit();
+    setResetKey((key) => key + 1);
     try {
       onChange(make());
-      setError('');
+      reportError('');
       onValidityChange(true);
     } catch {
       if (fallback) onChange(fallback);
-      setError(strings.quickScheduleError);
+      reportError(strings.quickScheduleError);
       onValidityChange(false);
     }
   }
   return (
     <div
       ref={popup}
+      hidden={!open}
+      inert={!open}
       id={id}
       popover={
         typeof HTMLElement.prototype.showPopover === 'function'
@@ -90,7 +126,8 @@ export function QuickSchedule({
       aria-label={strings.quickScheduleTitle}
       className="quick-schedule"
       onToggle={(event) => {
-        if ((event.nativeEvent as ToggleEvent).newState === 'closed') onClose();
+        if (open && (event.nativeEvent as ToggleEvent).newState === 'closed')
+          onClose();
       }}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
@@ -158,6 +195,10 @@ export function QuickSchedule({
         )}
       </div>
       <PlanFields
+        inputDraft={inputDraft?.fields}
+        onInputDraft={(fields) => updateInput({ fields })}
+        resetKey={resetKey + resetVersion}
+        onEdit={onEdit}
         compact
         task={{ status: 'todo' }}
         plan={plan}
@@ -166,7 +207,7 @@ export function QuickSchedule({
         summary={false}
         disabled={disabled}
         onChange={(next) => {
-          setError('');
+          reportError('');
           onChange(next);
         }}
         onValidityChange={(valid) => onValidityChange(valid && !error)}
@@ -181,12 +222,14 @@ export function QuickSchedule({
           type="button"
           disabled={disabled}
           onClick={() => {
+            onEdit();
+            setResetKey((key) => key + 1);
             onChange({
               inputStart: null,
               inputFinish: null,
               durationDays: null,
             });
-            setError('');
+            reportError('');
             onValidityChange(true);
           }}
         >

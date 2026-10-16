@@ -1,3 +1,4 @@
+import { openTaskDates, setTaskStatus } from '../helpers/task-panel.js';
 import { test as base, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
@@ -47,16 +48,30 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
     name: 'Задача',
     exact: true,
   });
+  await panel.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await panel.getByText('Расчёт', { exact: true }).click();
   await expect(
     panel.getByText(
       'Анализ датированной части; полный критический путь неизвестен',
       { exact: true },
     ),
   ).toBeVisible();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
   await expect(page.getByLabel('Начало', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Окончание', { exact: true })).toHaveValue('');
+  await openTaskDates(page);
   await page.getByLabel('Начало', { exact: true }).fill('2026-10-05');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-06');
+  if (
+    await page
+      .getByRole('dialog', { name: 'Сроки задачи', exact: true })
+      .isVisible()
+  )
+    await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
   await page
     .getByLabel('Описание', { exact: true })
     .fill('Синтетический черновик');
@@ -91,8 +106,11 @@ test('optional source, linked input, API mismatch rollback, FS cascade, undo and
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).project.revision,
   ).toBe(tree.project.revision);
+  await openTaskDates(page);
   await page.getByLabel('Длительность, рабочих дней', { exact: true }).fill('');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Сохранить все изменения', exact: true })
+    .click();
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   tree = await readTree(page, runtime.origin, tree.project.id);
   expect(tree.tasks.find((t) => t.id === c)).toMatchObject({
@@ -173,6 +191,9 @@ test('dirty selected deletion retains readable tombstone then discards and resto
   const selectedId = tree.tasks.find((t) => t.title === 'Работа C')!.id;
   await page.getByRole('treeitem', { name: /Работа C,/ }).click();
   await page
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
+  await page
     .getByLabel('Описание', { exact: true })
     .fill('Синтетический черновик');
   const deleted = await page.request.post(
@@ -201,7 +222,7 @@ test('dirty selected deletion retains readable tombstone then discards and resto
   ).toBeDisabled();
   await expect(page.locator(`[data-gantt-row="${selectedId}"]`)).toHaveCount(0);
   await page
-    .getByRole('button', { name: 'Отбросить изменения', exact: true })
+    .getByRole('button', { name: 'Сбросить изменения', exact: true })
     .click();
   await page.keyboard.press('Escape');
   await expect(
@@ -246,9 +267,10 @@ test('unavailable original done must reopen, explicitly adopts equal source, und
       .getByText(/Прежний интервал недоступен; полный расчёт неизвестен/)
       .last(),
   ).toBeVisible();
-  await expect(page.getByLabel('Начало', { exact: true })).toBeDisabled();
-  await page.getByLabel('Статус', { exact: true }).selectOption('doing');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: /^Сроки задачи:/ }),
+  ).toBeDisabled();
+  await setTaskStatus(page, 'В работе');
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   tree = await readTree(page, runtime.origin, tree.project.id);
   expect(tree.schedule.tasks[id]!.startDate).toBeNull();

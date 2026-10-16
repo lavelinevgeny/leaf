@@ -1,3 +1,4 @@
+import { setTaskStatus } from '../helpers/task-panel.js';
 import { test as base, expect, type Page } from '@playwright/test';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 import {
@@ -26,6 +27,159 @@ const panel = (page: Page) =>
   page.getByRole('complementary', { name: 'Задача' });
 const main = (page: Page) =>
   page.getByRole('tree', { name: 'Задачи', exact: true });
+
+for (const viewport of [
+  { width: 375, height: 400 },
+  { width: 720, height: 450 },
+  { width: 1440, height: 400 },
+])
+  test(`a full 288-character title keeps Save reachable at ${viewport.width}x${viewport.height}`, async ({
+    page,
+    runtime,
+  }) => {
+    await page.setViewportSize(viewport);
+    let tree = await seedOptionalRuntime(page, runtime);
+    const taskId = tree.tasks.find((task) => task.title === 'Работа A')!.id;
+    const title = 'Длинное название задачи '.repeat(12).trimEnd() + '.';
+    expect(title).toHaveLength(288);
+    tree = await send(page, runtime.origin, tree, {
+      type: 'task.edit',
+      taskId,
+      changes: { title },
+    });
+    await page.goto(
+      `${runtime.origin}/?project=${tree.project.id}&task=${taskId}&panel=details`,
+    );
+    const card = panel(page);
+    await expect(
+      card.getByRole('heading', { name: title, exact: true }),
+    ).toHaveText(title);
+    const initialOwner = page.locator('[data-panel-scroll-owner]');
+    await expect(initialOwner).toHaveCount(1);
+    await initialOwner.evaluate((node) => {
+      node.scrollTop = 0;
+    });
+    const fullTitle = card.getByRole('button', {
+      name: 'Изменить название',
+      exact: true,
+    });
+    await expect(fullTitle).toBeInViewport({ ratio: 1 });
+    expect(
+      await fullTitle.evaluate(
+        (node) => node.scrollHeight <= node.clientHeight + 1,
+      ),
+    ).toBe(true);
+    await card
+      .getByRole('button', { name: 'Изменить название', exact: true })
+      .click();
+    await expect(
+      card.getByLabel('Название задачи', { exact: true }),
+    ).toHaveValue(title);
+    await setTaskStatus(page, 'В работе');
+    await card.getByLabel('Название задачи', { exact: true }).press('Enter');
+    await expect(
+      card.getByRole('button', { name: 'Сохранить', exact: true }),
+    ).toHaveCount(0);
+    await expect(card.getByText('Сохранено', { exact: true })).toBeVisible();
+    const current = await readTree(page, runtime.origin, tree.project.id);
+    expect(current.project.revision).toBe(tree.project.revision + 1);
+    expect(current.tasks.find((task) => task.id === taskId)).toMatchObject({
+      title,
+      status: 'doing',
+    });
+    const owner = page.locator('[data-panel-scroll-owner]');
+    await expect(owner).toHaveCount(1);
+    const shell = await owner.evaluate((node) =>
+      node.classList.contains('task-panel'),
+    );
+    expect(
+      await card
+        .locator('.panel-content')
+        .evaluate((node) => getComputedStyle(node).overflowY),
+    ).toBe(shell ? 'visible' : 'auto');
+    // The full title remains available; changing editor/viewport must retain focus.
+    await card
+      .getByRole('button', { name: 'Изменить название', exact: true })
+      .click();
+    const editor = card.getByLabel('Название задачи', { exact: true });
+    await expect(editor).toHaveValue(title);
+    await expect(editor).toBeFocused();
+    // The natural chrome may still need shell scroll
+    // at the original low height. Grow explicitly to fit before switching back.
+    await page.setViewportSize({ width: viewport.width, height: 700 });
+    await expect(editor).toBeFocused();
+    await expect(
+      page.locator('.panel-content[data-panel-scroll-owner]'),
+    ).toHaveCount(1);
+    await page.setViewportSize({ width: viewport.width, height: 200 });
+    await expect(
+      page.locator('.task-panel[data-panel-scroll-owner]'),
+    ).toHaveCount(1);
+    await expect(editor).toBeFocused();
+    await expect(editor).toBeInViewport({ ratio: 1 });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(editor).toBeFocused();
+    await expect(
+      page.locator('.panel-content[data-panel-scroll-owner]'),
+    ).toHaveCount(1);
+  });
+
+for (const fixture of [
+  { title: 'Этап P', count: 2 },
+  { title: 'Работа C', count: 0 },
+])
+  test(`the old subtasks URL reveals ${fixture.title} with saved description and preserves later focus`, async ({
+    page,
+    runtime,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    let tree = await seedOptionalRuntime(page, runtime);
+    const taskId = tree.tasks.find((task) => task.title === fixture.title)!.id;
+    tree = await send(page, runtime.origin, tree, {
+      type: 'task.edit',
+      taskId,
+      changes: {
+        description: 'Описание 1\nОписание 2\nОписание 3\nОписание 4',
+      },
+    });
+    let writes = 0;
+    page.on('request', (request) => {
+      if (!['GET', 'HEAD'].includes(request.method())) writes++;
+    });
+    await page.goto(
+      `${runtime.origin}/?project=${tree.project.id}&task=${taskId}&panel=subtasks`,
+    );
+    await expect(
+      panel(page).getByRole('heading', {
+        name: `Подзадачи (${fixture.count})`,
+        exact: true,
+      }),
+    ).toBeInViewport({ ratio: 1 });
+    expect(await panel(page).getByRole('tab').allTextContents()).toEqual([
+      'Задача',
+      'Зависимости',
+      'Ход работы',
+    ]);
+    await expect(
+      panel(page).getByRole('tab', { name: 'Задача', exact: true }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/panel=subtasks/);
+    const title = panel(page).getByRole('button', {
+      name: 'Изменить название',
+      exact: true,
+    });
+    await title.focus();
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => done())),
+        ),
+    );
+    await expect(title).toBeFocused();
+    expect(writes).toBe(0);
+    expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+  });
+
 async function seed(
   page: Page,
   runtime: Awaited<ReturnType<typeof syntheticRuntime>>,
@@ -53,7 +207,15 @@ async function seed(
   await main(page)
     .getByRole('treeitem', { name: /^Этап P,/ })
     .click();
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   return { tree, root };
 }
 
@@ -76,7 +238,15 @@ test('subtasks keep full depth under a main filter and return focus through nest
     .getByLabel('Новая задача', { exact: true })
     .fill('Черновик этапа');
   await subtree.getByRole('treeitem', { name: /^Группа 1,/ }).press('Enter');
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   await panel(page)
     .getByRole('treeitem', { name: /^Группа 2,/ })
     .press('Enter');
@@ -211,7 +381,15 @@ test('last-row deletion focuses scoped input and a removed selected task keeps d
   await panel(page)
     .getByRole('treeitem', { name: /^Группа 4,/ })
     .press('Enter');
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   page.once('dialog', (dialog) => dialog.accept());
   await panel(page)
     .getByRole('treeitem', { name: /^Глубокая работа,/ })
@@ -220,7 +398,18 @@ test('last-row deletion focuses scoped input and a removed selected task keeps d
   const input = panel(page).getByLabel('Новая задача', { exact: true });
   await expect(input).toBeFocused();
   await input.fill('Черновик удаляемой группы');
-  await panel(page).getByRole('tab', { name: 'Детали' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
+  await panel(page)
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
   await panel(page)
     .getByLabel('Описание', { exact: true })
     .fill('Черновик деталей');
@@ -239,7 +428,15 @@ test('last-row deletion focuses scoped input and a removed selected task keeps d
   await expect(panel(page).getByLabel('Описание', { exact: true })).toHaveValue(
     'Черновик деталей',
   );
-  await panel(page).getByRole('tab', { name: 'Подзадачи' }).click();
+  await panel(page).getByRole('tab', { name: 'Задача' }).click();
+  if (
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .count()
+  )
+    await panel(page)
+      .getByRole('button', { name: 'Добавить подзадачу', exact: true })
+      .click();
   await expect(panel(page).getByRole('tree')).toHaveCount(0);
   await expect(input).toHaveValue('Черновик удаляемой группы');
   await expect(input).toBeDisabled();

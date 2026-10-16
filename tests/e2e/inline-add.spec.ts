@@ -127,3 +127,89 @@ test('inline child draft, schedule presets, keyboard, conditional bars and atomi
     }
   }
 });
+
+test('quick creation retains lexical duration across Escape and clears it for the acknowledged next draft', async ({
+  page,
+}) => {
+  const runtime = await syntheticRuntime();
+  try {
+    const before = await seedOptionalRuntime(page, runtime);
+    await page.goto(runtime.origin);
+    const parent = page.getByRole('treeitem', { name: /^Этап P,/ });
+    await parent.focus();
+    await parent.press('Shift+Enter');
+    const quick = page.locator('form.inline-quick-add');
+    const title = quick.getByLabel('Новая задача', { exact: true });
+    await title.fill('Буфер длительности');
+    const chip = quick.getByRole('button', {
+      name: 'Сроки новой задачи',
+      exact: true,
+    });
+    await chip.click();
+    const popup = quick.getByRole('dialog', {
+        name: 'Сроки задачи',
+        exact: true,
+      }),
+      duration = popup.getByLabel('Длительность, рабочих дней', {
+        exact: true,
+      });
+    await duration.fill('');
+    await duration.pressSequentially('1e');
+    const original = await duration.elementHandle();
+    await duration.press('Escape');
+    await expect(popup).toBeHidden();
+    await expect(chip).toBeFocused();
+    await chip.click();
+    await expect(duration).toHaveValue('1e');
+    await expect(duration).toHaveAttribute('aria-invalid', 'true');
+    expect(await duration.evaluate((node, old) => node === old, original)).toBe(
+      true,
+    );
+    await expect(
+      quick.getByRole('button', { name: 'Добавить задачу', exact: true }),
+    ).toBeDisabled();
+    expect(await readTree(page, runtime.origin, before.project.id)).toEqual(
+      before,
+    );
+    await duration.fill('1');
+    await duration.press('Enter');
+    await expect(
+      quick.getByRole('button', { name: 'Добавить задачу', exact: true }),
+    ).toBeEnabled();
+    await popup.getByRole('button', { name: 'Готово', exact: true }).click();
+    await title.press('Enter');
+    await expect(title).toHaveValue('');
+    const after = await readTree(page, runtime.origin, before.project.id);
+    expect(after.project.revision).toBe(before.project.revision + 1);
+    expect(
+      after.tasks.find((t) => t.title === 'Буфер длительности'),
+    ).toMatchObject({ inputStart: null, inputFinish: null, durationDays: 1 });
+    await chip.click();
+    await expect(duration).toHaveValue('1');
+    await expect(duration).not.toHaveAttribute('aria-invalid');
+    await expect(popup.getByRole('alert')).toHaveCount(0);
+    await duration.fill('1e');
+    await quick
+      .getByRole('button', { name: 'Отменить ввод задачи', exact: true })
+      .click();
+    await parent.focus();
+    await parent.press('Shift+Enter');
+    await page
+      .locator('form.inline-quick-add')
+      .getByRole('button', { name: 'Сроки новой задачи', exact: true })
+      .click();
+    const nextPopup = page
+      .locator('form.inline-quick-add')
+      .getByRole('dialog', { name: 'Сроки задачи', exact: true });
+    await expect(
+      nextPopup.getByLabel('Длительность, рабочих дней', { exact: true }),
+    ).toHaveValue('1');
+    await expect(nextPopup.getByRole('alert')).toHaveCount(0);
+  } finally {
+    try {
+      await page.context().close();
+    } finally {
+      await runtime.close();
+    }
+  }
+});

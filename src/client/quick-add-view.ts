@@ -1,3 +1,4 @@
+import type { QuickScheduleDraft } from './QuickSchedule.js';
 import {
   sourceFieldsSchema,
   type ProjectTree,
@@ -137,6 +138,7 @@ export function fridayPlan(
 }
 
 export interface QuickDraft {
+  inputDraft?: QuickScheduleDraft | undefined;
   title: string;
   plan: SourceFields;
   predecessorIds: string[];
@@ -156,6 +158,9 @@ export function sameQuickDraft(left: QuickDraft, right: QuickDraft): boolean {
 }
 export function hasQuickDraft(draft: QuickDraft): boolean {
   return (
+    !!draft.inputDraft?.fields?.error ||
+    !!draft.inputDraft?.error ||
+    !!draft.inputDraft?.fields?.duration ||
     draft.title !== '' ||
     draft.plan.inputStart !== null ||
     draft.plan.inputFinish !== null ||

@@ -1,5 +1,6 @@
 .app-shell {
   position: relative;
+  --leaf-task-panel-width: 480px;
 }
 .workspace-content.planning-workspace {
   display: flex;
@@ -347,7 +348,6 @@
   top: 0;
   bottom: 0;
   z-index: 2;
-  width: min(380px, 100vw);
   box-shadow: -8px 0 24px #202a2612;
 }
 .task-panel .task-row {
@@ -367,9 +367,6 @@
 }
 .panel-back {
   margin-left: -8px;
-}
-.panel-header h2 {
-  flex: 1;
 }
 .dependency-section-label {
   display: flex;
@@ -482,9 +479,10 @@
   padding-top: 18px;
   margin-top: 16px;
 }
-@media (max-width: 1000px) {
+@media (max-width: 899px) {
   .task-panel {
     position: fixed;
+    width: 100vw;
   }
 }
 @media (max-width: 600px) {
@@ -906,4 +904,56 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.panel-schedule {
+  margin-top: 8px;
+}
+.panel-schedule > button {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.task-panel-schedule {
+  margin: 0;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+.quick-schedule[hidden] {
+  display: none;
+}
+
+.dependency-arrow.dependency-pending {
+  stroke-dasharray: 4 3;
+}
+.dependency-card.dependency-pending {
+  border-style: dashed;
+}
+.graph-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.graph-section-title button {
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.dependency-calculation {
+  margin-top: 16px;
+  border-top: 1px solid var(--leaf-border);
+  padding-top: 12px;
+}
+.dependency-calculation > summary {
+  cursor: pointer;
+}
+.dependency-draft-marker {
+  color: var(--leaf-accent);
+}
+
+.dependency-card.dependency-pending .dependency-open {
+  padding-block: 5px;
+}
+.dependency-card.dependency-pending small {
+  margin-top: 1px;
+  line-height: 1.1;
 }

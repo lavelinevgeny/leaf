@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import {
   sourceFieldsSchema,
   type Task,
@@ -9,7 +9,7 @@ import {
 import { PredecessorPicker } from './PredecessorPicker.js';
 import { ControlIcon } from './ControlIcon.js';
 import { canonicalPredecessorIds } from './predecessor-view.js';
-import { QuickSchedule } from './QuickSchedule.js';
+import { QuickSchedule, type QuickScheduleDraft } from './QuickSchedule.js';
 import { scheduleChip } from './quick-add-view.js';
 import { newTaskPlan } from './planning-view.js';
 import { orderedChildren } from './tree-view.js';
@@ -23,6 +23,8 @@ interface Props {
   predecessorIds: string[];
   onPredecessors: (ids: string[]) => void;
   acknowledgement?: number;
+  inputDraft?: QuickScheduleDraft | undefined;
+  onInputDraft?: ((draft: QuickScheduleDraft | undefined) => void) | undefined;
   tasks: Task[];
   context: AddContext;
   onContext: (context: AddContext) => void;
@@ -38,6 +40,7 @@ interface Props {
   timezone: string;
   busy: boolean;
   blocked: boolean;
+  submitBlockedReason?: string | null;
   title: string;
   onTitle: (title: string) => void;
   inputId?: string;
@@ -45,6 +48,7 @@ interface Props {
   parentPlan?: SourceFields | null;
   inline?: boolean;
   onEditing?: (editing: boolean) => void;
+  onRawEdit?: () => void;
   onCancel?: () => void;
 }
 export function QuickAdd({
@@ -52,6 +56,8 @@ export function QuickAdd({
   predecessorIds,
   onPredecessors,
   acknowledgement,
+  inputDraft,
+  onInputDraft,
   tasks,
   context,
   onContext,
@@ -62,6 +68,7 @@ export function QuickAdd({
   timezone,
   busy,
   blocked,
+  submitBlockedReason,
   title,
   onTitle,
   inputId = 'quick-task',
@@ -69,6 +76,7 @@ export function QuickAdd({
   parentPlan = null,
   inline = false,
   onEditing,
+  onRawEdit,
   onCancel,
 }: Props) {
   const [editing, setEditing] = useState(false);
@@ -80,10 +88,11 @@ export function QuickAdd({
     onEditing?.(true);
   }
   function clear() {
+    onRawEdit?.();
     onTitle('');
     onPlan(newTaskPlan());
     onPredecessors([]);
-    rejectedPlan.current = null;
+    resetFields();
     setValid(true);
   }
   function cancel() {
@@ -95,13 +104,36 @@ export function QuickAdd({
     onCancel?.();
   }
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [valid, setValid] = useState(true);
-  const rejectedPlan = useRef<string | null>(null);
+  const [scheduleMounted, setScheduleMounted] = useState(false);
+  useEffect(() => {
+    if (scheduleOpen) setScheduleMounted(true);
+  }, [scheduleOpen]);
+  const [resetVersion, setResetVersion] = useState(0);
+  const rawVersion = useRef(0);
+  const sentRawVersion = useRef<number | null>(null);
+  function resetFields() {
+    onInputDraft?.(undefined);
+    rawVersion.current++;
+    sentRawVersion.current = null;
+    setResetVersion((version) => version + 1);
+    setValid(true);
+  }
+  function acknowledgeFields() {
+    const sent = sentRawVersion.current;
+    if (sent !== null && sent === rawVersion.current) resetFields();
+    else sentRawVersion.current = null;
+  }
+  const [valid, setValid] = useState(
+    !inputDraft?.error && !inputDraft?.fields?.error,
+  );
+  const previousInputDraft = useRef(inputDraft);
+  useLayoutEffect(() => {
+    const previous = previousInputDraft.current;
+    previousInputDraft.current = inputDraft;
+    if (previous && !inputDraft) resetFields();
+  }, [inputDraft]);
   function validityChanged(nextValid: boolean) {
-    const source = JSON.stringify(plan);
-    if (!nextValid) rejectedPlan.current = source;
-    // Closing/reopening the fields must not dismiss the rejected source.
-    if (!nextValid || rejectedPlan.current !== source) setValid(nextValid);
+    setValid(nextValid);
   }
   const scheduleId = useId();
   const canSubmit = valid && sourceFieldsSchema.safeParse(plan).success;
@@ -123,12 +155,16 @@ export function QuickAdd({
   useEffect(() => {
     if (acknowledgement === previousAck.current) return;
     previousAck.current = acknowledgement;
+    acknowledgeFields();
     setPredecessorsOpen(false);
     setRestoreFocus(true);
   }, [acknowledgement]);
   async function submit() {
-    if (!title.trim() || busy || blocked || !canSubmit) return;
+    if (!title.trim() || busy || blocked || !!submitBlockedReason || !canSubmit)
+      return;
+    sentRawVersion.current = rawVersion.current;
     if (await onCreate(title, context, plan, predecessorIds)) {
+      acknowledgeFields();
       setRestoreFocus(true);
     }
   }
@@ -254,7 +290,16 @@ export function QuickAdd({
           title={strings.addTask}
           className="quick-submit"
           type="submit"
-          disabled={busy || blocked || !title.trim() || !canSubmit}
+          disabled={
+            busy ||
+            blocked ||
+            !!submitBlockedReason ||
+            !title.trim() ||
+            !canSubmit
+          }
+          aria-describedby={
+            submitBlockedReason ? `${scheduleId}-submit-reason` : undefined
+          }
         >
           {inline ? (
             <svg
@@ -300,6 +345,11 @@ export function QuickAdd({
           </button>
         )}
       </div>
+      {submitBlockedReason && (
+        <p id={`${scheduleId}-submit-reason`} className="field-hint">
+          {submitBlockedReason}
+        </p>
+      )}
       <div className={inline ? 'quick-meta sr-only' : 'quick-meta'}>
         <span>
           {strings.parent}: {parent?.title ?? strings.root}
@@ -309,7 +359,8 @@ export function QuickAdd({
           title ||
           plan.inputStart !== null ||
           plan.inputFinish !== null ||
-          plan.durationDays !== 1) && (
+          plan.durationDays !== 1 ||
+          !valid) && (
           <>
             <span role="status">{strings.quickDirty}</span>
             {!inline && (
@@ -349,8 +400,16 @@ export function QuickAdd({
           }}
         />
       )}
-      {scheduleOpen && (
+      {(scheduleOpen || scheduleMounted) && (
         <QuickSchedule
+          inputDraft={inputDraft}
+          onInputDraft={onInputDraft}
+          open={scheduleOpen}
+          resetVersion={resetVersion}
+          onEdit={() => {
+            rawVersion.current++;
+            onRawEdit?.();
+          }}
           id={scheduleId}
           plan={plan}
           parentPlan={parentPlan}

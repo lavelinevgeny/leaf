@@ -75,3 +75,18 @@ export function predecessorCandidates(
   }
   return result;
 }
+
+export function successorCandidates(
+  tree: ProjectTree,
+  predecessorId: string,
+  query: string,
+): PredecessorCandidate[] {
+  return predecessorCandidates(tree, null, [], query).filter(({ task }) => {
+    try {
+      validateDependency(tree.tasks, tree.dependencies, predecessorId, task.id);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}

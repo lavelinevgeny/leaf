@@ -14,6 +14,7 @@ import type {
   JournalMetadata,
   JournalPending,
   JournalDeleteConfirmation,
+  JournalLastWrite,
 } from './journal-state.js';
 export type { JournalController, JournalDraftKey } from './journal-state.js';
 export type JournalActiveContext = {
@@ -69,6 +70,7 @@ export function useJournal(context: JournalContext): JournalController {
     cache: new Map<string, JournalFeedState>(),
     metadata: new Map<string, JournalMetadata>(),
     known: new Map<string, { project: number; journal: number }>(),
+    lastWrite: null as JournalLastWrite | null,
     pending: null as JournalPending | null,
     writing: false,
     uncertain: false,
@@ -108,6 +110,7 @@ export function useJournal(context: JournalContext): JournalController {
       cache: new Map(),
       metadata: new Map(),
       known: new Map(),
+      lastWrite: null,
       pending: null,
       writing: false,
       uncertain: false,
@@ -464,6 +467,7 @@ export function useJournal(context: JournalContext): JournalController {
     state.current.pending = job;
     state.current.writing = true;
     state.current.error = null;
+    state.current.notice = null;
     publish();
     try {
       const ack =
@@ -486,16 +490,29 @@ export function useJournal(context: JournalContext): JournalController {
         if (draft && sameJournalDraft(draft, job.sentDraft))
           state.current.drafts.delete(job.key);
       } else state.current.confirmation = null;
-      state.current.pending = null;
+      state.current.lastWrite = {
+        projectId: job.projectId,
+        taskId:
+          job.method === 'DELETE'
+            ? job.baselineEntry.taskId
+            : job.sentDraft.taskId,
+        operationId: job.input.operationId,
+        result: job.method === 'DELETE' ? 'deleted' : 'saved',
+      };
+      if (state.current.pending === job) state.current.pending = null;
+      state.current.writing = false;
       state.current.uncertain = false;
       state.current.conflict = null;
       state.current.conflictCurrent = null;
       state.current.removed = false;
-      state.current.notice = 'Запись сохранена';
-      if (active()?.projectId === job.projectId) await refresh();
-      if (epoch !== generation.current || privacy !== privateGeneration.current)
-        return false;
-      if (job.method !== 'DELETE') {
+      state.current.notice =
+        job.method === 'DELETE' ? 'Запись удалена' : 'Запись сохранена';
+      if (
+        epoch === generation.current &&
+        job.method !== 'DELETE' &&
+        state.current.lastWrite?.operationId === job.input.operationId &&
+        state.current.notice
+      ) {
         const query = active()?.projectQuery;
         const input = job.input;
         if (
@@ -520,7 +537,14 @@ export function useJournal(context: JournalContext): JournalController {
         )
           state.current.notice = 'Запись сохранена; она не подходит под фильтр';
       }
-      return true;
+      publish();
+      // The ack completes this operation, including its UI callback/finally.
+      // Reads have their own request generations; awaiting them here lets an
+      // old completion run after a new write has acquired the shared lock.
+      if (active()?.projectId === job.projectId) void refresh();
+      return (
+        epoch === generation.current && privacy === privateGeneration.current
+      );
     } catch (error) {
       if (privacy !== privateGeneration.current || auth(error, privacy))
         return false;
@@ -547,7 +571,10 @@ export function useJournal(context: JournalContext): JournalController {
       }
       return false;
     } finally {
-      if (privacy === privateGeneration.current) {
+      if (
+        privacy === privateGeneration.current &&
+        (!state.current.pending || state.current.pending === job)
+      ) {
         state.current.writing = false;
         publish();
       }
@@ -574,6 +601,7 @@ export function useJournal(context: JournalContext): JournalController {
       ['stale', 'metadata-error', 'error', 'loading'].includes(feed.phase) ||
       !metadata.tasks.some((task) => task.id === draft.taskId)
     ) {
+      state.current.notice = null;
       state.current.error =
         'Задача недоступна. Обновите журнал; текст черновика сохранён.';
       publish();
@@ -592,6 +620,7 @@ export function useJournal(context: JournalContext): JournalController {
       ? journalUpdateSchema.safeParse(base)
       : journalCreateSchema.safeParse({ ...base, taskId: draft.taskId });
     if (!parsed.success) {
+      state.current.notice = null;
       state.current.error = 'Введите дату и текст от 1 до 10000 символов.';
       publish();
       return false;
@@ -752,6 +781,7 @@ export function useJournal(context: JournalContext): JournalController {
       ? data.conflict
       : null;
   return {
+    lastWrite: data.lastWrite,
     active: context.status === 'active',
     projectFeed:
       context.status === 'active' &&

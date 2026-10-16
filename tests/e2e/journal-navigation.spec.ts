@@ -115,7 +115,7 @@ test('project visits preserve Gantt/filter/scale/collapse/two-axis scroll, stabl
     exact: true,
   });
   await expect(
-    panel.getByRole('tab', { name: 'Журнал', exact: true }),
+    panel.getByRole('tab', { name: 'Ход работы', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   await panel.getByRole('button', { name: 'Закрыть панель' }).click();
   await expect(
@@ -246,7 +246,10 @@ test('second client metadata rename/move/create keeps dirty planning baseline an
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  await panel
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
   await panel
     .getByLabel('Описание', { exact: true })
     .fill('Локальный плановый черновик');
@@ -329,7 +332,9 @@ test('second client metadata rename/move/create keeps dirty planning baseline an
     await page.keyboard.press('Escape');
     // Original baseline must conflict instead of silently overwriting remote planning.
     await panel.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(panel.getByRole('alert')).toBeVisible();
+    await expect(
+      panel.locator('.panel-footer').getByRole('alert'),
+    ).toBeVisible();
     expect(
       (await readTree(remote, runtime.origin, tree.project.id)).tasks.find(
         (t) => t.id === deepId,
@@ -441,13 +446,20 @@ test('dirty planning refuses Back without history displacement; project defaults
     name: 'Задача',
     exact: true,
   });
-  await panel.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  await panel
+    .getByRole('button', { name: /Добавить описание|Изменить описание/ })
+    .click();
   await panel
     .getByLabel('Описание', { exact: true })
     .fill('Грязный план защищён');
   const dirtyUrl = page.url();
   await page.goBack();
+  await expect(
+    page.getByRole('dialog', { name: 'Несохранённые изменения задачи' }),
+  ).toBeVisible();
   await expect.poll(() => page.url()).toBe(dirtyUrl);
+  await page.getByRole('button', { name: 'Продолжить редактирование' }).click();
   await expect(panel.getByLabel('Описание', { exact: true })).toHaveValue(
     'Грязный план защищён',
   );
@@ -563,4 +575,215 @@ test('125-entry hidden focus refresh restores deep journal anchor through tabs, 
   await page.goForward();
   await expect(projectFeed(page)).toBeVisible();
   await restored(manual);
+});
+
+for (const decision of [
+  'Сохранить',
+  'Не сохранять',
+  'Продолжить редактирование',
+]) {
+  test(`history absent from RAM after reload keeps task and URL coherent: ${decision}`, async ({
+    page,
+    runtime,
+  }) => {
+    const { tree, deepId } = await seedJournal(page, runtime);
+    const first = tree.tasks.find((task) => task.title === 'Без дат')!;
+    await page.goto(runtime.origin);
+    await page
+      .locator(`[role="treeitem"][data-task-id="${first.id}"]`)
+      .first()
+      .click();
+    await page
+      .locator(`[role="treeitem"][data-task-id="${deepId}"]`)
+      .first()
+      .click();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('task'))
+      .toBe(deepId);
+    await page.reload();
+    const panel = page.getByRole('complementary', {
+      name: 'Задача',
+      exact: true,
+    });
+    await expect(
+      panel.getByRole('heading', { name: 'Уровень 5', exact: true }),
+    ).toBeVisible();
+    await panel.getByRole('button', { name: 'Изменить название' }).click();
+    const editor = panel.getByLabel('Название задачи', { exact: true });
+    await editor.fill('Черновик неизвестного перехода');
+    const priorUrl = page.url();
+    const priorId = await page.evaluate(
+      () => window.history.state.leaf.visitId as string,
+    );
+    let commands = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/commands'))
+        commands++;
+    });
+    await page.goBack();
+    const dialog = page.getByRole('dialog', {
+      name: 'Несохранённые изменения задачи',
+    });
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(priorUrl);
+    await dialog.getByRole('button', { name: decision, exact: true }).click();
+    if (decision === 'Продолжить редактирование') {
+      await expect(editor).toHaveValue('Черновик неизвестного перехода');
+      await expect(page).toHaveURL(priorUrl);
+      expect(commands).toBe(0);
+      await panel.getByRole('button', { name: 'Сбросить изменения' }).click();
+      await page.goForward();
+      await expect(
+        panel.getByRole('heading', { name: 'Уровень 5', exact: true }),
+      ).toBeVisible();
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('task'))
+        .toBe(deepId);
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.history.state.leaf.visitId as string),
+        )
+        .not.toBe(priorId);
+      await page.reload();
+      await expect(
+        panel.getByRole('heading', { name: 'Уровень 5', exact: true }),
+      ).toBeVisible();
+      return;
+    }
+    await expect(
+      panel.getByRole('heading', { name: 'Без дат', exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('task'))
+      .toBe(first.id);
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.history.state.leaf.visitId as string),
+      )
+      .not.toBe(priorId);
+    expect(commands).toBe(decision === 'Сохранить' ? 1 : 0);
+    await page.reload();
+    await expect(
+      panel.getByRole('heading', { name: 'Без дат', exact: true }),
+    ).toBeVisible();
+    await page.goForward();
+    await expect(
+      panel.getByRole('heading', {
+        name:
+          decision === 'Сохранить'
+            ? 'Черновик неизвестного перехода'
+            : 'Уровень 5',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('task'))
+      .toBe(deepId);
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.history.state.leaf.visitId as string),
+      )
+      .not.toBe(priorId);
+    await page.goBack();
+    await expect(
+      panel.getByRole('heading', { name: 'Без дат', exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('task'))
+      .toBe(first.id);
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.history.state.leaf.visitId as string),
+      )
+      .not.toBe(priorId);
+    await page.reload();
+    await expect(
+      panel.getByRole('heading', { name: 'Без дат', exact: true }),
+    ).toBeVisible();
+    expect(commands).toBe(decision === 'Сохранить' ? 1 : 0);
+  });
+}
+
+test('unknown history cancellation invalidates earlier RAM indices before another dirty Back', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, deepId } = await seedJournal(page, runtime);
+  const first = tree.tasks.find((task) => task.title === 'Без дат')!;
+  const last = tree.tasks.find((task) => task.title === 'Работа C')!;
+  await page.goto(runtime.origin);
+  await page
+    .locator(`[role="treeitem"][data-task-id="${first.id}"]`)
+    .first()
+    .click();
+  await page
+    .locator(`[role="treeitem"][data-task-id="${deepId}"]`)
+    .first()
+    .click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('task'))
+    .toBe(deepId);
+  await page.reload();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await expect(
+    panel.getByRole('heading', { name: 'Уровень 5', exact: true }),
+  ).toBeVisible();
+  await page
+    .locator(`[role="treeitem"][data-task-id="${last.id}"]`)
+    .first()
+    .click();
+  await expect(
+    panel.getByRole('heading', { name: 'Работа C', exact: true }),
+  ).toBeVisible();
+  await panel.getByRole('button', { name: 'Изменить название' }).click();
+  await panel
+    .getByLabel('Название задачи', { exact: true })
+    .fill('Черновик последней задачи');
+  const lastUrl = page.url();
+  let commands = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/commands'))
+      commands++;
+  });
+  await page.evaluate(() => window.history.go(-2));
+  const dialog = page.getByRole('dialog', {
+    name: 'Несохранённые изменения задачи',
+  });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole('button', { name: 'Продолжить редактирование' })
+    .click();
+  await expect(page).toHaveURL(lastUrl);
+  await expect(
+    panel.getByLabel('Название задачи', { exact: true }),
+  ).toHaveValue('Черновик последней задачи');
+  await panel.getByRole('button', { name: 'Сбросить изменения' }).click();
+  await page.goForward();
+  await expect(
+    panel.getByRole('heading', { name: 'Уровень 5', exact: true }),
+  ).toBeVisible();
+  const middleUrl = page.url();
+  await panel.getByRole('button', { name: 'Изменить название' }).click();
+  await panel
+    .getByLabel('Название задачи', { exact: true })
+    .fill('Черновик средней задачи');
+  await page.goBack();
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole('button', { name: 'Продолжить редактирование' })
+    .click();
+  await expect(page).toHaveURL(middleUrl);
+  await expect(
+    panel.getByLabel('Название задачи', { exact: true }),
+  ).toHaveValue('Черновик средней задачи');
+  expect(commands).toBe(0);
+  await panel.getByRole('button', { name: 'Сбросить изменения' }).click();
+  await page.reload();
+  await expect(
+    panel.getByRole('heading', { name: 'Уровень 5', exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(middleUrl);
 });

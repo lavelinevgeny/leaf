@@ -239,7 +239,16 @@ it('renders positive partial edges with a partial label and no global edge style
     onShow: vi.fn(),
   };
   const first = render(
-    <Dependencies {...props} task={tree.tasks.find((t) => t.id === B)!} />,
+    <Dependencies
+      {...props}
+      incomingIds={tree.dependencies
+        .filter((e) => e.successorId === B)
+        .map((e) => e.predecessorId)}
+      onIncomingChange={vi.fn()}
+      taskDirty={false}
+      scheduleDirty={false}
+      task={tree.tasks.find((t) => t.id === B)!}
+    />,
   );
   for (const id of [AB, BC]) {
     const path = first.container.querySelector(
@@ -261,7 +270,16 @@ it('renders positive partial edges with a partial label and no global edge style
   ).not.toBeInTheDocument();
   first.unmount();
   const second = render(
-    <Dependencies {...props} task={tree.tasks.find((t) => t.id === A)!} />,
+    <Dependencies
+      {...props}
+      incomingIds={tree.dependencies
+        .filter((e) => e.successorId === A)
+        .map((e) => e.predecessorId)}
+      onIncomingChange={vi.fn()}
+      taskDirty={false}
+      scheduleDirty={false}
+      task={tree.tasks.find((t) => t.id === A)!}
+    />,
   );
   const ac = second.container.querySelector(
     '[data-dependency-edge="' + AC + '"]',
@@ -393,7 +411,16 @@ it('ready F03 keeps AC noncritical while tight AB and BC are global critical edg
     onShow: vi.fn(),
   };
   const bView = render(
-    <Dependencies {...props} task={tree.tasks.find((t) => t.id === B)!} />,
+    <Dependencies
+      {...props}
+      incomingIds={tree.dependencies
+        .filter((e) => e.successorId === B)
+        .map((e) => e.predecessorId)}
+      onIncomingChange={vi.fn()}
+      taskDirty={false}
+      scheduleDirty={false}
+      task={tree.tasks.find((t) => t.id === B)!}
+    />,
   );
   for (const id of [AB, BC])
     expect(
@@ -401,7 +428,16 @@ it('ready F03 keeps AC noncritical while tight AB and BC are global critical edg
     ).toHaveClass('critical');
   bView.unmount();
   const aView = render(
-    <Dependencies {...props} task={tree.tasks.find((t) => t.id === A)!} />,
+    <Dependencies
+      {...props}
+      incomingIds={tree.dependencies
+        .filter((e) => e.successorId === A)
+        .map((e) => e.predecessorId)}
+      onIncomingChange={vi.fn()}
+      taskDirty={false}
+      scheduleDirty={false}
+      task={tree.tasks.find((t) => t.id === A)!}
+    />,
   );
   expect(
     aView.container.querySelector('[data-dependency-edge="' + AC + '"]'),
@@ -675,6 +711,12 @@ it('C17 valid source remains visible as notes while real bar and ordinary critic
   gantt.unmount();
   const graph = render(
     <Dependencies
+      incomingIds={tree.dependencies
+        .filter((e) => e.successorId === B)
+        .map((e) => e.predecessorId)}
+      onIncomingChange={vi.fn()}
+      taskDirty={false}
+      scheduleDirty={false}
       tree={tree}
       task={tree.tasks.find((t) => t.id === B)!}
       disabled={false}
@@ -903,7 +945,16 @@ it.each(['infeasible', 'pending-policy'] as const)(
       onShow: vi.fn(),
     };
     const graph = render(
-      <Dependencies {...props} task={tree.tasks.find((t) => t.id === B)!} />,
+      <Dependencies
+        {...props}
+        incomingIds={tree.dependencies
+          .filter((e) => e.successorId === B)
+          .map((e) => e.predecessorId)}
+        onIncomingChange={vi.fn()}
+        taskDirty={false}
+        scheduleDirty={false}
+        task={tree.tasks.find((t) => t.id === B)!}
+      />,
     );
     expect(
       graph.container.querySelectorAll('[data-dependency-edge]'),

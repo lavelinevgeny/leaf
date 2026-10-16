@@ -1,3 +1,5 @@
+import { setTaskStatus } from '../helpers/task-panel.js';
+import { openTaskDates } from '../helpers/task-panel.js';
 import { test as base, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
@@ -93,6 +95,7 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
   const b = page.getByRole('treeitem', { name: /^B,/ }).first();
   await b.focus();
   await b.press('Enter');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-11');
   const saved = page.waitForResponse(
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
@@ -120,7 +123,7 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
   )!.id;
   expect(after.schedule.criticalDependencyIds).toEqual([ab]);
   await page
-    .getByLabel('Название задачи', { exact: true })
+    .getByRole('button', { name: 'Изменить название', exact: true })
     .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: '/tmp/leaf-task7-' + info.project.name + '-panel.png',
@@ -141,7 +144,8 @@ test('explicit P04 edits, critical sets, one undo and restart agree', async ({
     page.locator('[data-dependency-edge="' + cd + '"]'),
   ).not.toHaveClass(/(^| )critical( |$)/);
   await page.getByRole('treeitem', { name: /^C,/ }).first().press('Enter');
-  await page.getByRole('tab', { name: 'Детали', exact: true }).click();
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(page.getByText(/Резерв проекта: 2/)).toBeVisible();
   await page.keyboard.press('Escape');
   const undoReply = page.waitForResponse(
@@ -294,6 +298,7 @@ test('deep update and presentation actions preserve authoritative analysis and k
   await expect(
     page.getByRole('complementary', { name: 'Задача', exact: true }),
   ).toBeVisible();
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-08');
   const saved = page.waitForResponse(
     (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
@@ -413,6 +418,8 @@ test('conditional unknown keeps partial copy while predecessor delay cascades re
   });
   await page.reload();
   await page.getByRole('treeitem', { name: /^C,/ }).press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(
     page
       .getByText(
@@ -461,6 +468,8 @@ test('conditional unknown keeps partial copy while predecessor delay cascades re
     /Предшественник/,
   );
   await page.getByRole('treeitem', { name: /^A,/ }).press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(
     page.getByText(/Предшественник заканчивается после явного начала/).first(),
   ).toHaveCount(0);
@@ -498,6 +507,7 @@ test('lost committed response retries the exact envelope and frozen revision wit
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: /^C,/ })
     .press('Enter');
+  await openTaskDates(page);
   await page.getByLabel('Окончание', { exact: true }).fill('2026-10-08');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(
@@ -617,6 +627,8 @@ test('F03 tight and non-tight edges distinguish global and partial criticality a
   });
   await page.reload();
   await page.getByRole('treeitem', { name: /^B,/ }).press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(
     page.getByText(
       'Анализ датированной части; полный критический путь неизвестен',
@@ -672,12 +684,7 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: /^B,/ })
     .press('Enter');
-  await page.getByLabel('Статус', { exact: true }).selectOption('done');
-  const saved = page.waitForResponse(
-    (r) => r.url().endsWith('/commands') && r.request().method() === 'POST',
-  );
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  expect((await saved).status()).toBe(200);
+  await setTaskStatus(page, 'Готово');
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
   const done = await readTree(page, runtime.origin, seeded.tree.project.id);
   if (done.schedule.analysisStatus !== 'ready')
@@ -687,6 +694,8 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
     constraintFloat: 0,
   });
   expect(done.schedule.criticalTaskIds).toEqual([by.C!]);
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(page.getByText(/Резерв проекта: 4/)).toBeVisible();
   await expect(page.getByText(/Резерв текущего размещения: 0/)).toBeVisible();
   await expect(
@@ -762,6 +771,8 @@ test('ordinary done keeps positive structural reserve and P10 calendar change pr
     .getByRole('tree', { name: 'Задачи', exact: true })
     .getByRole('treeitem', { name: /^A,/ })
     .press('Enter');
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  await page.getByText('Расчёт', { exact: true }).click();
   await expect(page.getByText(/Резерв проекта: 2/)).toBeVisible();
   await page.keyboard.press('Escape');
   const undo = page.waitForResponse(

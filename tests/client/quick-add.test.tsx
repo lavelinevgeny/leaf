@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { useState } from 'react';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { QuickAdd, type AddContext } from '../../src/client/QuickAdd.js';
@@ -61,7 +67,7 @@ it('creates with one day and empty dates; clearing duration submits null', async
   const user = userEvent.setup();
   await user.type(screen.getByLabelText('Новая задача'), 'Работа');
   await user.click(screen.getByRole('button', { name: 'Сроки новой задачи' }));
-  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(1);
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue('1');
   expect(screen.getByLabelText('Начало')).toHaveValue('');
   expect(screen.getByLabelText('Окончание')).toHaveValue('');
   await user.click(screen.getByRole('button', { name: 'Добавить задачу' }));
@@ -229,4 +235,83 @@ it('keeps predecessor IDs after rejection and inner Enter/Escape do not submit o
   expect(
     screen.queryByRole('button', { name: 'Убрать предшественника: A' }),
   ).not.toBeInTheDocument();
+});
+
+it('explicit QuickSchedule reset clears an unfinished duration buffer without changing clear semantics', async () => {
+  const user = userEvent.setup();
+  render(<Editor />);
+  await user.click(screen.getByRole('button', { name: 'Сроки новой задачи' }));
+  const duration = screen.getByLabelText('Длительность, рабочих дней');
+  await user.clear(duration);
+  await user.type(duration, '-');
+  await user.tab();
+  expect(duration).toHaveValue('-');
+  expect(duration).toHaveAttribute('aria-invalid', 'true');
+  await user.click(screen.getByRole('button', { name: 'Сбросить' }));
+  expect(duration).toHaveValue('');
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('keeps unfinished lexical duration through Escape/reopen, repairs the same numeric source, and clears it on explicit draft reset', async () => {
+  const create = vi.fn(async () => true),
+    user = userEvent.setup();
+  render(<Editor create={create} />);
+  await user.type(screen.getByLabelText('Новая задача'), 'Работа');
+  await user.click(screen.getByRole('button', { name: 'Сроки новой задачи' }));
+  const duration = screen.getByLabelText('Длительность, рабочих дней');
+  await user.clear(duration);
+  await user.type(duration, '1e');
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Сроки новой задачи' }));
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toBe(duration);
+  expect(duration).toHaveValue('1e');
+  expect(duration).toHaveAttribute('aria-invalid', 'true');
+  expect(
+    screen.getByRole('button', { name: 'Добавить задачу' }),
+  ).toBeDisabled();
+  expect(create).not.toHaveBeenCalled();
+  await user.clear(duration);
+  await user.type(duration, '1');
+  await user.tab();
+  expect(screen.getByRole('button', { name: 'Добавить задачу' })).toBeEnabled();
+  await user.click(screen.getByRole('button', { name: 'Добавить задачу' }));
+  expect(create).toHaveBeenCalledWith(
+    'Работа',
+    { parentId: null },
+    { inputStart: null, inputFinish: null, durationDays: 1 },
+    [],
+  );
+  await user.click(duration);
+  await user.clear(duration);
+  await user.type(duration, '1e');
+  await user.click(
+    screen.getByRole('button', { name: 'Очистить быстрый ввод' }),
+  );
+  expect(screen.getByRole('dialog', { name: 'Сроки задачи' })).toBeVisible();
+  expect(duration).toHaveValue('1');
+  expect(duration).not.toHaveAttribute('aria-invalid');
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+it('a late creation acknowledgement preserves newer invalid raw even when the parsed source stayed identical', async () => {
+  let resolve!: (saved: boolean) => void;
+  const create = vi.fn(
+      () =>
+        new Promise<boolean>((r) => {
+          resolve = r;
+        }),
+    ),
+    user = userEvent.setup();
+  render(<Editor create={create} />);
+  await user.type(screen.getByLabelText('Новая задача'), 'Работа');
+  await user.click(screen.getByRole('button', { name: 'Сроки новой задачи' }));
+  await user.click(screen.getByRole('button', { name: 'Добавить задачу' }));
+  const duration = screen.getByLabelText('Длительность, рабочих дней');
+  await user.click(duration);
+  fireEvent.change(duration, { target: { value: '1e' } });
+  await act(async () => resolve(true));
+  expect(duration).toHaveValue('1e');
+  expect(duration).toHaveAttribute('aria-invalid', 'true');
+  expect(
+    screen.getByRole('button', { name: 'Добавить задачу' }),
+  ).toBeDisabled();
 });

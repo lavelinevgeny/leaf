@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { JournalDraft, JournalController } from './journal-state.js';
 import { journalUpdateSchema } from '../shared/journal-contracts.js';
 import { calendarDateSchema } from '../shared/contracts.js';
@@ -12,6 +12,7 @@ export function JournalEditor({
   taskPicker,
   placeholder,
   compactIdle = false,
+  visible = true,
 }: {
   draft: JournalDraft;
   controller: JournalController;
@@ -21,8 +22,42 @@ export function JournalEditor({
   taskPicker?: ReactNode;
   placeholder?: string;
   compactIdle?: boolean;
+  visible?: boolean;
 }) {
   const id = useId();
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const fontProbe = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const node = textarea.current;
+    if (!visible || !node?.closest('.task-journal')) return;
+    const resize = () => {
+      if (node.closest('[hidden]') || node.clientWidth === 0) return;
+      node.style.height = 'auto';
+      const style = getComputedStyle(node);
+      const border =
+        style.boxSizing === 'border-box'
+          ? parseFloat(style.borderTopWidth) +
+            parseFloat(style.borderBottomWidth)
+          : 0;
+      node.style.height = `${node.scrollHeight + border}px`;
+    };
+    resize();
+    let active = true;
+    const resizeFont = () => {
+      if (active) resize();
+    };
+    void document.fonts?.ready.then(resizeFont);
+    document.fonts?.addEventListener('loadingdone', resizeFont);
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    if (node.parentElement) observer?.observe(node.parentElement);
+    if (fontProbe.current) observer?.observe(fontProbe.current);
+    return () => {
+      active = false;
+      observer?.disconnect();
+      document.fonts?.removeEventListener('loadingdone', resizeFont);
+    };
+  }, [draft.body, visible]);
   const locked = disabled || controller.writing || !!controller.pending;
   const valid = journalUpdateSchema.safeParse({
     journalContractVersion: 1,
@@ -44,19 +79,22 @@ export function JournalEditor({
     !controller.uncertain &&
     controller.pending?.key !== draft.key;
   const showClear = !compactIdle || draft.dirty || draft.body !== '';
+  const dateValid = calendarDateSchema.safeParse(draft.workDate).success;
   const hintVisible =
     !compactIdle ||
-    draft.body !== '' ||
-    !calendarDateSchema.safeParse(draft.workDate).success;
+    !dateValid ||
+    draft.body.length > 10000 ||
+    (draft.body !== '' && !draft.body.trim());
   return (
     <form
-      className="journal-editor"
+      className={`journal-editor${compactIdle ? ' journal-editor--compact' : ''}`}
       data-journal-editor
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return;
         if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
           event.preventDefault();
           void submit();
@@ -69,15 +107,21 @@ export function JournalEditor({
           Текст записи
         </span>
         <textarea
+          ref={textarea}
           data-journal-body
           value={draft.body}
-          rows={compactIdle ? 3 : 5}
+          rows={compactIdle ? 2 : 5}
           placeholder={placeholder}
           disabled={locked}
           aria-describedby={id}
           onChange={(event) =>
             controller.changeDraft(draft.key, { body: event.target.value })
           }
+        />
+        <span
+          ref={fontProbe}
+          className="journal-font-probe"
+          aria-hidden="true"
         />
       </label>
       <p
@@ -101,7 +145,7 @@ export function JournalEditor({
           label="Дата записи"
           value={draft.workDate}
           disabled={locked}
-          invalid={!draft.workDate}
+          invalid={!dateValid}
           descriptionId={id}
           onChange={(value) =>
             controller.changeDraft(draft.key, { workDate: value ?? '' })
@@ -112,6 +156,8 @@ export function JournalEditor({
             <button
               type="submit"
               className="primary"
+              aria-label={compactIdle ? 'Сохранить запись' : undefined}
+              title={compactIdle ? 'Сохранить запись' : undefined}
               disabled={
                 locked ||
                 !valid ||
@@ -120,7 +166,23 @@ export function JournalEditor({
                 controller.unavailableTaskIds.has(draft.taskId ?? '')
               }
             >
-              Сохранить запись
+              {compactIdle ? (
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m5 12 4 4L19 6" />
+                </svg>
+              ) : (
+                'Сохранить запись'
+              )}
             </button>
           )}
           {controller.uncertain && (
