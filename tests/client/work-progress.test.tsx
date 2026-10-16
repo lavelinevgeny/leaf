@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -19,6 +20,7 @@ beforeEach(() => window.history.replaceState(null, '', '/'));
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function openComposer() {
@@ -47,6 +49,43 @@ it('names the task tab Ход работы, retains project Журнал and sta
   expect(
     within(panel).queryByRole('button', { name: 'Сохранить запись' }),
   ).toBeNull();
+});
+
+it('preserves composer height while hidden and synchronously remeasures its changed metrics on reveal', async () => {
+  let measuredHeight = 200;
+  const observers = new Map<Element, () => void>();
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(private callback: () => void) {}
+      observe(node: Element) {
+        observers.set(node, this.callback);
+      }
+      disconnect() {}
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(
+    function (this: HTMLElement) {
+      return this.closest('[hidden]') ? 0 : measuredHeight;
+    },
+  );
+  const { panel, body } = await openComposer();
+  const journal = body.closest<HTMLElement>('.task-journal')!;
+  const initial = body.style.height;
+  expect(parseFloat(initial)).toBeGreaterThanOrEqual(200);
+  journal.hidden = true;
+  act(() => observers.get(body.parentElement!)!());
+  expect(body.style.height).toBe(initial);
+  journal.hidden = false;
+  await userEvent.click(
+    within(panel).getByRole('tab', { name: 'Задача' }),
+  );
+  measuredHeight = 300;
+  await userEvent.click(
+    within(panel).getByRole('tab', { name: 'Ход работы' }),
+  );
+  expect(parseFloat(body.style.height)).toBe(parseFloat(initial) + 100);
 });
 
 it('Enter adds a newline and Ctrl+Enter sends the exact original body and date once', async () => {

@@ -24,10 +24,12 @@ export function JournalEntryBody({
   body,
   expanded: controlledExpanded,
   onExpandedChange,
+  visible = true,
 }: {
   body: string;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  visible?: boolean;
 }) {
   const id = useId();
   const text = useRef<HTMLParagraphElement>(null);
@@ -38,7 +40,9 @@ export function JournalEntryBody({
   const preview = previewBody(body);
   useLayoutEffect(() => {
     const node = text.current;
-    if (!node || expanded) return;
+    // Reveal must measure in this layout commit; waiting for ResizeObserver
+    // would let the feed restore its anchor against stale disclosure geometry.
+    if (!node || expanded || !visible) return;
     let active = true;
     const measure = () => {
       if (active && node.clientHeight > 0)
@@ -62,7 +66,7 @@ export function JournalEntryBody({
       document.fonts?.removeEventListener('loadingerror', measure);
       window.removeEventListener('resize', measure);
     };
-  }, [preview, expanded]);
+  }, [preview, expanded, visible]);
   return (
     <>
       <p

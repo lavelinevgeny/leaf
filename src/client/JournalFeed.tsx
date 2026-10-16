@@ -185,8 +185,8 @@ export function JournalFeed({
       }
       capturePosition();
     };
-    // New task-body rows measure overflow in layout effects and may add their
-    // disclosure button in a second commit. Restore against that final height.
+    // Task bodies measure on mount/reveal and may add their disclosure button
+    // in a second commit. Restore against that final height.
     if (collapseBodies && restoration.current) {
       const frame = requestAnimationFrame(restore);
       return () => cancelAnimationFrame(frame);
@@ -306,6 +306,7 @@ export function JournalFeed({
             Запись отсутствует в текущей ленте. Черновик сохранён.
           </p>
           <JournalEditor
+            visible={visible}
             draft={draft}
             controller={controller}
             disabled={disabled}
@@ -419,6 +420,7 @@ export function JournalFeed({
               </header>
               {draft?.entryId === entry.id ? (
                 <JournalEditor
+                  visible={visible}
                   draft={draft}
                   controller={controller}
                   disabled={disabled || !coherent}
@@ -428,6 +430,7 @@ export function JournalFeed({
               ) : collapseBodies ? (
                 <JournalEntryBody
                   body={entry.body}
+                  visible={visible}
                   expanded={expandedEntries.has(entry.id)}
                   onExpandedChange={(expanded) =>
                     setExpandedEntries((previous) => {

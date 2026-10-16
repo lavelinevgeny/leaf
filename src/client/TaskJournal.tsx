@@ -62,6 +62,7 @@ export function TaskJournal({
     <div className="task-journal" ref={root}>
       {draft ? (
         <JournalEditor
+          visible={visible}
           draft={draft}
           controller={controller}
           disabled={disabled || !controller.active}

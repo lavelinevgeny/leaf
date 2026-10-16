@@ -586,3 +586,88 @@ test('task preview pagination keeps expanded entries and restores the deep scrol
     panel.locator(`[data-journal-entry-id="${id}"] .journal-body-toggle`),
   ).toHaveAttribute('aria-expanded', 'true');
 });
+
+test('hidden short-to-long body changes measure all disclosures before restoring the revealed anchor', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  for (let revision = 0; revision < 25; revision++)
+    await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      doneId,
+      revision,
+      `Короткая синтетическая запись ${revision}`,
+      '2026-10-10',
+    );
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  const cards = panel.locator('[data-journal-entry-id]');
+  await expect(cards).toHaveCount(25);
+  await expect(panel.locator('.journal-body-toggle')).toHaveCount(0);
+  const owner = panel.locator('.panel-content');
+  await owner.evaluate((node) => {
+    const anchor = node.querySelectorAll<HTMLElement>(
+      '[data-journal-entry-id]',
+    )[8]!;
+    node.scrollTop +=
+      anchor.getBoundingClientRect().top -
+      node.getBoundingClientRect().top +
+      17;
+  });
+  const position = () =>
+    owner.evaluate((node) => {
+      const top = node.getBoundingClientRect().top;
+      const anchor = [
+        ...node.querySelectorAll<HTMLElement>('[data-journal-entry-id]'),
+      ].find((entry) => entry.getBoundingClientRect().bottom > top)!;
+      return {
+        id: anchor.dataset.journalEntryId,
+        offset: anchor.getBoundingClientRect().top - top,
+      };
+    });
+  const before = await position();
+  expect(before.offset).toBe(-17);
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  const entries = (await readJournalPage(page, runtime.origin, tree.project.id))
+    .entries;
+  for (let index = 0; index < 5; index++)
+    await mutateJournal(
+      page,
+      runtime.origin,
+      tree.project.id,
+      entries[index]!.id,
+      25 + index,
+      {
+        body: `Длинная синтетическая запись ${index}\nВторая\nТретья\nЧетвёртая\nПятая`,
+        workDate: '2026-10-10',
+      },
+    );
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url().includes(`/tasks/${doneId}/journal`),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect((await refreshed).status()).toBe(200);
+  await expect(cards.first().locator('.journal-body')).toContainText(
+    'Длинная синтетическая запись',
+  );
+  await expect(panel.locator('.journal-loading')).toHaveCount(0);
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  await expect(panel.locator('.journal-body-toggle')).toHaveCount(5);
+  await expect.poll(position).toEqual(before);
+  for (const card of await cards.all()) {
+    const text = card.locator('.journal-body');
+    expect(
+      await text.evaluate((node) => node.clientHeight),
+    ).toBeLessThanOrEqual(80);
+  }
+});

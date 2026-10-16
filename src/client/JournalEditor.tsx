@@ -12,6 +12,7 @@ export function JournalEditor({
   taskPicker,
   placeholder,
   compactIdle = false,
+  visible = true,
 }: {
   draft: JournalDraft;
   controller: JournalController;
@@ -21,14 +22,16 @@ export function JournalEditor({
   taskPicker?: ReactNode;
   placeholder?: string;
   compactIdle?: boolean;
+  visible?: boolean;
 }) {
   const id = useId();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fontProbe = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
     const node = textarea.current;
-    if (!node?.closest('.task-journal')) return;
+    if (!visible || !node?.closest('.task-journal')) return;
     const resize = () => {
+      if (node.closest('[hidden]') || node.clientWidth === 0) return;
       node.style.height = 'auto';
       const style = getComputedStyle(node);
       const border =
@@ -54,7 +57,7 @@ export function JournalEditor({
       observer?.disconnect();
       document.fonts?.removeEventListener('loadingdone', resizeFont);
     };
-  }, [draft.body]);
+  }, [draft.body, visible]);
   const locked = disabled || controller.writing || !!controller.pending;
   const valid = journalUpdateSchema.safeParse({
     journalContractVersion: 1,

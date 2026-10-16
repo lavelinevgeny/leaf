@@ -22,7 +22,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function setup(nextCursor: string | null = null) {
+async function setup(nextCursor: string | null = null, visible = true) {
   mockJournalApp();
   const { result } = renderHook(() =>
     useJournal(journalContext({ taskId: journal5.taskId })),
@@ -39,6 +39,7 @@ async function setup(nextCursor: string | null = null) {
     .spyOn(window, 'cancelAnimationFrame')
     .mockImplementation(() => {});
   const owner = document.createElement('div');
+  owner.hidden = !visible;
   document.body.append(owner);
   let rowTop = 300;
   let fullHeight = 1000;
@@ -67,12 +68,13 @@ async function setup(nextCursor: string | null = null) {
     top: 0,
     left: 0,
   };
-  const feed = (changes = {}) => (
+  const feed = (changes = {}, shown = visible) => (
     <JournalFeed
       state={{ ...state, ...changes }}
       controller={controller}
       scrollContainer={owner}
       collapseBodies
+      visible={shown}
       showTaskTitles={false}
       onOpenTask={() => {}}
       restorePosition={restorePosition}
@@ -143,4 +145,46 @@ it('consumes an unreachable anchor without another page when the cursor is exhau
   test.flush();
   expect(test.loadMore).not.toHaveBeenCalled();
   expect(test.frames).toHaveLength(1);
+});
+
+it('measures a changed hidden body before applying the revealed anchor', async () => {
+  const test = await setup(null, false);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains('journal-body') && !test.owner.hidden
+        ? 80
+        : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(
+    () => (test.owner.hidden ? 0 : 100),
+  );
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(
+    function (this: HTMLElement) {
+      const disclosureHeight = test.owner.querySelector('.journal-body-toggle')
+        ? 28
+        : 0;
+      return new DOMRect(
+        0,
+        this.dataset.journalEntry
+          ? 400 + disclosureHeight - test.owner.scrollTop
+          : 100,
+        300,
+        100,
+      );
+    },
+  );
+  const changed = {
+    page: {
+      ...test.state.page!,
+      entries: [{ ...journal5, body: 'Changed while hidden' }],
+    },
+  };
+  test.view.rerender(test.feed(changed, false));
+  test.owner.hidden = false;
+  test.view.rerender(test.feed(changed, true));
+  expect(test.owner.querySelector('.journal-body-toggle')).not.toBeNull();
+  test.flush();
+  expect(test.owner.scrollTop).toBe(378);
+  expect(test.loadMore).not.toHaveBeenCalled();
 });

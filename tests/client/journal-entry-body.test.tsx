@@ -122,3 +122,27 @@ it('remeasures after font readiness and font loading events and cleans up listen
   unmount();
   expect(remove).toHaveBeenCalledWith('loadingdone', expect.any(Function));
 });
+
+it.each([false, true])(
+  'measures changed hidden text synchronously on reveal (initial overflow: %s)',
+  (initialOverflow) => {
+    let visible = true;
+    let overflow = initialOverflow;
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(
+      () => (visible ? 80 : 0),
+    );
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(
+      () => (visible ? (overflow ? 100 : 20) : 0),
+    );
+    const { rerender } = render(
+      <JournalEntryBody body="Initial text" visible />,
+    );
+    expect(screen.queryByRole('button') !== null).toBe(initialOverflow);
+    visible = false;
+    overflow = !initialOverflow;
+    rerender(<JournalEntryBody body="Changed while hidden" visible={false} />);
+    visible = true;
+    rerender(<JournalEntryBody body="Changed while hidden" visible />);
+    expect(screen.queryByRole('button') !== null).toBe(!initialOverflow);
+  },
+);
