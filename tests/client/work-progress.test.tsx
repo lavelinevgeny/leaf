@@ -78,13 +78,9 @@ it('preserves composer height while hidden and synchronously remeasures its chan
   act(() => observers.get(body.parentElement!)!());
   expect(body.style.height).toBe(initial);
   journal.hidden = false;
-  await userEvent.click(
-    within(panel).getByRole('tab', { name: 'Задача' }),
-  );
+  await userEvent.click(within(panel).getByRole('tab', { name: 'Задача' }));
   measuredHeight = 300;
-  await userEvent.click(
-    within(panel).getByRole('tab', { name: 'Ход работы' }),
-  );
+  await userEvent.click(within(panel).getByRole('tab', { name: 'Ход работы' }));
   expect(parseFloat(body.style.height)).toBe(parseFloat(initial) + 100);
 });
 
