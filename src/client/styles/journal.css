@@ -103,6 +103,29 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.journal-body--preview {
+  max-height: 4lh;
+  overflow: hidden;
+}
+/* Intrinsic metrics still change when a four-line block keeps its height. */
+.journal-body-font-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font: inherit;
+}
+.journal-body-font-probe::before {
+  content: 'M';
+}
+.journal-body-toggle {
+  margin-top: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--leaf-accent);
+  font-size: 12px;
+}
 .journal-entry-menu {
   position: absolute;
   top: 6px;

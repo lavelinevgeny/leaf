@@ -11,12 +11,14 @@ export function TaskJournal({
   today,
   onEditorReady,
   scrollContainer,
+  visible = true,
 }: {
   controller: JournalController;
   disabled?: boolean;
   task: Task;
   today: string;
   scrollContainer?: HTMLElement | null | undefined;
+  visible?: boolean;
   onEditorReady?: ((editor: HTMLTextAreaElement) => void) | undefined;
 }) {
   const [key, setKey] = useState<JournalDraftKey | null>(null);
@@ -46,7 +48,7 @@ export function TaskJournal({
       if (!controller.writing) focusPending.current = false;
       return;
     }
-    onEditorReady?.(editor);
+    if (visible && !node?.closest('[hidden]')) onEditorReady?.(editor);
     if (!focusPending.current || !node) return;
     const active = document.activeElement;
     focusPending.current = false;
@@ -91,6 +93,9 @@ export function TaskJournal({
         )}
       {controller.taskFeed ? (
         <JournalFeed
+          key={`${task.projectId}:${task.id}`}
+          collapseBodies
+          visible={visible}
           disabled={disabled}
           scrollContainer={scrollContainer}
           state={controller.taskFeed}

@@ -9,6 +9,7 @@ import type {
 import { journalFeedCoherent } from './journal-state.js';
 import { JournalEditor, JournalConflict } from './JournalEditor.js';
 import { ActionMenu } from './ActionMenu.js';
+import { JournalEntryBody } from './JournalEntryBody.js';
 export function JournalFeed({
   state,
   controller,
@@ -16,6 +17,7 @@ export function JournalFeed({
   visible = true,
   onOpenTask,
   showTaskTitles,
+  collapseBodies = false,
   restorePosition,
   onPosition,
   scrollContainer,
@@ -29,6 +31,7 @@ export function JournalFeed({
   disabled?: boolean;
   onOpenTask: (task: Task, trigger: HTMLElement) => void;
   showTaskTitles: boolean;
+  collapseBodies?: boolean;
 }) {
   const [editing, setEditing] = useState<JournalDraftKey | null>(() => {
     const pending = controller.pending;
@@ -39,6 +42,11 @@ export function JournalFeed({
       : null;
   });
   const [menu, setMenu] = useState<string | null>(null);
+  // Tail-page rows may briefly disappear during refresh and editor rows replace
+  // their body component. Keep disclosure state with this task-scoped feed.
+  const [expandedEntries, setExpandedEntries] = useState<Set<string>>(
+    () => new Set(),
+  );
   const root = useRef<HTMLDivElement>(null);
   // Hidden DOM has zero rectangles and may clamp scroll while a refreshed page
   // replaces loaded rows. Keep the last actual visible position independently.
@@ -124,40 +132,67 @@ export function JournalFeed({
     if (!visible || !node || node.closest('[hidden]')) return;
     if (!coherent || !['ready', 'empty', 'no-match'].includes(state.phase))
       return;
-    const owner = scrollContainer ?? node;
-    const saved = restoration.current;
-    if (saved) {
-      const entry = saved.id
-        ? node.querySelector<HTMLElement>(`[data-journal-entry="${saved.id}"]`)
-        : null;
-      if (entry) {
-        owner.scrollTop +=
-          entry.getBoundingClientRect().top -
-          owner.getBoundingClientRect().top -
-          saved.offset;
-        owner.scrollLeft = saved.left;
-      } else if (saved.id && state.page?.nextCursor) {
-        void controller.loadMore(scope);
+    const requested = restoration.current;
+    const restore = () => {
+      if (
+        !node.isConnected ||
+        node.closest('[hidden]') ||
+        restoration.current !== requested
+      )
         return;
-      } else {
-        const group = saved.date
+      const owner = scrollContainer ?? node;
+      const saved = restoration.current;
+      if (saved) {
+        const entry = saved.id
           ? node.querySelector<HTMLElement>(
-              `[data-journal-date="${saved.date}"]`,
+              `[data-journal-entry="${saved.id}"]`,
             )
           : null;
-        owner.scrollTop = group
-          ? owner.scrollTop +
-            group.getBoundingClientRect().top -
-            owner.getBoundingClientRect().top
-          : saved.id
-            ? 0
-            : saved.top;
-        owner.scrollLeft = saved.left;
+        if (entry) {
+          const target =
+            owner.scrollTop +
+            entry.getBoundingClientRect().top -
+            owner.getBoundingClientRect().top -
+            saved.offset;
+          if (
+            target > owner.scrollHeight - owner.clientHeight + 1 &&
+            state.page?.nextCursor
+          ) {
+            void controller.loadMore(scope);
+            return;
+          }
+          owner.scrollTop = target;
+          owner.scrollLeft = saved.left;
+        } else if (saved.id && state.page?.nextCursor) {
+          void controller.loadMore(scope);
+          return;
+        } else {
+          const group = saved.date
+            ? node.querySelector<HTMLElement>(
+                `[data-journal-date="${saved.date}"]`,
+              )
+            : null;
+          owner.scrollTop = group
+            ? owner.scrollTop +
+              group.getBoundingClientRect().top -
+              owner.getBoundingClientRect().top
+            : saved.id
+              ? 0
+              : saved.top;
+          owner.scrollLeft = saved.left;
+        }
+        restoration.current = null;
       }
-      restoration.current = null;
+      capturePosition();
+    };
+    // New task-body rows measure overflow in layout effects and may add their
+    // disclosure button in a second commit. Restore against that final height.
+    if (collapseBodies && restoration.current) {
+      const frame = requestAnimationFrame(restore);
+      return () => cancelAnimationFrame(frame);
     }
-    capturePosition();
-  }, [state, visible, restorePosition, scrollContainer]);
+    restore();
+  }, [state, visible, restorePosition, scrollContainer, collapseBodies]);
   const entries = state.page?.entries ?? [];
   const draft = editing ? controller.getDraft(editing) : undefined;
   const confirmation = controller.deleteConfirmation;
@@ -389,6 +424,19 @@ export function JournalFeed({
                   disabled={disabled || !coherent}
                   onSaved={() => restoreMenu(entry.id)}
                   onCancel={() => restoreMenu(entry.id)}
+                />
+              ) : collapseBodies ? (
+                <JournalEntryBody
+                  body={entry.body}
+                  expanded={expandedEntries.has(entry.id)}
+                  onExpandedChange={(expanded) =>
+                    setExpandedEntries((previous) => {
+                      const next = new Set(previous);
+                      if (expanded) next.add(entry.id);
+                      else next.delete(entry.id);
+                      return next;
+                    })
+                  }
                 />
               ) : (
                 <p className="journal-body">{entry.body}</p>

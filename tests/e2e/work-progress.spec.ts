@@ -4,6 +4,7 @@ import {
   seedJournal,
   createJournalEntry,
   readJournalPage,
+  mutateJournal,
 } from '../helpers/journal-e2e.js';
 import { readTree } from '../helpers/optional-e2e.js';
 
@@ -223,6 +224,7 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
     for (const control of [body, date, save, clear]) {
       await control.focus();
       await expect(control).toBeFocused();
+      if (control !== body) await expect(control).toBeInViewport();
       const box = await control.boundingBox();
       expect(box!.x).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
@@ -257,4 +259,330 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
   await panel.screenshot({
     path: test.info().outputPath('synthetic-composer-idle-mobile.png'),
   });
+});
+
+test('task previews disclose independently, retain refresh state and leave the original editor and project feed intact', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId, summaryId } = await seedJournal(page, runtime);
+  const originals = [
+    'Короткая запись',
+    'Первая\nВторая\nТретья\nЧетвёртая\nПятая',
+    'Длинный текст без явных переносов. '.repeat(35),
+    '\r\n\r\n  Абзац A \r\n  \r\n\t\r\nАбзац B\r\n\r\n',
+    'https://synthetic.invalid/' + 'long'.repeat(200),
+  ];
+  const ids: string[] = [];
+  for (const [revision, original] of originals.entries()) {
+    const result = await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      doneId,
+      revision,
+      original,
+      `2026-10-${String(10 - revision).padStart(2, '0')}`,
+    );
+    if (result.kind === 'deleted') throw new Error('Unexpected delete');
+    ids.push(result.entry.id);
+  }
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  const card = (index: number) =>
+    panel.locator(`[data-journal-entry-id="${ids[index]}"]`);
+  await expect(
+    card(0).getByRole('button', { name: 'Показать полностью' }),
+  ).toHaveCount(0);
+  for (const index of [1, 2, 4]) {
+    await expect(
+      card(index).getByRole('button', { name: 'Показать полностью' }),
+    ).toBeVisible();
+    const geometry = await card(index)
+      .locator('.journal-body')
+      .evaluate((node) => ({
+        height: node.clientHeight,
+        full: node.scrollHeight,
+        line: parseFloat(getComputedStyle(node).lineHeight),
+      }));
+    expect(geometry.height).toBeLessThanOrEqual(4 * geometry.line);
+    expect(geometry.full).toBeGreaterThan(geometry.height);
+  }
+  await expect(card(3).locator('.journal-body')).toHaveText(
+    '  Абзац A \r\n\r\nАбзац B',
+    { useInnerText: false },
+  );
+  const toggle = card(1).locator('.journal-body-toggle');
+  await toggle.focus();
+  await expect(toggle).toBeInViewport();
+  await toggle.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    card(2).getByRole('button', { name: 'Показать полностью' }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  originals[1] = 'Изменённая первая\nВторая\nТретья\nЧетвёртая\nПятая\nШестая';
+  await mutateJournal(page, runtime.origin, tree.project.id, ids[1]!, 5, {
+    body: originals[1],
+    workDate: '2026-10-09',
+  });
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url().includes(`/tasks/${doneId}/journal`),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect((await refreshed).status()).toBe(200);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(await card(1).locator('.journal-body').textContent()).toBe(
+    originals[1],
+  );
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await card(3).getByRole('button', { name: 'Показать полностью' }).click();
+  expect(await card(3).locator('.journal-body').textContent()).toBe(
+    originals[3],
+  );
+  const menu = card(3).getByRole('button', { name: /Действия записи/ });
+  await menu.focus();
+  await expect(menu).toBeInViewport();
+  await menu.press('Enter');
+  await page.getByRole('menuitem', { name: 'Редактировать запись' }).click();
+  // Textarea values use browser LF line endings; the stored text keeps CRLF.
+  await expect(card(3).getByLabel('Текст записи')).toHaveValue(
+    originals[3]!.replaceAll('\r\n', '\n'),
+  );
+  await card(3)
+    .getByRole('button', { name: 'Закрыть редактор', exact: true })
+    .click();
+  await expect(card(3).locator('.journal-body-toggle')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  expect(await card(3).locator('.journal-body').textContent()).toBe(
+    originals[3],
+  );
+  const stored = await readJournalPage(page, runtime.origin, tree.project.id);
+  expect(stored.entries.map((entry) => entry.body)).toEqual(originals);
+  await panel.screenshot({
+    path: test.info().outputPath('synthetic-preview-desktop.png'),
+  });
+  await test.info().attach('synthetic-preview-desktop', {
+    path: test.info().outputPath('synthetic-preview-desktop.png'),
+    contentType: 'image/png',
+  });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await card(4).getByRole('button', { name: 'Показать полностью' }).focus();
+  await expect(
+    card(4).getByRole('button', { name: 'Показать полностью' }),
+  ).toBeInViewport();
+  expect(
+    await panel.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  await panel.screenshot({
+    path: test.info().outputPath('synthetic-preview-mobile.png'),
+  });
+  await test.info().attach('synthetic-preview-mobile', {
+    path: test.info().outputPath('synthetic-preview-mobile.png'),
+    contentType: 'image/png',
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await panel
+    .getByRole('button', { name: 'Закрыть панель', exact: true })
+    .click();
+  await page.locator(`[data-task-id="${summaryId}"]`).first().click();
+  await panel
+    .getByRole('button', { name: 'Закрыть панель', exact: true })
+    .click();
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  await expect(
+    card(1).getByRole('button', { name: 'Показать полностью' }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  await panel
+    .getByRole('button', { name: 'Закрыть панель', exact: true })
+    .click();
+  await page
+    .getByRole('tablist', { name: 'Представление проекта' })
+    .getByRole('tab', { name: 'Журнал', exact: true })
+    .click();
+  const feed = page.locator('#project-view-journal');
+  await expect(feed.locator('[data-journal-entry-id]')).toHaveCount(5);
+  await expect(
+    feed.getByRole('button', { name: 'Показать полностью' }),
+  ).toHaveCount(0);
+  for (const [index, original] of originals.entries())
+    expect(
+      await feed
+        .locator(`[data-journal-entry-id="${ids[index]}"] .journal-body`)
+        .textContent(),
+    ).toBe(original);
+});
+
+test('four visual lines remeasure wrapping and font metrics while clamped', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  const body = 'Ширина и метрики шрифта. '.repeat(6);
+  await createJournalEntry(
+    page,
+    runtime.origin,
+    tree.project.id,
+    doneId,
+    0,
+    body,
+    '2026-10-10',
+  );
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  const text = panel.locator('.journal-body');
+  const toggle = panel.getByRole('button', { name: 'Показать полностью' });
+  await text.evaluate((node) => {
+    node.style.fontSize = '10px';
+    node.style.lineHeight = '20px';
+  });
+  await expect(toggle).toHaveCount(0);
+  await text.evaluate((node) => {
+    node.style.fontSize = '28px';
+  });
+  await expect(toggle).toBeVisible();
+  expect(await text.evaluate((node) => node.clientHeight)).toBe(80);
+  await text.evaluate((node) => {
+    node.style.lineHeight = '30px';
+  });
+  await expect.poll(() => text.evaluate((node) => node.clientHeight)).toBe(120);
+  await text.evaluate((node) => {
+    node.style.fontSize = '10px';
+  });
+  await expect(toggle).toHaveCount(0);
+  await text.evaluate((node) => {
+    node.style.fontSize = '14px';
+    node.style.lineHeight = '20px';
+  });
+  await expect(toggle).toHaveCount(0);
+  await panel.evaluate((node) =>
+    node.style.setProperty('--leaf-task-panel-width', '280px'),
+  );
+  await expect(toggle).toBeVisible();
+  await panel.evaluate((node) =>
+    node.style.setProperty('--leaf-task-panel-width', '620px'),
+  );
+  await expect(toggle).toHaveCount(0);
+  expect(await text.textContent()).toBe(body);
+});
+
+test('task preview pagination keeps expanded entries and restores the deep scroll anchor on refresh', async ({
+  page,
+  runtime,
+}) => {
+  const { tree, doneId } = await seedJournal(page, runtime);
+  for (let revision = 0; revision < 55; revision++)
+    await createJournalEntry(
+      page,
+      runtime.origin,
+      tree.project.id,
+      doneId,
+      revision,
+      `Синтетическая запись ${revision}\nВторая\nТретья\nЧетвёртая\nПятая`,
+      '2026-10-10',
+    );
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  const cards = panel.locator('[data-journal-entry-id]');
+  await expect(cards).toHaveCount(50);
+  await cards
+    .first()
+    .getByRole('button', { name: 'Показать полностью' })
+    .click();
+  await panel
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(cards).toHaveCount(55);
+  const deep = cards.nth(52);
+  await deep.getByRole('button', { name: 'Показать полностью' }).click();
+  const id = await deep.getAttribute('data-journal-entry-id');
+  await deep.locator('.journal-body-toggle').focus();
+  await expect(deep.locator('.journal-body-toggle')).toBeInViewport();
+  const position = () =>
+    panel.locator('.panel-content').evaluate((node) => {
+      const top = node.getBoundingClientRect().top;
+      const entry = [
+        ...node.querySelectorAll<HTMLElement>('[data-journal-entry-id]'),
+      ].find((item) => item.getBoundingClientRect().bottom > top)!;
+      return {
+        id: entry.dataset.journalEntryId,
+        offset: entry.getBoundingClientRect().top - top,
+      };
+    });
+  const before = await position();
+  await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url().includes(`/tasks/${doneId}/journal`),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect((await refreshed).status()).toBe(200);
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  await expect.poll(position).toEqual(before);
+  // A refresh reloads the first page when its visible anchor is there. A tail
+  // entry can be temporarily absent until the user loads that page again.
+  if (
+    await panel
+      .getByRole('button', { name: 'Показать ещё', exact: true })
+      .count()
+  )
+    await panel
+      .getByRole('button', { name: 'Показать ещё', exact: true })
+      .click();
+  await expect(cards).toHaveCount(55);
+  await expect(
+    panel.locator(`[data-journal-entry-id="${id}"] .journal-body-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true');
+  const ids = await cards.evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute('data-journal-entry-id')),
+  );
+  expect(new Set(ids).size).toBe(55);
+  // With a first-page anchor that fits, refresh must not fetch the tail.
+  await panel.locator('.panel-content').evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  const firstPageRefresh = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url().includes(`/tasks/${doneId}/journal`),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect((await firstPageRefresh).status()).toBe(200);
+  await expect(cards).toHaveCount(50);
+  await expect(
+    panel.getByText('Загрузка журнала…', { exact: true }),
+  ).toHaveCount(0);
+  await expect(cards.first().locator('.journal-body-toggle')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await panel
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(cards).toHaveCount(55);
+  await expect(
+    panel.locator(`[data-journal-entry-id="${id}"] .journal-body-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true');
 });

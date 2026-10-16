@@ -128,6 +128,12 @@ export function TaskPanel({
   registerActions,
 }: Props) {
   const visibleTab = visiblePanelTab(tab);
+  const [journalVisited, setJournalVisited] = useState(
+    visibleTab === 'journal',
+  );
+  useEffect(() => {
+    if (visibleTab === 'journal') setJournalVisited(true);
+  }, [visibleTab]);
   const layout = useTaskPanelLayout(tab);
   const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(
     null,
@@ -842,13 +848,19 @@ export function TaskPanel({
             savedPlan={visibleTab === 'details' && scheduleDirty}
           />
         )}
-        {visibleTab === 'journal' ? (
-          <div role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
+        {(journalVisited || visibleTab === 'journal') && (
+          <div
+            role="tabpanel"
+            id="panel-journal"
+            aria-labelledby="tab-journal"
+            hidden={visibleTab !== 'journal'}
+          >
             {typeof journalContent === 'function'
               ? journalContent(scrollContainer)
               : journalContent}
           </div>
-        ) : visibleTab === 'details' ? (
+        )}
+        {visibleTab === 'journal' ? null : visibleTab === 'details' ? (
           <div role="tabpanel" id="panel-details" aria-labelledby="tab-details">
             <TaskDescription
               changed={draft.description !== baseline.description}

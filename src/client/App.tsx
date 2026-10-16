@@ -2284,6 +2284,7 @@ export function App() {
           onAncestor={selectAncestor}
           journalContent={(scrollContainer) => (
             <TaskJournal
+              visible={panelTab === 'journal'}
               disabled={busy || !!pending || conflict}
               controller={journal}
               scrollContainer={scrollContainer}
