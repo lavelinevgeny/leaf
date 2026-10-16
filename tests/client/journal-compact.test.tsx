@@ -203,8 +203,12 @@ it('J14 a refresh that dismisses an entry menu still restores the prepend anchor
   ];
   await act(async () => held.resolve(await original(journal5.projectId, {})));
   await screen.findByText('Prepended note');
-  expect(top()).toBe(150);
-  expect(feed.scrollTop).toBe(350);
+  // Collapsed entry bodies are measured before the next animation frame
+  // restores the anchor; the new row can already be present before that frame.
+  await waitFor(() => {
+    expect(top()).toBe(150);
+    expect(feed.scrollTop).toBe(350);
+  });
 });
 
 it('formats the applied period', () => {

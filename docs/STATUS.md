@@ -1,5 +1,17 @@
 # Статус разработки
 
+## Проверки до деплоя и ожидание scroll restore, 2026-10-16
+
+В GitHub Actions run `38921061012`, job `117040782111`, кандидат `21424f0`, упал J14 в `tests/client/journal-compact.test.tsx`: появление prepended-записи проверялось до следующего animation frame, восстанавливающего scroll anchor при `collapseBodies`. Изолированный исходный тест прошёл; единичный PASS не исключает гонку. Исправлен только тест: `waitFor` ожидает прежние точные значения top 150 и scrollTop 350. Production source, API, scheduler, зависимости и CI workflows не менялись.
+
+В AGENTS и DEPLOYMENT закреплён полный локальный набор перед запросом push/deploy: preflight → verify → format:check → check:package → test:e2e. После разрешённой отправки перед деплоем требуются успешные `app` и `kit` для точного SHA. Это инструкция рабочего процесса; новый автоматический hook или remote deployment gate не добавлялся.
+
+PASS на окончательном test source: `npm run doctor`; `npm run verify` (typecheck, lint, 1295/1295 tests в 75 файлах, production build); `npm run format:check`; `npm run check:package`; `npm run check:kit`; `git diff --check`. Профильный `npm run test:e2e -- tests/e2e/journal-navigation.spec.ts --grep '125-entry hidden focus refresh'` — PASS 2/2 в 1440×900 и 1280×800, без retries. Все runtime/fixtures синтетические. Прежнее предупреждение build chunk >500 kB сохраняется.
+
+FAIL `npm run preflight`: workspace guard остановил выполнение на ранее существовавших локальных agent paths и неодобренных изображениях в ignored временных каталогах. Их содержимое не читалось, файлы не менялись и не удалялись; guard не ослаблен. NOT RUN: оставшиеся шаги preflight после workspace guard, полный E2E suite, Docker build/smoke, отдельные staged/history scans и повторный GitHub Actions. Полный publication gate не считается пройденным; нужен обычный чистый клон окончательного кандидата по AGENT_WORKFLOW.
+
+Изменения оставлены без коммита в текущей `feat/task-panel-ux`; также остаются `main` и `docs/task-panel-ux-spec`. Новых веток/linked worktree нет. Push, remote changes и deployment не выполнялись. Следующий шаг: проверить diff, затем полный gate на чистом кандидате и, после разрешённого push, CI точного SHA.
+
 ## Общий журнал — сворачивание записей, 2026-10-16
 
 По уточнению владельца одинаковый четырёхстрочный предпросмотр включён и в общем журнале проекта: `ProjectJournal` передаёт существующий `collapseBodies` в `JournalFeed`. Переиспользованы JournalEntryBody, нормализация пустых строк только для preview, независимый set раскрытых IDs, measured reveal и отменяемое восстановление scroll anchor. Название «Журнал», toolbar, фильтры, формы, исходный plain text и серверные контракты сохранены. Затронуты один prop в ProjectJournal, общие поясняющие комментарии, client/browser tests и документы D23; scheduler/storage/API/controller не менялись.

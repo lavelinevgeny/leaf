@@ -59,6 +59,8 @@ Inspect Git status first; preserve unrelated changes. Work in small scoped chang
 
 Local kit tests use disposable synthetic fixtures without production access. Run affected checks, fix failures caused by the authorized change and rerun them without repeated approval. External actions still require owner authorization.
 
+Before requesting a push or deployment, run the complete local gate in `docs/DEPLOYMENT.md` (preflight, verify, format, package, E2E) on the final candidate. Report failures and unrun steps explicitly; after an authorized push require successful `app` and `kit` for the exact commit before deployment. A passing kit preflight or build alone is insufficient.
+
 For each behavior change: tests first where practical; use independent fixtures; run typecheck, lint, unit/integration and relevant E2E after these exist. Verify empty/error/loading states and keyboard interaction. Do not call a static mockup a working feature.
 
 Update `docs/STATUS.md` with facts, touched areas, checks run, limitations and next task. No personal paths, account names, tokens, transcripts or hidden reasoning. Record architectural changes in a small ADR. End with a concise verified report; distinguish passed / failed / not run.
