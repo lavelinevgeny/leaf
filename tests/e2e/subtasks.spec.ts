@@ -1,5 +1,13 @@
-import { setTaskStatus } from '../helpers/task-panel.js';
-import { test as base, expect, type Page } from '@playwright/test';
+import {
+  expectPanelScrollLayout,
+  setTaskStatus,
+} from '../helpers/task-panel.js';
+import {
+  test as base,
+  expect,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 import {
   readTree,
@@ -27,6 +35,134 @@ const panel = (page: Page) =>
   page.getByRole('complementary', { name: 'Задача' });
 const main = (page: Page) =>
   page.getByRole('tree', { name: 'Задачи', exact: true });
+
+async function scrollFixture(page: Page, shell: boolean) {
+  await page.setContent(`
+    <style>
+      .task-panel { height: 160px; width: 320px; display: flex; flex-direction: column; }
+      header { flex: none; height: 30px; }
+      .panel-content { flex: 1; min-height: 0; overflow-y: auto; }
+      .long-content { height: 600px; }
+      .task-panel--scroll-shell { display: block; overflow-y: auto; }
+      .task-panel--scroll-shell .panel-content { overflow-y: visible; }
+    </style>
+    <aside class="task-panel" aria-label="Synthetic scroll fixture">
+      <header><button>Action</button></header>
+      <div class="panel-content"><div class="long-content">Synthetic content</div></div>
+    </aside>
+  `);
+  await changeScrollMode(page, shell);
+  return page.getByRole('complementary', { name: 'Synthetic scroll fixture' });
+}
+
+async function changeScrollMode(page: Page, shell: boolean) {
+  await page.evaluate(
+    (next) =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          const root = document.querySelector('.task-panel')!;
+          const content = root.querySelector('.panel-content')!;
+          root.classList.toggle('task-panel--scroll-shell', next);
+          root.toggleAttribute('data-panel-scroll-owner', next);
+          content.toggleAttribute('data-panel-scroll-owner', !next);
+          resolve();
+        });
+      }),
+    shell,
+  );
+}
+
+// A browser frame can run between any two Playwright reads. Force that order
+// without sleeps or changing the values returned by the underlying reads.
+function changeAfterFirstRead(card: Locator, change: () => Promise<void>) {
+  let changed = false;
+  const wrap = (locator: Locator): Locator =>
+    new Proxy(locator, {
+      get(target, key) {
+        const member = Reflect.get(target, key, target);
+        if (typeof member !== 'function') return member;
+        if (key === 'locator')
+          return (...args: unknown[]) =>
+            wrap(Reflect.apply(member, target, args) as Locator);
+        if (key === 'count' || key === 'evaluate')
+          return async (...args: unknown[]) => {
+            const result: unknown = await Reflect.apply(member, target, args);
+            if (!changed) {
+              changed = true;
+              await change();
+            }
+            return result;
+          };
+        return member.bind(target);
+      },
+    });
+  return wrap(card);
+}
+
+for (const shell of [false, true])
+  for (const timing of ['before', 'after'] as const)
+    base(
+      `scroll snapshot stays coherent when ${shell ? 'shell' : 'content'} switches ${timing} a browser read`,
+      async ({ page }) => {
+        const card = await scrollFixture(page, shell);
+        await card.getByRole('button', { name: 'Action' }).focus();
+        if (timing === 'before') await changeScrollMode(page, !shell);
+        const observed =
+          timing === 'after'
+            ? changeAfterFirstRead(card, () => changeScrollMode(page, !shell))
+            : card;
+        await expectPanelScrollLayout(observed, { requireOverflow: true });
+        await expect(card).toHaveClass(
+          shell ? 'task-panel' : 'task-panel task-panel--scroll-shell',
+        );
+        await expectPanelScrollLayout(card, { requireOverflow: true });
+        await expect(
+          card.getByRole('button', { name: 'Action' }),
+        ).toBeFocused();
+        await expect(
+          card.getByRole('button', { name: 'Action' }),
+        ).toBeInViewport({
+          ratio: 1,
+        });
+      },
+    );
+
+base(
+  'scroll snapshot retries the whole layout after a delayed marker update',
+  async ({ page }) => {
+    const card = await scrollFixture(page, false);
+    await card.evaluate((root) =>
+      root.classList.add('task-panel--scroll-shell'),
+    );
+    const delayed = changeAfterFirstRead(card, () =>
+      changeScrollMode(page, true),
+    );
+    await expectPanelScrollLayout(delayed, { requireOverflow: true });
+    await expect(card).toHaveAttribute('data-panel-scroll-owner', '');
+  },
+);
+
+for (const defect of ['duplicate owner', 'wrong overflow', 'second scroller'])
+  base(`scroll snapshot rejects a persistent ${defect}`, async ({ page }) => {
+    const card = await scrollFixture(page, false);
+    await expectPanelScrollLayout(card, { requireOverflow: true });
+    await card.evaluate((root, broken) => {
+      const content = root.querySelector<HTMLElement>('.panel-content')!;
+      if (broken === 'duplicate owner')
+        root.setAttribute('data-panel-scroll-owner', '');
+      else if (broken === 'wrong overflow') content.style.overflowY = 'visible';
+      else {
+        const extra = document.createElement('div');
+        extra.style.cssText = 'height:40px;overflow-y:auto';
+        extra.innerHTML =
+          '<div style="height:200px">Synthetic nested scroll</div>';
+        content.prepend(extra);
+      }
+    }, defect);
+    await expect(
+      expectPanelScrollLayout(card, { requireOverflow: true, timeout: 200 }),
+    ).rejects.toThrow('Task panel scroll layout');
+  });
 
 for (const viewport of [
   { width: 375, height: 400 },
@@ -87,16 +223,7 @@ for (const viewport of [
       title,
       status: 'doing',
     });
-    const owner = page.locator('[data-panel-scroll-owner]');
-    await expect(owner).toHaveCount(1);
-    const shell = await owner.evaluate((node) =>
-      node.classList.contains('task-panel'),
-    );
-    expect(
-      await card
-        .locator('.panel-content')
-        .evaluate((node) => getComputedStyle(node).overflowY),
-    ).toBe(shell ? 'visible' : 'auto');
+    await expectPanelScrollLayout(card);
     // The full title remains available; changing editor/viewport must retain focus.
     await card
       .getByRole('button', { name: 'Изменить название', exact: true })

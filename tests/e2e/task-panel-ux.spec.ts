@@ -1,4 +1,7 @@
-import { setTaskStatus } from '../helpers/task-panel.js';
+import {
+  expectPanelScrollLayout,
+  setTaskStatus,
+} from '../helpers/task-panel.js';
 import { type Locator, type Page } from '@playwright/test';
 import { test, expect, createJournalEntry } from '../helpers/journal-e2e.js';
 import {
@@ -85,28 +88,6 @@ async function insideViewport(locator: Locator, page: Page) {
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
 }
-async function onlyMainScroller(page: Page) {
-  expect(
-    (await panel(page).locator('[data-panel-scroll-owner]').count()) +
-      (await panel(page).evaluate((node) =>
-        Number(node.hasAttribute('data-panel-scroll-owner')),
-      )),
-  ).toBe(1);
-  const scrollers = await panel(page).evaluate((root) =>
-    [root, ...root.querySelectorAll('*')]
-      .filter((node) => {
-        const style = getComputedStyle(node);
-        return (
-          node.getClientRects().length &&
-          ['auto', 'scroll'].includes(style.overflowY) &&
-          node.scrollHeight > node.clientHeight + 1
-        );
-      })
-      .map((node) => node.className),
-  );
-  expect(scrollers).toHaveLength(1);
-}
-
 test('desktop geometry keeps one title, fixed chrome, one scroll and mounted workspace through all tabs', async ({
   page,
   runtime,
@@ -137,7 +118,7 @@ test('desktop geometry keeps one title, fixed chrome, one scroll and mounted wor
   await expect(
     panel(page).getByRole('tab', { name: 'Задача', exact: true }),
   ).toBeVisible();
-  await onlyMainScroller(page);
+  await expectPanelScrollLayout(panel(page), { requireOverflow: true });
   await panel(page)
     .getByRole('button', { name: 'Действия задачи', exact: true })
     .click();
@@ -156,7 +137,7 @@ test('desktop geometry keeps one title, fixed chrome, one scroll and mounted wor
     await expect(panel(page).getByRole('heading', { level: 2 })).toHaveCount(1);
   }
   await expect(panel(page).locator('[data-journal-entry-id]')).toHaveCount(50);
-  await onlyMainScroller(page);
+  await expectPanelScrollLayout(panel(page), { requireOverflow: true });
   await panel(page)
     .getByRole('button', { name: 'Показать ещё', exact: true })
     .click();
@@ -362,7 +343,7 @@ for (const viewport of [
     await expect(panel(page).locator('[data-journal-entry-id]')).toHaveCount(
       50,
     );
-    await onlyMainScroller(page);
+    await expectPanelScrollLayout(panel(page), { requireOverflow: true });
     await expect(panel(page).locator('.panel-footer')).toBeHidden();
     await panel(page)
       .getByRole('button', { name: 'Закрыть панель', exact: true })
@@ -432,7 +413,7 @@ test('extreme title uses one shell scroll and keyboard text undo and journal sub
   await expect(panel(page).getByRole('heading', { level: 2 })).toHaveText(
     longTitle,
   );
-  await onlyMainScroller(page);
+  await expectPanelScrollLayout(panel(page), { requireOverflow: true });
   await panel(page)
     .getByRole('button', { name: 'Добавить описание', exact: true })
     .click();
@@ -462,7 +443,7 @@ test('extreme title uses one shell scroll and keyboard text undo and journal sub
   await editor.press('Control+Enter');
   await expect(editor).toHaveValue('');
   await expect(panel(page).locator('[data-journal-entry-id]')).toHaveCount(1);
-  await onlyMainScroller(page);
+  await expectPanelScrollLayout(panel(page), { requireOverflow: true });
   await expect(panel(page).locator('.panel-footer')).toBeHidden();
   expect(
     (await readTree(page, runtime.origin, tree.project.id)).project.revision,

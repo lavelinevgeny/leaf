@@ -365,6 +365,9 @@ test('persistent editor keeps invalid raw across tabs and layout changes, native
 test('unfinished duration keyboard buffer survives Done, Escape, tabs and repair without saving null', async ({
   page,
 }) => {
+  // Repairing only the raw duration needs a working-day start after Today.
+  // Keep Date fixed while real timers and animation frames continue to run.
+  await page.clock.setFixedTime(new Date('2026-10-09T12:00:00Z'));
   const runtime = await syntheticRuntime();
   try {
     let before = await seedOptionalRuntime(page, runtime);
@@ -417,6 +420,9 @@ test('unfinished duration keyboard buffer survives Done, Escape, tabs and repair
       .getByRole('dialog', { name: 'Сроки задачи', exact: true })
       .getByRole('button', { name: 'Сегодня', exact: true })
       .click();
+    await expect(page.getByLabel('Начало', { exact: true })).toHaveValue(
+      '09.10.2026',
+    );
     await expect(duration).toHaveValue('1e');
     await expect(duration).toHaveAttribute('aria-invalid', 'true');
     await duration.fill('3');

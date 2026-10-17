@@ -1,5 +1,29 @@
 # Статус разработки
 
+## Согласованные проверки прокрутки панели, 2026-10-17
+
+В `tests/helpers/task-panel.ts` добавлен общий `expectPanelScrollLayout`: owner markers, shell/content mode, computed overflow и реальные scrollers читаются одним синхронным browser evaluate и полностью пересчитываются при каждом expect.poll. В subtasks E2E заменена раздельная проверка CSS; в task-panel-ux E2E заменён onlyMainScroller. Проверяются ровно один marker, соответствие режиму/CSS и отсутствие посторонних scrollers; прежние места с обязательным overflow по-прежнему требуют ровно один реальный scroller. Проверки фокуса, доступности действий и явных переходов 700→200→900 сохранены.
+
+Независимый синтетический DOM в subtasks E2E принудительно меняет режим в animation frame между browser reads. До исправления раздельный помощник воспроизводимо падал в обе стороны на owner count 2/0 (RED 2/2). После исправления PASS 16/16: переходы в обе стороны до/после чтения, повторное чтение после задержанного marker и обнаружение постоянных duplicate owner/wrong overflow/second scroller. Ожидаемые ошибки проверяются явно; global retries/timeouts не менялись.
+
+Первый полный E2E дал 344 PASS и 2 FAIL существующего `unfinished duration keyboard buffer` в linked-plan-fields: Today оказался нерабочим 2026-10-17, а тест ожидал доступное сохранение после правки одной длительности. Синтетическая диагностика подтвердила invalid working-day interval; код диагностики удалён. Только в этой фикстуре Date закреплён на рабочем 2026-10-09 через setFixedTime, timers/RAF продолжают работать, ожидаемое начало проверяется явно. Прежние assertions raw draft, ошибок, save и server duration null сохранены. После исправления PASS 2/2 случая и 12/12 всего файла.
+
+PASS в обычном одноразовом чистом клоне публичного кандидата: полный `npm run preflight` (56/56 kit/harness с настоящим Gitleaks; workspace/index/history/metadata), `npm run verify` (typecheck/lint, 1295/1295 unit/integration в 75 файлах, production build), format:check, check:package, check:kit и diff check. Профильные subtasks/task-panel-ux — 50/50; исходный случай 1440×400 в project 1280×800 с repeat-each 20 — 20/20. На окончательной фикстуре повторены typecheck/lint/format/package и полный E2E — 346/346 за 8,3 минуты, оба browser projects, без skipped/retries. Все runtime/fixtures синтетические; исходники четырёх тестовых файлов сверяются с кандидатом. Index основного checkout не менялся.
+
+Затронуты четыре test/helper файла и STATUS; production source, API, scheduler, зависимости, CI/security policy не менялись. Прежний build warning chunk >500 kB сохраняется. Docker build/smoke и remote CI NOT RUN. Известные private/local-agent/ignored assets основного checkout не читались и не менялись; gate выполнялся на чистой копии без ослабления guard. Commit/push/remote changes не выполнялись.
+
+Отправка исправления разрешена владельцем. Текущая `feat/task-panel-ux` обновлена fast-forward до main `8122ce2`: Git tree базы совпадает с базой проверенного кандидата, четыре test/helper файла после проверок не менялись. В commit включаются только они и STATUS. Также остаются `main` и `docs/task-panel-ux-spec`, linked worktree нет, новые ветки не создавались. Следующий шаг — GitHub Actions отправленного SHA; merge/deployment не выполняются этим поручением.
+
+## Анализ падения E2E после merge PR 10, 2026-10-17
+
+Run `38927630129`, job `117063130875`, merge `8122ce2`: typecheck/lint/unit/integration/build/format/package PASS; E2E — 329 PASS, 1 FAIL. Падает `tests/e2e/subtasks.spec.ts:99`, случай длинного заголовка при 1440×400 в browser project 1280×800: ожидался overflowY `auto`, получен `visible`. Git tree merge-коммита совпадает с проверенным `68329e6`; оба application/kit workflow для push и PR этого кандидата завершились успешно. Изменение исходников при merge причиной не подтверждено.
+
+Вероятная причина — раздельные снимки меняющегося layout: тест сохраняет владельца прокрутки, затем отдельным browser evaluate читает CSS. `useTaskPanelLayout` переносит режим через observers → requestAnimationFrame; marker владельца и CSS-класс задаются одним shellScroll. Между снимками допустим переход content → shell. Аналогичный риск раздельного подсчёта marker есть в `onlyMainScroller` из task-panel-ux E2E. Лог не подтверждает устойчивую поломку пользовательской прокрутки. Локально исходное падение не воспроизвелось в 20 повторах.
+
+Рекомендовано: один синхронный browser evaluate для owner count/mode/CSS и повторное вычисление всего снимка через expect.poll; независимая проверка единственного реального scroller и доступности/фокуса действий; управляемая проверка обоих порядков observers/frame; повторный профильный прогон как дополнительный поиск нестабильности. Общие retries и фиксированный sleep не устраняют причину. В active main ruleset уже обязательны `app` и `kit`, strict policy, bypass actors нет; перед deployment нужен успешный CI точного итогового SHA после merge.
+
+PASS: `npm run doctor`, `npm run build`, исходный E2E case `title keeps Save reachable at 1440x400` в project 1280×800 с `--repeat-each=20` — 20/20, retries 0. Проверки приложения выполнялись на синтетическом runtime. Ast-index CLI недоступен, выполнен ограниченный поиск через rg. Полные verify/E2E/preflight в рамках анализа NOT RUN. Тесты и production source не изменялись; обновлена только эта запись. Commit/push/remote changes не выполнялись. Следующий шаг — исправить согласованность layout assertions с управляемой регрессией и повторить профильные и полные проверки.
+
 ## Разрешённый push — полный локальный gate, 2026-10-16
 
 Исправление ожидания scroll restore и правила проверки до деплоя зафиксированы в `8ad4deb`. Перед разрешённой отправкой текущей `feat/task-panel-ux` создан обычный одноразовый чистый клон этого коммита без private runtime/локальных agent files. В нём явно установлены штатные hooks и выполнен свежий `npm ci --strict-allow-scripts --no-audit --no-fund` по lockfile.
