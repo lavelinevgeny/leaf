@@ -170,6 +170,7 @@ export function App() {
   const restorationApplied = useRef(false);
   const [restorationTick, setRestorationTick] = useState(0);
   const suppressedPop = useRef(false);
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -1564,6 +1565,7 @@ export function App() {
         ? api.enterDemo()
         : api.login(password));
       setPassword('');
+      setProjectsCollapsed(false);
       setSession(auth);
       if (auth.authenticated) await loadProjects();
     } catch (failure) {
@@ -1594,6 +1596,7 @@ export function App() {
     setError(null);
     try {
       await api.logout();
+      setProjectsCollapsed(false);
       clearTaskNavigation();
       journal.clearPrivateState();
       knownRevision.current = null;
@@ -2098,6 +2101,8 @@ export function App() {
       }}
     >
       <ProjectSidebar
+        collapsed={projectsCollapsed}
+        onToggle={() => setProjectsCollapsed((value) => !value)}
         projects={projects}
         selectedId={tree?.project.id ?? null}
         onSelect={(id, openMenu = false) =>
@@ -2112,6 +2117,7 @@ export function App() {
         controls={
           tree && (
             <ProjectControls
+              sidebarCollapsed={projectsCollapsed}
               key={tree.project.id}
               initialMenuOpen={projectMenuTarget === tree.project.id}
               project={tree.project}
@@ -2144,7 +2150,10 @@ export function App() {
           createUncertain
         }
       />
-      <main className="workspace">
+      <main
+        className={`workspace${selectedTask ? ' panel-visible' : ''}`}
+        tabIndex={-1}
+      >
         {session.demoMode && (
           <p className="demo-notice">{strings.demoNotice}</p>
         )}

@@ -192,3 +192,18 @@ Public export/import и контейнерная приёмка не подме�
 Исходный полный local gate до review-исправлений — PASS: typecheck/lint; unit 959/959 (51 файл), integration 385/385 (28 файлов), production build; профильный E2E current-tasks + journal-navigation + task-journal — 50/50, оба desktop projects, без skips/retries. format:check, check:kit и git diff --check также PASS. Build сохраняет прежнее предупреждение chunk >500 kB. Полный E2E/preflight/package/Docker/publication gate в этом блоке не запускался; существующий mobile header overflow вида «Задачи» вне scope. Следующий шаг — проверка готового view владельцем; завершение S4–S6 не заявляется.
 
 После исправлений Important I1/I2 PASS: typecheck/lint/build/format/check:kit/diff; targeted client current-navigation + journal-navigation + App — 151/151 (current-navigation: 33); browser current-tasks + journal-navigation — 30/30, включая 12 current cases в двух viewport, без skipped/retries. Полные unit/integration и task-journal browser suite после fixes не повторялись; исходные 959/385/50 выше относятся к первоначальной реализации. Новая scoped приёмка проверяет оба воспроизведения и сохранение существующих journal visits/scroll/focus. Независимое повторное review не объявляется пройденным.
+
+## Workspace layout D25 — L01–L08
+
+Новая приёмка и её ограничения: [спецификация](superpowers/specs/2026-11-06-workspace-layout-design.md), `tests/e2e/workspace-layout.spec.ts` и client sidebar/controls tests. Геометрия проверяется actual-server synthetic runtime через bounding boxes и elementFromPoint; viewport resize не считается browser zoom.
+
+- L01: desktop1280/1440, открытая карточка, поиск, оба состояния проектов, controls/header и отсутствие page overflow.
+- L02: day/week/month, клавиатурный select, period pointer/Enter/Space, Today, неизменная44px строка списка/Ганта.
+- L03: 30 длинных строк и6 уровней, keyboard separator620, row/SVG y и сохранение inline width.
+- L04: quick/task drafts, selection, scale/period и допустимые scrollTop/scrollLeft после collapse/resize, readTree и отсутствие non-GET/HEAD writes.
+- L05: Enter/Space, aria-expanded/name, фокус, скрытая nav в браузере, сохранённое название проекта в client, закрытие меню.
+- L06: RAM при смене проекта/вида покрыта client test и браузером; reload раскрывает проекты. Current/Journal bbox проверяет единственный reserve480; существующие suites проверяют guards/navigation.
+- L07: пустой synthetic project, задержанное чтение,503, retry, no-match и доступный toggle/toolbar.
+- L08: CSS1199/1200,899/900,600/601 и focus transfer. Настоящий browser zoom200% для этого изменения **не выполнен**; прежняя приёмка D22 не заменяет новую проверку.
+
+Новый client test дополнительно проверяет раскрытие проектов после logout/login на независимом HTTP fixture. Настоящий browser zoom200% остаётся единственной невыполненной отдельной проверкой L08; CSS boundary tests его не заменяют.

@@ -126,7 +126,7 @@
   }
 }
 
-@media (min-width: 900px) {
+@media (min-width: 900px) and (max-width: 1199px) {
   .project-current-container.panel-visible {
     margin-inline-end: var(--leaf-task-panel-width);
   }

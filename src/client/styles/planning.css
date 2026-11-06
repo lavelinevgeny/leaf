@@ -115,6 +115,11 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+@media (min-width: 1200px) {
+  .timeline-tree {
+    max-width: calc(100% - 166px);
+  }
+}
 .timeline-columns.list-view .timeline-tree {
   width: 100%;
   max-width: 100%;
@@ -956,4 +961,52 @@
 .dependency-card.dependency-pending small {
   margin-top: 1px;
   line-height: 1.1;
+}
+
+@media (min-width: 1200px) and (max-width: 1279px) {
+  .workspace-content.planning-workspace {
+    padding-inline: 12px;
+  }
+}
+@media (min-width: 1200px) {
+  .gantt-toolbar {
+    min-width: 0;
+    gap: 4px;
+  }
+  .gantt-toolbar .filter-results {
+    min-width: 0;
+    flex: 0 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .gantt-toolbar .task-view-control {
+    gap: 0;
+  }
+  .gantt-toolbar .task-view-control button {
+    gap: 4px;
+    padding-inline: 6px;
+  }
+  .gantt-scale-controls {
+    gap: 4px;
+  }
+  .gantt-toolbar .gantt-scale-controls button {
+    padding-inline: 6px;
+  }
+  .gantt-scale-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 1200px) {
+  .task-panel {
+    position: static;
+  }
 }

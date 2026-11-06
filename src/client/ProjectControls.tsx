@@ -23,6 +23,7 @@ interface Props {
   onVisibility: (open: boolean) => void;
   feedback: ReactNode;
   initialMenuOpen?: boolean;
+  sidebarCollapsed?: boolean;
 }
 export function ProjectControls(props: Props) {
   const {
@@ -39,6 +40,9 @@ export function ProjectControls(props: Props) {
     feedback,
   } = props;
   const [menu, setMenu] = useState(props.initialMenuOpen ?? false);
+  useEffect(() => {
+    if (props.sidebarCollapsed) setMenu(false);
+  }, [props.sidebarCollapsed]);
   const [action, setAction] = useState<'settings' | 'rename' | null>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);

@@ -304,14 +304,18 @@ export function TaskTimeline({
       <div className="gantt-toolbar">
         {viewControl}
         {projection.active && (
-          <span role="status" className="filter-results">
+          <span
+            role="status"
+            className="filter-results"
+            title={`${strings.taskMatchCount} ${projection.matchIds.size}`}
+          >
             {strings.taskMatchCount} {projection.matchIds.size}
           </span>
         )}
         {show && (
           <div className="gantt-scale-controls">
             <label>
-              {strings.scale}
+              <span className="gantt-scale-label">{strings.scale}</span>
               <select
                 aria-label={strings.scale}
                 value={scale}

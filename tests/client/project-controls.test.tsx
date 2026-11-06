@@ -490,3 +490,63 @@ it('clears visibility only on unmount and uses the latest callback after rerende
   view.unmount();
   expect(nextVisibility.mock.calls).toEqual([[true], [false]]);
 });
+
+it('retains RAM collapse across project and view changes and closes the project menu', async () => {
+  render(<App />);
+  await screen.findByRole('heading', { name: project.title });
+  await userEvent.click(activeOpener());
+  expect(
+    screen.getByRole('button', { name: 'Настройки проекта' }),
+  ).toBeVisible();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Свернуть проекты' }),
+  );
+  expect(
+    screen.queryByRole('button', { name: 'Настройки проекта' }),
+  ).toBeNull();
+  await userEvent.click(screen.getByRole('tab', { name: 'Актуальное' }));
+  expect(
+    screen.getByRole('button', { name: 'Развернуть проекты' }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Развернуть проекты' }),
+  );
+  await userEvent.click(screen.getByRole('button', { name: other.title }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Свернуть проекты' }),
+  );
+  await userEvent.click(screen.getByRole('tab', { name: 'Журнал' }));
+  expect(
+    screen.getByRole('button', { name: 'Развернуть проекты' }),
+  ).toHaveAttribute('aria-expanded', 'false');
+});
+
+it('expands projects after logout and a new authenticated session', async () => {
+  const respond = fetchMock.getMockImplementation() as (
+    url: string,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation((url: string) =>
+    url === '/api/auth/login'
+      ? Promise.resolve(
+          new Response(
+            JSON.stringify({ authenticated: true, setupRequired: false }),
+          ),
+        )
+      : respond(url),
+  );
+  render(<App />);
+  await screen.findByRole('heading', { name: project.title });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Свернуть проекты' }),
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Выйти' }));
+  await userEvent.type(
+    await screen.findByLabelText('Пароль'),
+    'synthetic login fixture',
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
+  await screen.findByRole('heading', { name: project.title });
+  expect(
+    screen.getByRole('button', { name: 'Свернуть проекты' }),
+  ).toHaveAttribute('aria-expanded', 'true');
+});

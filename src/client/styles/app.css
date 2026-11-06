@@ -97,6 +97,7 @@ h2 {
   min-height: 500px;
 }
 .project-sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 0 0 var(--leaf-sidebar-width);
@@ -319,7 +320,7 @@ h2 {
   color: var(--leaf-text-muted);
   font-size: 10px;
 }
-@media (min-width: 1001px) {
+@media (min-width: 1001px) and (max-width: 1199px) {
   .workspace-header.panel-visible {
     padding-inline-end: calc(var(--leaf-task-panel-width) + 28px);
   }
@@ -1140,5 +1141,79 @@ h2 {
   }
   .task-panel-schedule .quick-schedule-actions button:nth-child(2) {
     margin-left: auto;
+  }
+}
+
+.project-sidebar-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.project-sidebar-toggle {
+  position: absolute;
+  top: 24px;
+  right: 12px;
+}
+.project-sidebar .brand {
+  margin-right: 32px;
+}
+@media (min-width: 601px) {
+  .project-sidebar--collapsed {
+    flex-basis: 48px;
+    padding-inline: 4px;
+  }
+  .project-sidebar--collapsed .project-sidebar-toggle {
+    right: 4px;
+  }
+  .project-sidebar--collapsed .project-sidebar-content {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .project-sidebar-toggle {
+    display: none;
+  }
+}
+@media (min-width: 1200px) {
+  .workspace {
+    min-width: 0;
+  }
+  .workspace-header.panel-visible {
+    padding-inline-end: 28px;
+  }
+}
+@media (min-width: 1200px) {
+  .workspace.panel-visible .workspace-actions {
+    flex: 1;
+  }
+  .workspace.panel-visible .workspace-actions > button {
+    flex-shrink: 0;
+  }
+  .workspace.panel-visible .task-filters {
+    flex: 1;
+    min-width: 0;
+  }
+  .workspace.panel-visible .task-search {
+    flex: 1;
+  }
+  .workspace.panel-visible .task-search input {
+    width: 100%;
+  }
+}
+@media (min-width: 1200px) {
+  .workspace.panel-visible .project-title-line {
+    flex: 0 1 120px;
+  }
+  .workspace.panel-visible .workspace-actions {
+    flex: 1 1 0;
+  }
+  .workspace.panel-visible .task-search {
+    min-width: 100px;
+  }
+}
+@media (min-width: 1200px) and (max-width: 1279px) {
+  .workspace.panel-visible .project-title-line {
+    flex-basis: 80px;
   }
 }
