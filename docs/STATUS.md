@@ -1,5 +1,25 @@
 # Статус разработки
 
+## Исправление установки исторического клиента S3, 2026-10-17
+
+В `tests/helpers/pinned-s3.ts` выделен `installPinnedS3Dependencies`: exact исторический lockfile сначала устанавливается с загрузкой недостающих пакетов в собственный временный npm-кэш, затем повторно offline. Обе установки используют пустые user/global npm configs, окружение только с PATH и `--ignore-scripts --strict-allow-scripts`; npm-кэш удаляется вместе с временной сборкой при закрытии или ошибке. Pinned S3 `6317791`, проверка происхождения исходников и browser/API assertions сохранены. Production source, scheduler, API, workflow, версии зависимостей и package-lock.json не менялись.
+
+Добавлен независимый integration test с локальным синтетическим HTTP registry, tarball и integrity в lockfile. Исходная offline-only установка воспроизводимо даёт ENOTCACHED; после исправления пакет устанавливается из пустого кэша, повторная установка проходит при выключенном registry, lockfile побайтно сохраняется. Заведомо завершающиеся ошибкой lifecycle scripts и синтетическая account npm configuration не влияют на результат. Тест включён в `test:integration`; BOOTSTRAP описывает сетевую подготовку исторических зависимостей.
+
+PASS: doctor; `npm run verify` (typecheck/lint, 1296/1296 tests в 76 файлах, production build); format:check и отдельная проверка форматирования package.json; check:package; check:kit; git diff --check. Профильный legacy-client-upgrade E2E — 2/2 с новыми пустыми кэшами. Полный `npm run test:e2e` — 346/346 за 8,3 минуты, оба browser projects, без skipped/retries. Все runtime/fixtures синтетические. Прежнее предупреждение build chunk >500 kB сохраняется.
+
+Полный preflight PASS в обычной одноразовой чистой копии кандидата: 56/56 реальных guard/hook tests, workspace/index/history/metadata guard и Gitleaks. Пять файлов кандидата сверены с основным checkout; index основного checkout не менялся. Docker build/smoke, GitHub Actions исправления и обновлённые Dependabot heads NOT RUN. Commit/push/rerun/merge/deployment не выполнялись. Рабочая ветка `feat/task-panel-ux` сохранена по разрешению владельца; также остаются `main` и `docs/task-panel-ux-spec`, linked worktree нет. Следующий шаг — review исправления, разрешённая публикация и интеграция, затем обновление Dependabot PR и проверка app/kit их точных heads.
+
+## Анализ Dependabot PR 11–13, 2026-10-17
+
+Проверены точные heads: PR 11 `cc3295d`, PR 12 `54f65ac`, PR 13 `cbaa230`; база каждого — `8122ce2`. В каждом PR изменены только package.json/package-lock.json. Все шесть application runs для push/pull_request (`38933026028`, `38933035525`, `38933036612`, `38933047659`, `38933055773`, `38933063761`) имеют одинаковый результат: install/typecheck/lint/unit/integration/build/format/package/Chromium PASS; E2E — 328 PASS, 2 FAIL. Обе ошибки относятся к `legacy-client-upgrade.spec.ts` в двух viewport. Все шесть kit checks PASS. Отображение 2/4 объясняется двумя событиями: два успешных kit и два упавших app.
+
+Подтверждённая причина — подготовка исторического клиента, а не assertion его совместимости: `buildPinnedS3` устанавливает lockfile неизменённого S3 `6317791` через `npm ci --offline`. Свежая установка текущего PR не обеспечивает кэш старых версий. Логи фиксируют ENOTCACHED: PR 11 — vitest 5.0.3, PR 12 — @fastify/static 10.1.5, PR 13 — playwright-core 1.63.0. Исторический lockfile содержит именно эти версии; helper во всех трёх heads побайтно совпадает с текущим. Новые версии зависимостей не признаны несовместимыми по этим логам: сценарий завершается до browser/API assertions.
+
+Рекомендуемый следующий шаг — явно подготовить зависимости исторического lockfile в выделенном кэше до offline-сборки, сохранив pinned source, пустые npm configs и запрет lifecycle scripts. Проверить этот путь с пустым кэшем и обновлённым текущим lockfile, затем выполнить полный gate и обновить PR после интеграции исправления. Повторный запуск без устранения зависимости от кэша не является исправлением.
+
+PASS локально: `npm run check:kit`, `git diff --check`. Локальные application suites/preflight NOT RUN: выполнен анализ удалённых результатов и исходников. Код, тесты, зависимости и workflow не менялись; обновлён только STATUS. Commit/push/rerun/merge/deployment не выполнялись; активная ветка сохранена.
+
 ## Согласованные проверки прокрутки панели, 2026-10-17
 
 В `tests/helpers/task-panel.ts` добавлен общий `expectPanelScrollLayout`: owner markers, shell/content mode, computed overflow и реальные scrollers читаются одним синхронным browser evaluate и полностью пересчитываются при каждом expect.poll. В subtasks E2E заменена раздельная проверка CSS; в task-panel-ux E2E заменён onlyMainScroller. Проверяются ровно один marker, соответствие режиму/CSS и отсутствие посторонних scrollers; прежние места с обязательным overflow по-прежнему требуют ровно один реальный scroller. Проверки фокуса, доступности действий и явных переходов 700→200→900 сохранены.
