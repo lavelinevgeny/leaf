@@ -267,6 +267,7 @@ export function TaskPanelSchedule({
             task={{ status: 'doing' }}
             plan={plan}
             calendar={project.calendarType}
+            timezone={project.timezone}
             summary={false}
             disabled={!!disabledReason}
             compact

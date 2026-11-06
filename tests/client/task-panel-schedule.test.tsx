@@ -580,3 +580,51 @@ it('explicit repair focuses the requested field after opening and while already 
   await user.click(trigger);
   expect(screen.getByLabelText('Начало')).toHaveFocus();
 });
+
+it.each([
+  ['2026-12-31T23:30:00Z', 'Asia/Tokyo', '2027'],
+  ['2027-01-01T00:30:00Z', 'America/Los_Angeles', '2026'],
+])(
+  'card short dates use project year at %s in %s',
+  async (instant, timezone, year) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date(instant));
+      const user = userEvent.setup();
+      const tree = panelTree({
+        inputStart: null,
+        inputFinish: null,
+        durationDays: null,
+      });
+      tree.project.timezone = timezone;
+      tree.project.calendarType = 'all-days';
+      const onSave = vi.fn(async () => null);
+      render(<Panel tree={tree} onSave={onSave} />);
+      await openDates(user);
+      expect(screen.getAllByText(`Без года — ${year}`)).toHaveLength(2);
+      const start = screen.getByLabelText('Начало');
+      const finish = screen.getByLabelText('Окончание');
+      for (const field of [start, finish]) {
+        expect(field).toHaveAccessibleDescription(
+          new RegExp(`Без года — ${year}`),
+        );
+      }
+      await user.click(start);
+      fireEvent.change(start, { target: { value: '7.1' } });
+      await user.tab();
+      expect(start).toHaveValue(`07.01.${year}`);
+      await user.click(finish);
+      fireEvent.change(finish, { target: { value: '8.1' } });
+      await user.keyboard('{Enter}');
+      expect(finish).toHaveValue(`08.01.${year}`);
+      await user.click(screen.getByRole('button', { name: /^Сохранить$/ }));
+      expect(onSave).toHaveBeenCalledExactlyOnceWith({
+        inputStart: `${year}-01-07`,
+        inputFinish: `${year}-01-08`,
+        durationDays: 2,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);

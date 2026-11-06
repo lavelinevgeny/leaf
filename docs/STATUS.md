@@ -1,5 +1,11 @@
 # Статус разработки
 
+## UI2 — timezone карточки, исправление по review, 2026-11-06
+
+В TaskPanelSchedule восстановлена передача timezone проекта в PlanFields: короткие даты карточки теперь используют тот же project year, что quick add, вместо fallback UTC. Два интеграционных теста реальной карточки сначала RED, затем GREEN: Tokyo при 2026-12-31T23:30Z даёт 2027, Los Angeles при 2027-01-01T00:30Z — 2026. Проверены обе подсказки/accessible descriptions, полный формат после commit и точные ISO обоих полей в save. Существующие Today/Tomorrow/native picker и UI3 pendingField repair сохранены.
+
+PASS: профильные date-input/calendar-date-input/planning/task-panel-schedule — 79/79 в четырёх файлах; финальный `npm run verify` — typecheck/lint, 1401/1401 tests в 82 файлах, build; `npm run format:check`; fresh-build `npx playwright test tests/e2e/date-entry.spec.ts` — 2/2 в 1440×900 и 1280×800; `npm run check:kit`; `git diff --check`. Первоначальный verify остановился на неверной test-only RTL option exact; исправлен anchored name matcher, затем verify выполнен полностью. Сохраняется прежний build warning >500 kB. Полный browser suite и publication gate здесь не запускались; их приёмка остаётся у координатора. Один production prop, профильный test и STATUS; API/scheduler/storage и UI3 repair code не менялись. Следующий шаг — scoped exact-SHA review, без push/deployment.
+
 ## Keyboard quick add — спецификация, 2026-11-06
 
 Подготовлена [спецификация UI3](superpowers/specs/2026-11-06-keyboard-entry-design.md): рабочий D27 превращает существующий плюс quick-line в команду фокуса, добавляет подсказки по актуальному фокусу и фиксирует прежние клавиши, последовательное создание, IME и защиту от позднего возврата фокуса. Toolbar D25, C18/C19 и ввод дат D26 сохраняются. Изучены актуальные QuickAdd/Tree/Timeline/App и раздел подзадач после UI2. Затронуты только spec и STATUS; production code, тесты и Git index не менялись. PASS: `npm run check:kit` (81 Markdown files, 506 local links, 3 approved references), `git diff --check`. Application/runtime проверки не запускались. Следующий шаг — независимое review спецификации, затем отдельный агент плана. Коммитов и внешних действий автор спецификации не выполнял.
