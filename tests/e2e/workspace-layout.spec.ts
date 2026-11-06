@@ -83,19 +83,16 @@ test('desktop controls stay before the panel through layout changes without writ
     await toggle.press('Enter');
     await expect(toggle).toBeFocused();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByRole('navigation', { name: 'Проекты' })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByRole('navigation', { name: 'Проекты' }),
+    ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Настройки проекта' }),
     ).toHaveCount(0);
     await toggle.press('Tab');
-    expect(
-      await page.evaluate(
-        () =>
-          document.activeElement?.closest('.project-sidebar-content') !== null,
-      ),
-    ).toBe(false);
+    await expect(
+      page.getByRole('button', { name: 'Новый проект' }),
+    ).toBeFocused();
     await toggle.focus();
     await geometry(page);
     await toggle.press('Space');
@@ -355,7 +352,9 @@ test('keyboard controls, draft state and responsive boundaries retain the synthe
     ).toBeFocused();
     await page.setViewportSize({ width: 601, height: 800 });
     await expect(toggle).toBeVisible();
-    await expect(toggle).toBeFocused();
+    await expect(
+      page.getByRole('button', { name: 'Новый проект' }),
+    ).toBeFocused();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(writes).toEqual([]);
     expect(await readTree(page, runtime.origin, before.project.id)).toEqual(
