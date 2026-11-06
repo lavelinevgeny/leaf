@@ -56,21 +56,24 @@ export function ProjectSidebar({
     top: number;
   } | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipButton = useRef<HTMLButtonElement | null>(null);
   function cancelDismiss() {
     if (dismissTimer.current) clearTimeout(dismissTimer.current);
     dismissTimer.current = null;
   }
   function dismissTooltip() {
     cancelDismiss();
+    tooltipButton.current = null;
     setTooltip(null);
   }
   function scheduleDismiss() {
     cancelDismiss();
-    dismissTimer.current = setTimeout(() => setTooltip(null), 120);
+    dismissTimer.current = setTimeout(dismissTooltip, 120);
   }
   function showTooltip(button: HTMLButtonElement, label: string) {
     cancelDismiss();
     if (!collapsed || window.matchMedia?.('(max-width: 600px)').matches) return;
+    tooltipButton.current = button;
     const rect = button.getBoundingClientRect();
     setTooltip({
       title: label,
@@ -85,20 +88,25 @@ export function ProjectSidebar({
     }
   }, [adding, collapsed]);
   useEffect(() => {
-    const dismiss = () => setTooltip(null);
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss();
+    const onScroll = () => {
+      const button = tooltipButton.current;
+      if (button && document.activeElement === button) {
+        showTooltip(button, button.getAttribute('aria-label') ?? '');
+      } else dismissTooltip();
     };
-    window.addEventListener('resize', dismiss);
-    window.addEventListener('scroll', dismiss, true);
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismissTooltip();
+    };
+    window.addEventListener('resize', dismissTooltip);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('keydown', dismissOnEscape);
     return () => {
-      window.removeEventListener('resize', dismiss);
-      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('resize', dismissTooltip);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('keydown', dismissOnEscape);
       cancelDismiss();
     };
-  }, []);
+  }, [collapsed]);
   useEffect(() => {
     if (!window.matchMedia) return;
     const media = window.matchMedia('(max-width: 600px)');

@@ -127,12 +127,42 @@ test('long project rails scroll without losing controls and creation retains its
   expect(
     await nav.evaluate((node) => node.scrollHeight > node.clientHeight),
   ).toBe(true);
+  await plus.focus();
+  await nav.evaluate((node) => {
+    node.scrollTop = 0;
+  });
   await sidebar.getByRole('button', { name: 'Пример 22', exact: true }).focus();
+  await expect(
+    sidebar.getByRole('button', { name: 'Пример 22', exact: true }),
+  ).toBeFocused();
+  // Flush native focus scrolling and its scroll event before checking the tooltip.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(page.getByRole('tooltip')).toHaveText('Пример 22');
+  const tooltipBox = (await page.getByRole('tooltip').boundingBox())!;
+  expect(tooltipBox.y + tooltipBox.height).toBeLessThanOrEqual(
+    page.viewportSize()!.height,
+  );
   const last = (await sidebar
     .getByRole('button', { name: 'Пример 22', exact: true })
     .boundingBox())!;
   const navBox = (await nav.boundingBox())!;
   expect(last.y + last.height).toBeLessThanOrEqual(navBox.y + navBox.height);
+  await page.keyboard.press('Escape');
+  await nav.evaluate((node) => {
+    node.scrollTop -= 10;
+  });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
   await expect(toggle).toBeInViewport();
   const logout = sidebar.getByRole('button', { name: 'Выйти', exact: true });
   await expect(logout).toBeInViewport();
