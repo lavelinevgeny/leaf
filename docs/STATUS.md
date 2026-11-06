@@ -1,5 +1,19 @@
 # Статус разработки
 
+## UI1–UI3 — итог реализации и локальной приёмки, 2026-11-06
+
+Завершены [D25 — desktop layout и сворачивание проектов](superpowers/specs/2026-11-06-workspace-layout-design.md), [D26 — короткий ввод дат и подписи неполных сроков](superpowers/specs/2026-11-06-date-entry-design.md), [D27 — клавиатурный quick add](superpowers/specs/2026-11-06-keyboard-entry-design.md). Каждый этап прошёл отдельные spec/plan/implementation reviews; общий финальный review и scoped review исправления timezone завершены, blocking findings закрыты. Исправлены интеграционные замечания по выравниванию шапки, фокусу исправления сроков, browser assertions и передаче timezone проекта в карточку. API, schema, scheduler и зависимости пакетов не менялись; C18/C19 и три утверждённых PNG сохранены.
+
+Окончательный application source: `59d7ba56b951e4dde7b70cb95b6de94bde338e79`. PASS: `npm run verify` — typecheck, lint, 1401/1401 tests в 82 файлах и свежий production build; `npm run format:check`; `npm run check:kit`; `npm run check:package`; полный `npm run test:e2e` — **368/368**, 9,7 минуты, оба viewport 1440×900 и 1280×800, exit 0, без failures, skips, retries и interruptions. Настоящий browser zoom 200% для UI1 отдельно проверен на её source `5ba03b1` с синтетическим runtime: fullscreen-карточка, закрытие и keyboard focus PASS. Синтетические composition events проверены; это не проверка физической OS IME.
+
+FAIL: финальный `npm run preflight` после успешного doctor остановлен workspace privacy guard на ранее существовавших локальных настройках агента и непроверенных ignored изображениях. Их содержимое не читали и не меняли; защиту не обходили. Последующие стадии preflight NOT RUN, полный publication gate не пройден. Docker, remote CI, push и deployment NOT RUN; физическая OS IME NOT RUN. Сохраняются предупреждение build о chunk >500 kB, overlay карточки в 900–1199 CSS px и прежнее переполнение общей мобильной шапки вне scope.
+
+Ранние полные browser попытки на `29a5036` и `b595f92` прерывались для исправлений и не считаются успешной приёмкой; результат 368/368 выше относится к окончательному source. Работа выполнена последовательно в отдельных ветках; UI1 и UI2 прошли локальное слияние после своих reviews. Окончательный кандидат UI1–UI3 принят общим review и полным E2E. Следующий продуктовый шаг — проверка владельцем и продолжение S4; S4–S6 и первый релиз остаются незавершёнными.
+
+Итоговая синхронизация затронула только три спецификации, три плана, START_HERE и STATUS; исходные checkboxes планов сохранены с явной пометкой исторической записи. После этих правок PASS: `npm run check:kit` (82 Markdown files, 524 local links, 3 approved references), `git diff --check`. Application source и tests не менялись, их проверки повторно не запускались.
+
+Ниже сохранён журнал предыдущих этапов. Их формулировки «review предстоит», «не запускалось» и промежуточные результаты относятся к указанным кандидатам и моментам работы; текущий итог приведён выше.
+
 ## UI2 — timezone карточки, исправление по review, 2026-11-06
 
 В TaskPanelSchedule восстановлена передача timezone проекта в PlanFields: короткие даты карточки теперь используют тот же project year, что quick add, вместо fallback UTC. Два интеграционных теста реальной карточки сначала RED, затем GREEN: Tokyo при 2026-12-31T23:30Z даёт 2027, Los Angeles при 2027-01-01T00:30Z — 2026. Проверены обе подсказки/accessible descriptions, полный формат после commit и точные ISO обоих полей в save. Существующие Today/Tomorrow/native picker и UI3 pendingField repair сохранены.

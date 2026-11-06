@@ -1,5 +1,9 @@
 # Workspace Layout Implementation Plan
 
+**Итог исполнения, 2026-11-06:** Task 1 реализован и прошёл независимые reviews; UI1 локально слита в main. Приёмка L01–L08 завершена. Настоящий browser zoom 200% проверен координатором отдельно после реализации; первоначальное ограничение исполнителя снято. Actual-server проверки выявили native blur при переходе 600/601 px, исправленный локальным сохранением исходного фокуса. Итоговые проверки общего source UI1–UI3 и ограничения — в [STATUS](../../STATUS.md).
+
+Ниже сохранён исходный план, включая незаполненные checkboxes как историческую запись; текущий статус задаёт итог исполнения, а не эти отметки. Повторно выполнять план не требуется.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Устранить перекрытие desktop toolbar карточкой и добавить обратимое RAM-сворачивание проектов.

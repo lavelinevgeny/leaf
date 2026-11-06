@@ -1,5 +1,11 @@
 # Keyboard Entry Implementation Plan
 
+**Итог исполнения, 2026-11-06:** Task 1 реализован; независимые spec/quality и общий финальный review завершены, blocking findings закрыты. На окончательном source `59d7ba5` прошли verify (1401 tests) и полный E2E (368/368). Локальное слияние UI3 выполняет координатор после review итоговых документов; на момент этой записи оно ещё не выполнено. Проверки и ограничения — в [STATUS](../../STATUS.md).
+
+Начальные RED tests предшествовали реализации, часть controlled/hint/App сценариев добавлена в ходе работы. Полный интеграционный прогон выявил исправленные downstream assertions, выравнивание шапки и race фокуса команды исправления сроков. Дополнительный review выявил и закрыл передачу timezone карточки; после этого повторён полный browser suite. Проверка IME использует DOM composition events, физическая OS IME не запускалась.
+
+Ниже сохранён исходный план, включая незаполненные checkboxes как историческую запись; текущий статус задаёт итог исполнения, а не эти отметки. Повторно выполнять план не требуется.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Сделать существующий keyboard quick add обнаруживаемым и непрерывным, сохранив draft/context и не похищая фокус поздним ответом.

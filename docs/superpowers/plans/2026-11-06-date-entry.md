@@ -1,5 +1,9 @@
 # Date Entry Implementation Plan
 
+**Итог исполнения, 2026-11-06:** Task 1 реализован, прошёл независимые spec/quality reviews и локально слит в main. Draft/retry проверки размещены в App fixtures, где находятся реальные scoped drafts и envelopes; дополнительное расширение ширины дат не потребовалось. Финальный общий review выявил пропущенную передачу timezone в карточку: исправление и две интеграционные регрессии приняты в `59d7ba5`. Итоговые проверки общего source UI1–UI3 и ограничения — в [STATUS](../../STATUS.md).
+
+Ниже сохранён исходный план, включая незаполненные checkboxes как историческую запись; текущий статус задаёт итог исполнения, а не эти отметки. Повторно выполнять план не требуется.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Принимать короткие даты в сроках задачи с явным годом проекта и различать неполные сроки видимой подписью дерева.
