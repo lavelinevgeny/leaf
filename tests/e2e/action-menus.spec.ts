@@ -421,7 +421,9 @@ test('U10 date column heading aligns with row dates', async ({
     await page.getByRole('button', { name: view, exact: true }).click();
     await expect(row).toBeVisible();
     const edges = await page.evaluate((id) => {
-      const heading = document.querySelector('.timeline-heading > span')!;
+      const heading = document.querySelector(
+        '.timeline-heading-labels > span:last-child',
+      )!;
       const date = document.querySelector(
         `[role="treeitem"][data-task-id="${id}"] .task-date`,
       )!;

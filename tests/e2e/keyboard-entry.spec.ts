@@ -39,6 +39,14 @@ test('keyboard entry keeps context, defaults, hints and compact geometry', async
             .boundingBox(),
           text = await hint.boundingBox();
         expect(labels!.y + labels!.height).toBeLessThanOrEqual(text!.y);
+        for (const label of await page
+          .locator('.timeline-heading-labels > span')
+          .all())
+          expect(
+            await label.evaluate(
+              (node) => node.scrollHeight <= node.clientHeight,
+            ),
+          ).toBe(true);
         expect(
           (await page.locator('.timeline-heading').boundingBox())!.height,
         ).toBe(58);

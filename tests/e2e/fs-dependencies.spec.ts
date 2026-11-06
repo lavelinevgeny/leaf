@@ -794,7 +794,10 @@ test('uncertain create applies on server, blocks draft, then exact retry acknowl
   await expect(row(page, taskId(applied, 'B'))).toHaveCount(0);
   await page.getByRole('button', { name: 'Повторить', exact: true }).click();
   await expect(title).toHaveValue('');
-  await expect(title).toBeFocused();
+  await expect(title).not.toBeFocused();
+  expect(
+    await page.evaluate(() => document.activeElement === document.body),
+  ).toBe(true);
   expect(envelopes).toHaveLength(2);
   expect(envelopes[1]).toEqual(envelopes[0]);
   const confirmed = await readTree(page, runtime.origin, tree.project.id);

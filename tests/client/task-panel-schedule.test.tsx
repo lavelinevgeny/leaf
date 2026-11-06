@@ -7,6 +7,10 @@ import {
   PlanFields,
   type PlanFieldsHandle,
 } from '../../src/client/PlanFields.js';
+import {
+  TaskPanelSchedule,
+  type TaskPanelScheduleHandle,
+} from '../../src/client/TaskPanelSchedule.js';
 import { taskScheduleLabel } from '../../src/client/task-panel-view.js';
 import type { SourceFields } from '../../src/shared/contracts.js';
 afterEach(cleanup);
@@ -518,4 +522,61 @@ it('reset discards unfinished duration raw even when its source equals the basel
   expect(field).toHaveValue('2');
   expect(screen.queryByRole('alert')).toBeNull();
   expect(onDirty).toHaveBeenLastCalledWith(false);
+});
+
+it('explicit repair focuses the requested field after opening and while already open without a delayed focus', async () => {
+  const user = userEvent.setup();
+  function RepairEditor() {
+    const editor = useRef<TaskPanelScheduleHandle>(null);
+    const [plan, setPlan] = useState<SourceFields>({
+      inputStart: null,
+      inputFinish: null,
+      durationDays: 1,
+    });
+    return (
+      <>
+        <button onClick={() => editor.current?.focusField('durationDays')}>
+          Repair duration
+        </button>
+        <button onClick={() => editor.current?.focusField('inputFinish')}>
+          Repair finish
+        </button>
+        <TaskPanelSchedule
+          ref={editor}
+          plan={plan}
+          baselinePlan={plan}
+          project={optionalTreeFixture().project}
+          summary={false}
+          disabledReason={null}
+          error={null}
+          resetKey={0}
+          onChange={setPlan}
+          onValidityChange={vi.fn()}
+          onErrorChange={vi.fn()}
+          onRawChange={vi.fn()}
+          onEdit={vi.fn()}
+          onResetFields={vi.fn()}
+          onSave={async () => true}
+          incomingDirty={false}
+          saving={false}
+          cancelDisabled={false}
+          saveError={null}
+        />
+      </>
+    );
+  }
+  render(<RepairEditor />);
+  const duration = screen.getByLabelText('Длительность, рабочих дней');
+  // fireEvent flushes the opening commit and layout effect, without waiting for RAF.
+  fireEvent.click(screen.getByRole('button', { name: 'Repair duration' }));
+  expect(duration).toHaveFocus();
+  fireEvent.click(screen.getByRole('button', { name: 'Repair finish' }));
+  expect(screen.getByLabelText('Окончание')).toHaveFocus();
+  fireEvent.click(screen.getByRole('button', { name: 'Repair duration' }));
+  expect(duration).toHaveFocus();
+  await user.keyboard('{Escape}');
+  const trigger = screen.getByRole('button', { name: /^Сроки задачи:/ });
+  expect(trigger).toHaveFocus();
+  await user.click(trigger);
+  expect(screen.getByLabelText('Начало')).toHaveFocus();
 });

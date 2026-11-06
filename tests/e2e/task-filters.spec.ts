@@ -245,7 +245,10 @@ test('search and status reveal parent context, share Gantt rows and leave the re
   ).toBeVisible();
   await expect(
     taskTree(page).getByRole('treeitem', { name: /^Этап P,/ }),
-  ).toHaveAttribute('aria-description', 'Родительский контекст');
+  ).toHaveAttribute(
+    'aria-description',
+    'Родительский контекст. Enter — открыть · Insert — сосед · Shift+Enter — подзадача',
+  );
   await expect(page.locator('.gantt-work.critical')).toHaveCount(1);
   await page.screenshot({
     path: `/tmp/leaf-s4-${info.project.name}-filters.png`,
