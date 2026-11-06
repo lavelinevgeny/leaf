@@ -421,6 +421,10 @@ test('nested row menu, keyboard tabs and picker include done/summary/undated dup
   await projectTabs.getByRole('tab', { name: 'Задачи', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(
+    projectTabs.getByRole('tab', { name: 'Актуальное', exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(
     projectTabs.getByRole('tab', { name: 'Журнал', exact: true }),
   ).toBeFocused();
   await projectFeed(page)

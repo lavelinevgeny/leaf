@@ -1,5 +1,12 @@
 import { useJournal } from './use-journal.js';
 import { useProjectToday } from './use-project-today.js';
+import { CurrentTasks } from './CurrentTasks.js';
+import {
+  currentGroups,
+  defaultCurrentCollapsed,
+  type CurrentGroupId,
+  type CurrentOrigin,
+} from './current-view.js';
 import { ProjectViewTabs } from './ProjectViewTabs.js';
 import { ProjectJournal } from './ProjectJournal.js';
 import { TaskJournal } from './TaskJournal.js';
@@ -113,6 +120,16 @@ function isTextInput(target: EventTarget | null) {
 export function App() {
   const initialVisit = useRef(parseWorkspaceUrl(new URL(window.location.href)));
   const [projectView, setProjectView] = useState<ProjectView>('tasks');
+  const [currentCollapsed, setCurrentCollapsed] = useState(
+    defaultCurrentCollapsed,
+  );
+  const currentScrollTop = useRef(0);
+  const restoreCurrentScroll = useRef<number | null>(null);
+  const currentOrigin = useRef<CurrentOrigin | null>(null);
+  const currentRowFocus = useRef<{
+    element: HTMLElement;
+    origin: CurrentOrigin;
+  } | null>(null);
   const [journalQuery, setJournalQuery] = useState<JournalProjectQuery>({});
   const feedPosition = useRef<JournalPosition>({
     id: null,
@@ -137,6 +154,9 @@ export function App() {
     visit: WorkspaceVisit;
     index: number;
     collapsed: Set<string>;
+    currentCollapsed: Set<CurrentGroupId>;
+    currentScrollTop: number;
+    currentOrigin: CurrentOrigin | null;
     filter: TaskFilter;
     showGantt: boolean;
     query: JournalProjectQuery;
@@ -433,12 +453,25 @@ export function App() {
     else requestTaskNavigation(proceed);
     return true;
   }
-  function changeProjectView(view: ProjectView) {
-    if (journalLocked) return;
+  function changeProjectView(view: ProjectView): boolean {
+    if (
+      journalLocked ||
+      lock.current ||
+      pendingRef.current ||
+      conflictRef.current ||
+      loading
+    )
+      return false;
     lastCapture.current();
     cancelStartFocus();
     ++journalFocus.current;
+    ++branchRestore.current;
+    undoFocus.current = null;
+    currentRowFocus.current = null;
+    restoreCurrentScroll.current =
+      view === 'current' ? currentScrollTop.current : null;
     setProjectView(view);
+    return true;
   }
   function updateQuick(
     projectId: string,
@@ -623,6 +656,8 @@ export function App() {
   }
   async function loadProject(id: string, preserveDraft = false) {
     if (restoreStartHandle.current?.projectId !== id) cancelStartFocus();
+    undoFocus.current = null;
+    currentRowFocus.current = null;
     setDurationChoice(null);
     if (!preserveDraft) setImmediateHost(null);
     const sequence = ++loadSequence.current;
@@ -631,6 +666,10 @@ export function App() {
     setError(null);
     setNotice('');
     if (!preserveDraft) {
+      setCurrentCollapsed(defaultCurrentCollapsed());
+      currentScrollTop.current = 0;
+      restoreCurrentScroll.current = null;
+      currentOrigin.current = null;
       setProjectView('tasks');
       setShowGantt(true);
       timelineView.current = undefined;
@@ -1067,8 +1106,9 @@ export function App() {
     ));
   }
   // false: refused, or the reused panel will not take focus (focus returns to the trigger).
-  function selectTask(task: Task): boolean {
+  function selectTask(task: Task, origin?: CurrentOrigin): boolean {
     requestTaskNavigation(() => {
+      currentOrigin.current = origin ?? null;
       setSelected(task);
       setPanelTab('details');
       setPanelHistory([]);
@@ -1083,27 +1123,86 @@ export function App() {
     });
     return true;
   }
+  function focusVisible(element: HTMLElement | null, reveal = false): boolean {
+    if (
+      !element?.isConnected ||
+      element.closest('[hidden]') ||
+      element.matches(':disabled')
+    )
+      return false;
+    element.focus({ preventScroll: !reveal });
+    return true;
+  }
+  function focusCurrent(origin = currentOrigin.current) {
+    if (origin && origin.projectId === treeRef.current?.project.id) {
+      if (
+        focusVisible(
+          document.getElementById(`current-task-${origin.taskId}`),
+          true,
+        )
+      )
+        return;
+      if (
+        focusVisible(
+          document.getElementById(`current-group-${origin.groupId}`),
+          true,
+        )
+      )
+        return;
+    }
+    focusVisible(document.getElementById('project-tab-current'), true);
+  }
+  function focusActiveView(id?: string) {
+    if (projectView === 'current') {
+      focusCurrent();
+      return;
+    }
+    if (projectView === 'journal') {
+      if (!focusVisible(journalOrigin.current))
+        focusVisible(document.getElementById('project-tab-journal'));
+      return;
+    }
+    const mainTree = document.querySelector<HTMLElement>(
+      `[role="tree"][aria-label="${strings.tasks}"]`,
+    );
+    if (
+      !mainTree ||
+      mainTree.closest('[hidden]') ||
+      !(
+        (id && focusTaskRow(id, mainTree)) ||
+        (panelOrigin.current && focusTaskRow(panelOrigin.current, mainTree))
+      )
+    )
+      focusVisible(document.getElementById('quick-task'));
+  }
+  useLayoutEffect(() => {
+    if (projectView !== 'current') return;
+    const panel = document.getElementById('project-view-current');
+    if (panel && restoreCurrentScroll.current !== null) {
+      panel.scrollTop = restoreCurrentScroll.current;
+      currentScrollTop.current = panel.scrollTop;
+      restoreCurrentScroll.current = null;
+    }
+    const lost = currentRowFocus.current;
+    if (
+      lost &&
+      (!lost.element.isConnected || lost.element.closest('[hidden]'))
+    ) {
+      currentRowFocus.current = null;
+      if (
+        document.activeElement === document.body ||
+        document.activeElement === lost.element
+      )
+        focusCurrent(lost.origin);
+    }
+  }, [projectView, currentCollapsed, tree, projectToday]);
   function closePanel() {
     requestTaskNavigation(() => {
       const id = selected?.id;
       ++journalFocus.current;
       setSelected(null);
       setPanelHistory([]);
-      if (projectView === 'journal' && journalOrigin.current?.isConnected) {
-        journalOrigin.current.focus();
-        return;
-      }
-      const mainTree = document.querySelector(
-        `[role="tree"][aria-label="${strings.tasks}"]`,
-      );
-      if (
-        !mainTree ||
-        !(
-          (id && focusTaskRow(id, mainTree)) ||
-          (panelOrigin.current && focusTaskRow(panelOrigin.current, mainTree))
-        )
-      )
-        document.getElementById('quick-task')?.focus();
+      focusActiveView(id);
     });
   }
   function selectSubtask(task: Task): boolean {
@@ -1133,6 +1232,9 @@ export function App() {
     requestTaskNavigation(() => {
       if (!treeRef.current) return;
       cancelStartFocus();
+      undoFocus.current = null;
+      currentRowFocus.current = null;
+      restoreCurrentScroll.current = null;
       setProjectView('tasks');
       setTaskFilter(emptyTaskFilter);
       const byId = new Map(
@@ -1210,24 +1312,43 @@ export function App() {
   function action(value: TreeAction, task: Task): boolean | void {
     if (!canNavigate()) return false;
     if (value === 'sibling' || value === 'child') {
+      if (!changeProjectView('tasks')) return false;
       quickOrigin.current = task.id;
       setQuickEditing(true);
       setTaskFilter(emptyTaskFilter);
-      if (value === 'child')
-        setCollapsed((previous) => {
-          const next = new Set(previous);
-          next.delete(task.id);
-          return next;
-        });
+      const byId = new Map(
+        (treeRef.current?.tasks ?? []).map((item) => [item.id, item]),
+      );
+      setCollapsed((previous) => {
+        const next = new Set(previous);
+        let parentId = value === 'child' ? task.id : task.parentId;
+        while (parentId) {
+          next.delete(parentId);
+          parentId = byId.get(parentId)?.parentId ?? null;
+        }
+        return next;
+      });
       setContext(
         value === 'child'
           ? { parentId: task.id }
           : { parentId: task.parentId, afterId: task.id },
       );
       setSelected(null);
-      requestAnimationFrame(() =>
-        document.getElementById('quick-task')?.focus(),
-      );
+      const token = ++branchRestore.current;
+      const cancel = () => {
+        ++branchRestore.current;
+      };
+      for (const type of ['focusin', 'pointerdown', 'keydown'])
+        document.addEventListener(type, cancel, true);
+      requestAnimationFrame(() => {
+        for (const type of ['focusin', 'pointerdown', 'keydown'])
+          document.removeEventListener(type, cancel, true);
+        if (
+          token === branchRestore.current &&
+          currentProject.current === task.projectId
+        )
+          focusVisible(document.getElementById('quick-task'), true);
+      });
       return;
     }
     if (value === 'delete') {
@@ -1278,13 +1399,12 @@ export function App() {
     )
       return;
     if (!request.trigger.disabled) request.trigger.focus();
-    else {
+    else if (projectView === 'tasks') {
       const row = document.querySelector<HTMLElement>(
         '[role="tree"][aria-label="Задачи"] [role="treeitem"][tabindex="0"]',
       );
-      if (row) row.focus();
-      else document.getElementById('quick-task')?.focus();
-    }
+      if (!focusVisible(row)) focusActiveView();
+    } else focusActiveView();
   }, [restoreUndo, tree, busy, loading, pending]);
   async function undo() {
     if (!canNavigate() || !treeRef.current?.canUndo) return;
@@ -1517,6 +1637,9 @@ export function App() {
     visits.current.set(id, {
       ...previous,
       collapsed: new Set(collapsed),
+      currentCollapsed: new Set(currentCollapsed),
+      currentScrollTop: currentScrollTop.current,
+      currentOrigin: currentOrigin.current,
       filter: taskFilter,
       showGantt,
       query: journalQuery,
@@ -1547,6 +1670,9 @@ export function App() {
     const saved: SessionVisit = {
       ...(snapshot ?? {
         collapsed: new Set(),
+        currentCollapsed: defaultCurrentCollapsed(),
+        currentScrollTop: 0,
+        currentOrigin: null,
         filter: emptyTaskFilter,
         showGantt: true,
         query: {},
@@ -1621,7 +1747,14 @@ export function App() {
   };
   function restoreWorkspace(saved: SessionVisit, next: ProjectTree) {
     restorationApplied.current = true;
+    ++branchRestore.current;
     setRestorationTick((value) => value + 1);
+    undoFocus.current = null;
+    currentRowFocus.current = null;
+    setCurrentCollapsed(new Set(saved.currentCollapsed));
+    currentScrollTop.current = saved.currentScrollTop;
+    restoreCurrentScroll.current = saved.currentScrollTop;
+    currentOrigin.current = saved.currentOrigin;
     setProjectView(saved.visit.view);
     setSelected(
       next.tasks.find((task) => task.id === saved.visit.taskId) ?? null,
@@ -1652,6 +1785,9 @@ export function App() {
         visit,
         index: 0,
         collapsed: new Set(),
+        currentCollapsed: defaultCurrentCollapsed(),
+        currentScrollTop: 0,
+        currentOrigin: null,
         filter: emptyTaskFilter,
         showGantt: true,
         query: {},
@@ -1698,6 +1834,9 @@ export function App() {
       visit,
       index: old ? old.index + 1 : 0,
       collapsed: new Set(collapsed),
+      currentCollapsed: new Set(currentCollapsed),
+      currentScrollTop: currentScrollTop.current,
+      currentOrigin: currentOrigin.current,
       filter: taskFilter,
       showGantt,
       query: journalQuery,
@@ -1717,7 +1856,7 @@ export function App() {
   ]);
   useEffect(() => {
     captureVisit();
-  }, [collapsed, taskFilter, showGantt, journalQuery]);
+  }, [collapsed, currentCollapsed, taskFilter, showGantt, journalQuery]);
   const errorView = (
     <>
       {notice && (
@@ -1919,7 +2058,29 @@ export function App() {
   return (
     <div
       className="app-shell"
+      onPointerDownCapture={(event) => {
+        if (!(event.target as Element).closest('.current-row'))
+          currentRowFocus.current = null;
+      }}
+      onKeyDownCapture={(event) => {
+        if (!(event.target as Element).closest('.current-row'))
+          currentRowFocus.current = null;
+      }}
       onFocusCapture={(event) => {
+        const row = (event.target as Element).closest<HTMLElement>(
+          '.current-row',
+        );
+        currentRowFocus.current =
+          row && tree
+            ? {
+                element: row,
+                origin: {
+                  projectId: tree.project.id,
+                  taskId: row.id.slice('current-task-'.length),
+                  groupId: row.dataset.currentGroup as CurrentGroupId,
+                },
+              }
+            : null;
         if (!(event.target as Element).closest('#panel-journal'))
           ++journalFocus.current;
         if (
@@ -2194,6 +2355,43 @@ export function App() {
                   onToggle={toggle}
                   onSelect={selectTask}
                   onAction={action}
+                />
+              </div>
+              <div
+                id="project-view-current"
+                role="tabpanel"
+                aria-labelledby="project-tab-current"
+                hidden={projectView !== 'current'}
+                className={`project-current-container${selectedTask ? ' panel-visible' : ''}`}
+                onScroll={(event) => {
+                  if (projectView !== 'current') return;
+                  restoreCurrentScroll.current = null;
+                  currentScrollTop.current = event.currentTarget.scrollTop;
+                  lastCapture.current();
+                }}
+              >
+                <CurrentTasks
+                  groups={currentGroups(
+                    tree.tasks,
+                    tree.project.calendarType,
+                    projectToday,
+                  )}
+                  collapsed={currentCollapsed}
+                  onToggle={(id) =>
+                    setCurrentCollapsed((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                  onOpen={(task, groupId) =>
+                    selectTask(task, {
+                      projectId: tree.project.id,
+                      taskId: task.id,
+                      groupId,
+                    })
+                  }
                 />
               </div>
               <div

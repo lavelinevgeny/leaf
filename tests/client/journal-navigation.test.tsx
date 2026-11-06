@@ -74,6 +74,13 @@ it('validates UUID/enums and emits only allowlisted URL fields and opaque histor
       new URL(`https://leaf.test/${workspaceUrl(visit)}&q=private`),
     ),
   ).toEqual(visit);
+  expect(
+    parseWorkspaceUrl(
+      new URL(
+        `https://leaf.test/${workspaceUrl({ ...visit, view: 'current' })}`,
+      ),
+    ),
+  ).toEqual({ ...visit, view: 'current' });
   writeWorkspaceVisit(visit, 'synthetic-visit', 'replace');
   expect(window.history.state).toEqual({
     leaf: { version: 1, visitId: 'synthetic-visit' },
