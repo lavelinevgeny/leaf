@@ -103,6 +103,9 @@ export function TaskTimeline({
   draft,
   filter = emptyTaskFilter,
 }: Props) {
+  const [keyboardHint, setKeyboardHint] = useState<'row' | 'input' | null>(
+    null,
+  );
   const projection = useMemo(
     () => filterTasks(tree.tasks, filter),
     [tree.tasks, filter],
@@ -381,12 +384,42 @@ export function TaskTimeline({
         onScroll={captureView}
       >
         <div className={`timeline-columns${show ? '' : ' list-view'}`}>
-          <div className="timeline-tree">
+          <div
+            className="timeline-tree"
+            onFocusCapture={(event) =>
+              setKeyboardHint(
+                event.target.matches('[role="treeitem"]')
+                  ? 'row'
+                  : event.target.id === 'quick-task'
+                    ? 'input'
+                    : null,
+              )
+            }
+            onBlurCapture={() => setKeyboardHint(null)}
+            onKeyDownCapture={(event) => {
+              if (
+                event.key === 'Escape' &&
+                event.target instanceof HTMLElement &&
+                event.target.id === 'quick-task'
+              )
+                setKeyboardHint(null);
+            }}
+          >
             <div className="timeline-heading">
-              {strings.title}
-              <span>
-                {strings.start} / {strings.finish}
-              </span>
+              <div className="timeline-heading-labels">
+                <span>{strings.title}</span>
+                <span>
+                  {strings.start} / {strings.finish}
+                </span>
+              </div>
+              <p className="tree-keyboard-hint">
+                {active &&
+                  (keyboardHint === 'row'
+                    ? strings.treeKeyboardHint
+                    : keyboardHint === 'input'
+                      ? `${strings.quickKeyboardHint} · ${strings.quickCancelHint}`
+                      : '')}
+              </p>
             </div>
             <TaskTree {...treeProps} onJournal={onJournal} />
             {projection.active &&

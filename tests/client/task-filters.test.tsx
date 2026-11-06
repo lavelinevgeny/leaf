@@ -275,10 +275,10 @@ it('reveals matches in collapsed branches and shares literal rows with Gantt wit
   expect(screen.getByText('Найдено задач: 1')).toBeVisible();
   expect(
     screen.getByRole('treeitem', { name: /Этап A,/ }),
-  ).toHaveAccessibleDescription('Родительский контекст');
+  ).toHaveAccessibleDescription(/^Родительский контекст/);
   expect(
     screen.getByRole('treeitem', { name: /Монтаж A,/ }),
-  ).not.toHaveAccessibleDescription('Родительский контекст');
+  ).not.toHaveAccessibleDescription(/^Родительский контекст/);
   expect(fetchMock.mock.calls).toHaveLength(requests);
   expect(tree).toEqual(before);
 });

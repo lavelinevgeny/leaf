@@ -19,6 +19,7 @@ export interface AddContext {
   afterId?: string;
 }
 interface Props {
+  active?: boolean;
   tree: ProjectTree;
   predecessorIds: string[];
   onPredecessors: (ids: string[]) => void;
@@ -52,6 +53,7 @@ interface Props {
   onCancel?: () => void;
 }
 export function QuickAdd({
+  active = true,
   tree,
   predecessorIds,
   onPredecessors,
@@ -80,6 +82,9 @@ export function QuickAdd({
   onCancel,
 }: Props) {
   const [editing, setEditing] = useState(false);
+  const [titleFocused, setTitleFocused] = useState(false);
+  const composing = useRef(false);
+  const submitting = useRef(false);
   const chip = useRef<HTMLButtonElement>(null);
   const chain = useRef<HTMLButtonElement>(null);
   const [predecessorsOpen, setPredecessorsOpen] = useState(false);
@@ -140,17 +145,60 @@ export function QuickAdd({
   const [restoreFocus, setRestoreFocus] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const parent = tasks.find((task) => task.id === context.parentId);
+  const focusRequest = useRef<{
+    input: HTMLInputElement;
+    revoked: boolean;
+  } | null>(null);
+  useEffect(() => {
+    const leave = (event: FocusEvent) => {
+      if (focusRequest.current && event.target !== focusRequest.current.input)
+        focusRequest.current.revoked = true;
+    };
+    document.addEventListener('focusin', leave);
+    return () => {
+      document.removeEventListener('focusin', leave);
+      focusRequest.current = null;
+    };
+  }, []);
+  const previousContext = useRef({
+    parentId: context.parentId,
+    afterId: context.afterId,
+    acknowledgement,
+    active,
+  });
+  useEffect(() => {
+    const previous = previousContext.current;
+    if (
+      !active ||
+      previous.parentId !== context.parentId ||
+      (previous.afterId !== context.afterId &&
+        previous.acknowledgement === acknowledgement)
+    ) {
+      if (focusRequest.current) focusRequest.current.revoked = true;
+    }
+    previousContext.current = {
+      parentId: context.parentId,
+      afterId: context.afterId,
+      acknowledgement,
+      active,
+    };
+  }, [context.parentId, context.afterId, acknowledgement, active]);
   useEffect(() => {
     if (!restoreFocus || busy || blocked) return;
-    const active = document.activeElement;
+    const request = focusRequest.current;
+    focusRequest.current = null;
     if (
-      active === document.body ||
-      active === input.current ||
-      (active && input.current?.form?.contains(active))
+      request &&
+      !request.revoked &&
+      active &&
+      request.input === input.current &&
+      request.input.isConnected &&
+      !request.input.disabled &&
+      !request.input.closest('[hidden]')
     )
-      input.current?.focus();
+      request.input.focus();
     setRestoreFocus(false);
-  }, [restoreFocus, busy, blocked]);
+  }, [restoreFocus, busy, blocked, active]);
   const previousAck = useRef(acknowledgement);
   useEffect(() => {
     if (acknowledgement === previousAck.current) return;
@@ -160,12 +208,27 @@ export function QuickAdd({
     setRestoreFocus(true);
   }, [acknowledgement]);
   async function submit() {
-    if (!title.trim() || busy || blocked || !!submitBlockedReason || !canSubmit)
+    if (
+      !title.trim() ||
+      composing.current ||
+      submitting.current ||
+      busy ||
+      blocked ||
+      !!submitBlockedReason ||
+      !canSubmit
+    )
       return;
+    submitting.current = true;
+    if (input.current)
+      focusRequest.current = { input: input.current, revoked: false };
     sentRawVersion.current = rawVersion.current;
-    if (await onCreate(title, context, plan, predecessorIds)) {
-      acknowledgeFields();
-      setRestoreFocus(true);
+    try {
+      if (await onCreate(title, context, plan, predecessorIds)) {
+        acknowledgeFields();
+        setRestoreFocus(true);
+      }
+    } finally {
+      submitting.current = false;
     }
   }
   return (
@@ -184,7 +247,14 @@ export function QuickAdd({
       }}
     >
       <div className="quick-line">
-        <span className="draft-dot" aria-hidden="true">
+        <button
+          type="button"
+          className="draft-dot quick-focus"
+          aria-label={strings.focusQuickInput}
+          title={strings.focusQuickInput}
+          disabled={busy || blocked}
+          onClick={() => input.current?.focus()}
+        >
           {inline ? (
             <svg
               width="16"
@@ -201,19 +271,39 @@ export function QuickAdd({
           ) : (
             '＋'
           )}
-        </span>
+        </button>
         <input
           id={inputId}
           ref={input}
           aria-label={strings.newTask}
-          aria-description={`${strings.parent}: ${parent?.title ?? strings.root}. ${strings.quickHint}`}
+          aria-description={`${strings.parent}: ${parent?.title ?? strings.root}. ${strings.quickKeyboardHint} · ${inline ? strings.quickCancelHint : strings.quickExitHint}`}
           placeholder={strings.newTask}
           value={title}
           maxLength={300}
           disabled={busy || blocked}
-          onFocus={beginEditing}
+          onFocus={() => {
+            setTitleFocused(true);
+            beginEditing();
+          }}
+          onBlur={() => setTitleFocused(false)}
+          onCompositionStart={() => {
+            composing.current = true;
+          }}
+          onCompositionEnd={() => {
+            composing.current = false;
+          }}
           onChange={(event) => onTitle(event.target.value)}
           onKeyDown={(event) => {
+            if (
+              composing.current ||
+              event.nativeEvent.isComposing ||
+              event.keyCode === 229
+            ) {
+              if (event.key === 'Enter') event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            if (event.key === 'Enter') event.stopPropagation();
             if (event.altKey && event.key.toLowerCase() === 'l') {
               event.preventDefault();
               event.stopPropagation();
@@ -230,6 +320,7 @@ export function QuickAdd({
               return;
             }
             if (event.key === 'Escape') {
+              setTitleFocused(false);
               event.preventDefault();
               event.stopPropagation();
               if (inline) cancel();
@@ -354,7 +445,11 @@ export function QuickAdd({
         <span>
           {strings.parent}: {parent?.title ?? strings.root}
         </span>
-        <span>{strings.quickHint}</span>
+        {!inline && titleFocused && editing && (
+          <span>
+            {strings.quickKeyboardHint} · {strings.quickExitHint}
+          </span>
+        )}
         {(predecessorIds.length > 0 ||
           title ||
           plan.inputStart !== null ||

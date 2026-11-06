@@ -224,3 +224,20 @@ Public export/import и контейнерная приёмка не подме�
 | D08 | date-entry actual-server: short → blur/C18 → invalid/no write → repair/Enter/save; оба desktop viewport 1440×900 и 1280×800, поля/hint и необрезанные partial labels. |
 
 Фактические результаты финальных команд и ограничения — в [STATUS](STATUS.md). S4–S6 и первый релиз остаются незавершёнными.
+
+## D27 — обнаруживаемый keyboard entry
+
+[Спецификация и K01–K08](superpowers/specs/2026-11-06-keyboard-entry-design.md) проверяются controlled client fixtures, реальным App и synthetic actual-server `keyboard-entry.spec.ts`:
+
+| ID | Проверка |
+|---|---|
+| K01 | Плюс Click/Enter/Space, сохранение draft/source/context, busy/blocked; browser target ≥28×28. |
+| K02 | Точный row/title focus, скрытие на action/date/Escape, один hint в области; 266/346 px, оба viewport, header/toolbar/row 58/44/38 без сдвига. |
+| K03 | Row Enter/Insert/Shift+Insert/Shift+Enter, изоляция дочерних controls; прежние title/date Tab rules. |
+| K04 | Две root/child записи, точные App parent/after и server order/defaults, пустой Enter без записи. |
+| K05 | Существующие uncertain/exact retry/raw draft fixtures сохраняют snapshot semantics и единственную запись. |
+| K06 | Controlled pending restore/revoke; настоящий App delayed ack/retry, outside → blur → body; context/hidden/active/unmount. |
+| K07 | Composition Enter отменяет default/submit; отдельный следующий Enter даёт одну запись. |
+| K08 | Actual-server root/child, dates/FS draft, validation correction и следующая запись, panel/list/Gantt smoke, geometry. |
+
+Browser composition проверяется синтетическими DOM events, аппаратная OS IME не автоматизирована. Результаты команд — в [STATUS](STATUS.md).

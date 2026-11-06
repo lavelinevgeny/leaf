@@ -48,6 +48,7 @@ export function TaskTree({
   draftInput,
   disabled = false,
 }: Props) {
+  const [rowFocused, setRowFocused] = useState(false);
   const summaryIds = new Set(tasks.map((task) => task.parentId));
   const global = new Set(
     schedule?.analysisStatus === 'ready' ? schedule.criticalTaskIds : [],
@@ -91,16 +92,21 @@ export function TaskTree({
       role="tree"
       aria-label={label}
       className="task-tree"
-      onFocus={() => {
+      onFocus={(event) => {
+        setRowFocused(event.target.matches('[role="treeitem"]'));
         ownsFocus.current = true;
       }}
       onBlur={(event) => {
+        setRowFocused(false);
         if (event.relatedTarget)
           ownsFocus.current = event.currentTarget.contains(
             event.relatedTarget as Node,
           );
       }}
     >
+      {rootId && rowFocused && (
+        <p className="tree-keyboard-hint">{strings.treeKeyboardHint}</p>
+      )}
       {rows.map(({ task, depth, hasChildren }, index) => {
         if (task.id === draftTaskId)
           return (
@@ -144,7 +150,11 @@ export function TaskTree({
             aria-label={`${task.title}, ${statusLabels[task.status]}${computedDateLabel(task, schedule) ? `, ${computedDateLabel(task, schedule)}` : ''}`}
             aria-level={depth + 1}
             aria-description={
-              [contextOnly ? strings.parentContext : '', errorLabel]
+              [
+                contextOnly ? strings.parentContext : '',
+                errorLabel,
+                strings.treeKeyboardHint,
+              ]
                 .filter(Boolean)
                 .join('. ') || undefined
             }

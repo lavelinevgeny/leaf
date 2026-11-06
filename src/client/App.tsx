@@ -2255,6 +2255,7 @@ export function App() {
                       !!quickDrafts[tree.project.id]?.plan.inputFinish,
                     input: (
                       <QuickAdd
+                        active={projectView === 'tasks'}
                         tree={tree}
                         predecessorIds={
                           quickDrafts[tree.project.id]?.predecessorIds ?? []
@@ -2601,6 +2602,7 @@ export function App() {
           subtaskDraftActive={!!subtaskDraft && hasQuickDraft(subtaskDraft)}
           subtaskInput={
             <QuickAdd
+              active={visiblePanelTab(panelTab) === 'details'}
               tree={tree}
               predecessorIds={subtaskDraft?.predecessorIds ?? []}
               onPredecessors={(predecessorIds) =>

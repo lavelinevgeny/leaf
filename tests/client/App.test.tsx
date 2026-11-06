@@ -2337,8 +2337,116 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     );
     await user.keyboard('{ArrowDown}{Enter}{Escape}');
   }
+  it.each([false, true])(
+    'K06 real App delayed ack never restores after outside then body (retry: %s)',
+    async (retry) => {
+      tree.tasks = [task(1, 'A')];
+      await open();
+      const user = userEvent.setup();
+      const title = screen.getByLabelText('Новая задача');
+      await user.type(title, 'Сохранённая');
+      if (retry) {
+        fetchMock.mockImplementationOnce(() =>
+          Promise.reject(new TypeError('synthetic offline')),
+        );
+        await user.keyboard('{Enter}');
+        await screen.findByText(/Нет связи с сервером/);
+      }
+      const original = fetchMock.getMockImplementation()! as (
+        url: string,
+        init?: RequestInit,
+      ) => Promise<Response>;
+      let resolve!: (response: Response) => void,
+        accepted: Response | undefined;
+      const response = new Promise<Response>((done) => {
+        resolve = done;
+      });
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url.endsWith('/commands') && init?.method === 'POST') {
+          void Promise.resolve(original(url, init)).then((value) => {
+            accepted = value;
+          });
+          return response;
+        }
+        return original(url, init);
+      });
+      if (retry)
+        await user.click(screen.getByRole('button', { name: 'Повторить' }));
+      else await user.keyboard('{Enter}');
+      await waitFor(() => expect(accepted).toBeDefined());
+      const outside = screen.getByRole('tab', { name: 'Журнал' });
+      outside.focus();
+      outside.blur();
+      expect(document.activeElement).toBe(document.body);
+      await act(async () => resolve(accepted!));
+      await waitFor(() => expect(title).toHaveValue(''));
+      expect(document.activeElement).toBe(document.body);
+      expect(
+        tree.tasks.filter((task) => task.title === 'Сохранённая'),
+      ).toHaveLength(1);
+      if (retry) {
+        const bodies = fetchMock.mock.calls
+          .filter(([url]) => String(url).endsWith('/commands'))
+          .map(([, init]) => init?.body);
+        expect(bodies[0]).toBe(bodies[1]);
+      }
+    },
+  );
+  it.each([null, id(1)])(
+    'K04 two sequential creates preserve parent/after and defaults: %s',
+    async (parentId) => {
+      tree.tasks = [task(1, 'Этап')];
+      await open();
+      const user = userEvent.setup();
+      if (parentId) {
+        const row = screen.getByRole('treeitem', { name: /^Этап,/ });
+        row.focus();
+        await user.keyboard('{Shift>}{Enter}{/Shift}');
+      }
+      const input = screen.getByLabelText('Новая задача');
+      for (const title of ['Первый', 'Второй']) {
+        await user.type(input, title);
+        await user.keyboard('{Enter}');
+        await waitFor(() => expect(input).toHaveValue(''));
+        expect(input).toHaveFocus();
+      }
+      expect(commands).toHaveLength(2);
+      expect(commands[0]!.command).toMatchObject({
+        type: 'task.create',
+        parentId,
+        title: 'Первый',
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
+        predecessorIds: [],
+      });
+      expect(commands[1]!.command).toMatchObject({
+        type: 'task.create',
+        parentId,
+        afterId: id(51),
+        title: 'Второй',
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
+        predecessorIds: [],
+      });
+      expect(
+        tree.tasks
+          .filter((t) => t.title === 'Первый' || t.title === 'Второй')
+          .map((t) => [t.parentId, t.sortOrder]),
+      ).toEqual([
+        [parentId, 1],
+        [parentId, 2],
+      ]);
+      await user.keyboard('{Enter}');
+      expect(commands).toHaveLength(2);
+      expect(
+        screen.queryByRole('complementary', { name: 'Задача' }),
+      ).toBeNull();
+    },
+  );
   it.each(['main', 'subtask'] as const)(
-    'confirms %s IDs and restores correct title focus after global exact retry',
+    'confirms %s IDs without stealing title focus after global exact retry',
     async (entry) => {
       tree.tasks = [task(1, 'Этап'), task(2, 'A', null, 1)];
       await open();
@@ -2370,7 +2478,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         expect(scope.getByLabelText('Новая задача')).toHaveValue(''),
       );
       await waitFor(() =>
-        expect(scope.getByLabelText('Новая задача')).toHaveFocus(),
+        expect(scope.getByLabelText('Новая задача')).not.toHaveFocus(),
       );
       expect(
         fetchMock.mock.calls

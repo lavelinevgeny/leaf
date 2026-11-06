@@ -1,4 +1,10 @@
 export const strings = {
+  focusQuickInput: 'Перейти к вводу задачи',
+  treeKeyboardHint:
+    'Enter — открыть · Insert — сосед · Shift+Enter — подзадача',
+  quickKeyboardHint: 'Enter — добавить · Tab / Shift+Tab — уровень',
+  quickCancelHint: 'Esc — отменить',
+  quickExitHint: 'Esc — выйти',
   addPredecessor: 'Добавить предшественника',
   addSuccessor: 'Добавить последователя',
   closeSuccessors: 'Закрыть выбор последователей',
