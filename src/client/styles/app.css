@@ -1217,3 +1217,11 @@ h2 {
     flex-basis: 80px;
   }
 }
+@media (min-width: 1200px) {
+  .workspace[data-project-view='current'] .project-title-line {
+    flex: 1 1 0;
+  }
+  .workspace[data-project-view='current'] .workspace-actions {
+    flex: 0 0 auto;
+  }
+}

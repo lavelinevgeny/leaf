@@ -3,6 +3,7 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  container: current-tasks / inline-size;
 }
 .current-tasks {
   padding: 12px 24px 32px;
@@ -38,7 +39,8 @@
   font-weight: 400;
 }
 .current-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr) 205px;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -59,7 +61,6 @@
   outline-offset: -2px;
 }
 .current-status {
-  flex: 0 0 13px;
   width: 13px;
   height: 13px;
   border: 1.5px solid #a6afb0;
@@ -70,7 +71,6 @@
   background: #dcecf8;
 }
 .current-task-text {
-  flex: 1;
   min-width: 0;
   display: grid;
   gap: 4px;
@@ -87,7 +87,6 @@
   font-size: 12px;
 }
 .current-date {
-  flex: 0 1 205px;
   min-width: 0;
   display: grid;
   gap: 4px;
@@ -109,20 +108,20 @@
   color: var(--leaf-text-muted);
   font-size: 13px;
 }
-@media (max-width: 600px) {
+@container current-tasks (max-width: 560px) {
   .current-tasks {
     padding: 8px 12px 24px;
   }
   .current-row {
-    flex-wrap: wrap;
-    gap: 8px;
+    grid-template-columns: 13px minmax(0, 1fr);
+    gap: 4px 8px;
   }
-  .current-task-text {
-    flex-basis: calc(100% - 25px);
+  .current-status {
+    align-self: start;
+    margin-top: 4px;
   }
   .current-date {
-    flex-basis: 100%;
-    margin-left: 21px;
+    grid-column: 2;
   }
 }
 

@@ -2152,6 +2152,7 @@ export function App() {
       />
       <main
         className={`workspace${selectedTask ? ' panel-visible' : ''}`}
+        data-project-view={projectView}
         tabIndex={-1}
       >
         {session.demoMode && (
