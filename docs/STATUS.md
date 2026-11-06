@@ -1,5 +1,15 @@
 # Статус разработки
 
+## Короткий ввод дат — реализация UI2, 2026-11-06
+
+Реализован рабочий D26 по [спецификации](superpowers/specs/2026-11-06-date-entry-design.md): чистый parser, короткий ввод только task scheduling fields, год timezone проекта с фиксацией до commit/reset, доступные подсказки и полная дата после завершения ввода. Invalid raw сохраняется побайтно, C18/nullable/guards/exact retry не изменены. Общий TaskTree подписывает единственную реальную дату «Начало:» / «Окончание:» в списке, Ганте и подзадачах; компактные chips и условные значения не расширены. API/schema/scheduler/storage/dependencies не менялись. Существующая ширина дат достаточна в обоих desktop viewport; новая геометрия строк не вводилась.
+
+Затронуты CalendarDateInput, PlanFields, date-input, gantt-view, TaskTree, planning.css, parser/component/planning/formatter/App tests и actual-server date-entry E2E; обновлены DECISIONS/UI/ACCEPTANCE. RED до реализации: parser missing module; component 3 failures из-за отсутствия hint/frozen year и trimming invalid raw; planning/labels 4 failures из-за отсутствия нового контракта. Затем targeted checks GREEN. Draft/retry сценарии расширены в App tests, где находятся реальные scoped drafts и operation envelopes.
+
+Финальный source: PASS `npm run verify` — typecheck, lint, 1378/1378 tests в 82 файлах, build; PASS `npm run format:check`; PASS `npx playwright test tests/e2e/date-entry.spec.ts tests/e2e/linked-plan-fields.spec.ts tests/e2e/workspace-layout.spec.ts` — 20/20, 1440×900 и 1280×800, без skipped/retries, после final build. PASS `npm run check:kit` — 80 Markdown files, 500 local links, 3 approved references; `git diff --check`. Сохраняется build warning о chunk >500 kB. Первоначальный browser запуск использовал прежний dist: его 18 passing cases не засчитывались, все 20 повторены на окончательной сборке.
+
+NOT RUN: all-spec E2E, publication preflight/package/Docker/remote CI. Известный исходный workspace guard failure на локальных private settings/ignored screenshots не исправлялся, private файлы не читались. Локальный commit подлежит независимому exact-SHA spec/quality review у координатора; main/ветки/worktree/remote implementer не меняет. Push/deployment не выполнялись. Следующий шаг — независимые reviews и локальное слияние координатором; S4–S6 и первый релиз остаются незавершёнными.
+
 ## Короткий ввод дат — спецификация, 2026-11-06
 
 Подготовлена [спецификация UI2](superpowers/specs/2026-11-06-date-entry-design.md): короткий ввод task dates с текущим годом timezone проекта, явной подсказкой года и полным форматом после commit; видимые «Начало / Окончание» для неполных строк дерева. Рабочий D26 сохраняет C18/C19, nullable, черновики и прежние журнал/фильтр периода. Прочитаны актуальные компоненты и UI после UI1; затронуты только спецификация и STATUS. PASS: `npm run check:kit` (79 Markdown files, 495 local links, 3 approved references), `git diff --check`. Код и тесты не менялись, application/runtime проверки не запускались. Следующий шаг — независимое review, затем отдельный агент плана. Коммитов и внешних действий автор спецификации не выполнял.

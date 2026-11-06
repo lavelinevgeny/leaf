@@ -188,6 +188,19 @@ export function compactDateLabel(
   const year = start.slice(0, 4) !== finish.slice(0, 4);
   return `${day(start)} ${month(start)}${year ? ` ${start.slice(0, 4)}` : ''} – ${day(finish)} ${month(finish)}${year ? ` ${finish.slice(0, 4)}` : ''}`;
 }
+export function treeDateLabel(
+  task: Task,
+  schedule?: ProjectTree['schedule'],
+): string {
+  const compact = compactDateLabel(task, schedule);
+  if (schedule?.summaries[task.id]) return compact;
+  const [start, finish] = realDates(task, schedule);
+  return start && !finish
+    ? `Начало: ${compact}`
+    : finish && !start
+      ? `Окончание: ${compact}`
+      : compact;
+}
 export function calendarDays(start: string, count: number) {
   return Array.from({ length: count }, (_, index) => {
     const date = shiftDate(start, index);

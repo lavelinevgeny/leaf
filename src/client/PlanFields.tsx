@@ -331,6 +331,7 @@ export function PlanFields({
               resetKey={resetKey}
               label={field === 'inputStart' ? strings.start : strings.finish}
               value={plan[field]}
+              referenceToday={today}
               descriptionId={
                 activeError?.field === field ? `${hintId} ${errorId}` : hintId
               }

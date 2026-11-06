@@ -207,3 +207,20 @@ Public export/import и контейнерная приёмка не подме�
 - L08: CSS1199/1200,899/900,600/601 и focus transfer. PASS отдельный native browser zoom200% на UI1 `5ba03b1`: свежий headed Chromium/Xvfb и disposable syntheticRuntime; X11 XTest Ctrl+equal ×5 изменили viewport1440×813→720×406, DPR1→2. Панель fixed fullscreen720×406.5 CSS px, clientWidth/scrollWidth без горизонтального переполнения. Close находится в viewport и проходит elementFromPoint; Enter закрывает панель с возвратом фокуса в исходный treeitem. Sidebar Enter/Space, повторное открытие карточки Enter и повторное закрытие с возвратом фокуса PASS; readTree неизменен. CSS zoom/pageScaleFactor/deviceScale emulation не использовались.
 
 Новый client test дополнительно проверяет раскрытие проектов после logout/login на независимом HTTP fixture. L08 дополнен настоящим browser zoom200%; CSS boundary tests остаются отдельными проверками. Синтетический screenshot вне checkout просмотрен; browser/context/runtime/Xvfb закрыты. Пользовательские browser profiles и данные не использовались.
+
+## UI2 / D26 — короткий ввод дат, 2026-11-06
+
+Синтетические fixtures и actual-server browser scenario: [спецификация D01–D08](superpowers/specs/2026-11-06-date-entry-design.md).
+
+| Приёмка | Evidence |
+|---|---|
+| D01 | date-input: 17 независимых parser cases; planning: оба editable поля и полный формат после commit. |
+| D02 | calendar-date-input: замороженный год, Enter/explicit commit/reset и новый ввод; planning: UTC/Tokyo на границе года. |
+| D03 | parser leap/invalid/unfinished/двухзначный год/whitespace; controlled field сохраняет raw bytes; planning проверяет ошибки, correction и clear обоих полей. |
+| D04 | hint и внешний description связаны с input; today-only legacy и picker/Today одиночные commits; summary без referenceToday. |
+| D05 | planning проверяет C18 до/после commit; date-entry E2E сравнивает неизменный server snapshot до save и revision +1 после. |
+| D06 | App scoped drafts/exact retry: short-derived ISO ребёнка, независимый invalid raw основного draft, сброс только подтверждённой ветки; combined save повторяет тот же envelope. Существующие guards проходят общий suite. |
+| D07 | gantt-view independent labels/chips/full/same-day/empty; date-entry проверяет список, левое дерево Ганта и подзадачи, полные title/aria и одинаковую высоту строк. |
+| D08 | date-entry actual-server: short → blur/C18 → invalid/no write → repair/Enter/save; оба desktop viewport 1440×900 и 1280×800, поля/hint и необрезанные partial labels. |
+
+Фактические результаты финальных команд и ограничения — в [STATUS](STATUS.md). S4–S6 и первый релиз остаются незавершёнными.

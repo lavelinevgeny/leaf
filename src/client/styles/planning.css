@@ -1010,3 +1010,9 @@
     position: static;
   }
 }
+
+.date-year-hint {
+  font-size: 11px;
+  color: var(--leaf-text-muted);
+  line-height: 1.3;
+}

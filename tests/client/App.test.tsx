@@ -577,6 +577,8 @@ describe('client HTTP interactions', () => {
     expect(tree).toEqual(before);
   });
   it('keeps source drafts separate and resets only the confirmed branch on exact retry', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-06T12:00:00Z'));
     tree.tasks = [task(1, 'Этап')];
     await open();
     const user = userEvent.setup();
@@ -584,6 +586,10 @@ describe('client HTTP interactions', () => {
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.clear(main.getByLabelText('Длительность, рабочих дней'));
     await user.type(main.getByLabelText('Длительность, рабочих дней'), '5');
+    await user.click(main.getByLabelText('Начало'));
+    fireEvent.change(main.getByLabelText('Начало'), {
+      target: { value: ' 31.2 ' },
+    });
     await user.tab();
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
@@ -597,6 +603,12 @@ describe('client HTTP interactions', () => {
         panel.getByRole('dialog', { name: 'Сроки задачи' }),
       ).getByLabelText('Длительность, рабочих дней'),
     );
+    await user.tab();
+    const childStart = within(
+      panel.getByRole('dialog', { name: 'Сроки задачи' }),
+    ).getByLabelText('Начало');
+    await user.click(childStart);
+    fireEvent.change(childStart, { target: { value: '7.11' } });
     await user.tab();
     fetchMock.mockImplementationOnce(() =>
       Promise.reject(new TypeError('synthetic offline')),
@@ -627,7 +639,7 @@ describe('client HTTP interactions', () => {
     ).toBe(firstBody);
     expect(commands[0]?.command).toMatchObject({
       durationDays: null,
-      inputStart: null,
+      inputStart: '2026-11-07',
       inputFinish: null,
     });
     await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
@@ -640,11 +652,13 @@ describe('client HTTP interactions', () => {
     await user.click(panel.getByRole('button', { name: 'Закрыть панель' }));
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue('5');
+    expect(main.getByLabelText('Начало')).toHaveValue(' 31.2 ');
     await user.click(
       main.getByRole('button', { name: 'Отменить ввод задачи' }),
     );
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue('1');
+    vi.useRealTimers();
   });
 
   it('accounts for a changed source draft without a title when leaving the page', async () => {
@@ -1031,6 +1045,8 @@ describe('client HTTP interactions', () => {
   });
 
   it('preserves a combined plan draft and retries the exact envelope after a lost save response', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-06T12:00:00Z'));
     tree = { ...tree, tasks: [task(1, 'Работа A')] };
     await open();
     const user = userEvent.setup();
@@ -1043,6 +1059,11 @@ describe('client HTTP interactions', () => {
     await user.type(screen.getByLabelText('Название задачи'), 'Работа revised');
     await user.click(screen.getByRole('button', { name: /^Сроки задачи:/ }));
     await user.type(screen.getByLabelText('Длительность, рабочих дней'), '9');
+    await user.click(screen.getByLabelText('Начало'));
+    fireEvent.change(screen.getByLabelText('Начало'), {
+      target: { value: '9.11' },
+    });
+    await user.tab();
     let first: CommandEnvelope | undefined;
     fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
       first = JSON.parse(String(init.body)) as CommandEnvelope;
@@ -1075,11 +1096,17 @@ describe('client HTTP interactions', () => {
     await screen.findByText('Сохранено', { exact: true });
     expect(first?.command).toMatchObject({
       type: 'task.edit',
-      changes: { title: 'Работа revised', durationDays: 9 },
+      changes: {
+        title: 'Работа revised',
+        durationDays: 9,
+        inputStart: '2026-11-09',
+        inputFinish: '2026-11-19',
+      },
     });
     expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(
       '9',
     );
+    vi.useRealTimers();
   });
   it('keeps quick intent on rejected stale reload and reconciles it only on a fresh conflict snapshot', async () => {
     tree = {

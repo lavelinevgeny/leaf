@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ControlIcon } from './ControlIcon.js';
 import { draftTaskId } from './quick-add-view.js';
 import type { ProjectTree, Task } from '../shared/contracts.js';
-import { compactDateLabel, computedDateLabel } from './gantt-view.js';
+import { treeDateLabel, computedDateLabel } from './gantt-view.js';
 import { treeRows } from './tree-view.js';
 import { actionableDiagnostics } from './schedule-diagnostics.js';
 import { diagnosticLabels, statusLabels, strings } from './strings.js';
@@ -290,7 +290,7 @@ export function TaskTree({
               className="task-date"
               title={computedDateLabel(task, schedule) || strings.noDate}
             >
-              {compactDateLabel(task, schedule) || strings.noDate}
+              {treeDateLabel(task, schedule) || strings.noDate}
             </span>
             {/* Zero-width sticky anchor: the actions overlay the row end (and
                 its date) instead of reserving space, and stay at the visible

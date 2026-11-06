@@ -11,7 +11,10 @@ import { optionalTreeFixture } from './fixtures.js';
 import type { Command, ProjectTree } from '../../src/shared/contracts.js';
 import { waitFor } from '@testing-library/react';
 import { task } from './fixtures.js';
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 function Editor({
   source = task(1, {
     inputStart: '2026-10-09',
@@ -19,11 +22,13 @@ function Editor({
     durationDays: 2,
   }),
   onChange = vi.fn(),
+  timezone = 'UTC',
   calendar = 'weekdays' as 'weekdays' | 'all-days',
 }) {
   const [plan, setPlan] = useState(sourceOf(source));
   return (
     <PlanFields
+      timezone={timezone}
       task={source}
       plan={plan}
       calendar={calendar}
@@ -431,3 +436,64 @@ it('handles global acknowledged replay without replacing newer edits, then expli
     screen.getByRole('button', { name: 'Убрать предшественника: A' }),
   ).toBeInTheDocument();
 });
+
+it.each([
+  ['UTC', '2026'],
+  ['Asia/Tokyo', '2027'],
+])('uses project timezone %s for the year', (timezone, year) => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-12-31T23:30:00Z'));
+  render(<Editor timezone={timezone} />);
+  expect(screen.getAllByText(`Без года — ${year}`)).toHaveLength(2);
+});
+it('completes short dates only after commit under C18', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-09T12:00:00Z'));
+  const user = userEvent.setup();
+  render(<Editor />);
+  const start = screen.getByLabelText('Начало'),
+    finish = screen.getByLabelText('Окончание');
+  await user.click(start);
+  fireEvent.change(start, { target: { value: '12.10' } });
+  expect(finish).toHaveValue('12.10.2026');
+  await user.tab();
+  expect(start).toHaveValue('12.10.2026');
+  expect(finish).toHaveValue('13.10.2026');
+  await user.click(finish);
+  fireEvent.change(finish, { target: { value: '14.10' } });
+  await user.keyboard('{Enter}');
+  expect(start).toHaveValue('12.10.2026');
+  expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue('3');
+});
+it.each(['Начало', 'Окончание'])(
+  'validates and clears short %s with accessible errors',
+  async (label) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2024-11-06T12:00:00Z'));
+    const user = userEvent.setup();
+    render(<Editor source={task(1)} />);
+    const input = screen.getByLabelText(label);
+    await user.click(input);
+    fireEvent.change(input, { target: { value: '29.2' } });
+    await user.tab();
+    expect(input).toHaveValue('29.02.2024');
+    await user.click(input);
+    fireEvent.change(input, { target: { value: ' 31.2 ' } });
+    await user.tab();
+    expect(input).toHaveValue(' 31.2 ');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    const ids = input.getAttribute('aria-describedby')!.split(' ');
+    expect(ids.every((id) => document.getElementById(id))).toBe(true);
+    expect(input).toHaveAccessibleDescription(/Без года — 2024/);
+    await user.click(input);
+    fireEvent.change(input, { target: { value: '7.11.2030' } });
+    await user.tab();
+    expect(input).not.toHaveAttribute('aria-invalid');
+    expect(input).toHaveValue('07.11.2030');
+    await user.click(input);
+    fireEvent.change(input, { target: { value: '  ' } });
+    await user.tab();
+    expect(input).toHaveValue('');
+    expect(input).not.toHaveAttribute('aria-invalid');
+  },
+);
