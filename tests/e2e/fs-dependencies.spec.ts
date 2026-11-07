@@ -62,7 +62,7 @@ async function create(
 const taskId = (tree: ProjectTree, title: string) =>
   tree.tasks.find((t) => t.title === title)!.id;
 const picker = (page: Page) =>
-  page.getByRole('dialog', { name: 'После окончания', exact: true });
+  page.getByRole('dialog', { name: 'Добавить предшественника', exact: true });
 const panel = (page: Page) =>
   page.getByRole('complementary', { name: 'Задача', exact: true });
 const row = (page: Page, id: string) =>
@@ -1411,7 +1411,9 @@ test('C25 graph saves title source incoming in one revision and Undo; cycle enve
   await openIncoming(page);
   await choose(page, 'A');
   await expect(
-    panel(page).getByText('Не сохранено', { exact: true }),
+    panel(page)
+      .locator('.dependency-card')
+      .getByText('Не сохранено', { exact: true }),
   ).toBeVisible();
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
   const reply = await save(page);
@@ -1552,7 +1554,9 @@ for (const direction of ['incoming', 'outgoing'] as const)
     await openIncoming(page);
     await choose(page, direction === 'incoming' ? 'C newer' : 'A');
     await expect(
-      panel(page).getByText('Не сохранено', { exact: true }),
+      panel(page)
+        .locator('.dependency-card')
+        .getByText('Не сохранено', { exact: true }),
     ).toBeVisible();
     await expect(
       panel(page).getByRole('button', { name: 'Сохранить', exact: true }),
@@ -1600,6 +1604,46 @@ test('fan-in and fan-out arrows meet their real cards with visible arrowheads', 
     const screenshot = await graph.screenshot({
       path: `/tmp/leaf-task4-geometry-${info.project.name}-${viewport.width}.png`,
     });
+    const sections = await graph
+      .locator('.dependency-section-header')
+      .evaluateAll((headers) =>
+        headers.map((header) => {
+          const bounds = header.getBoundingClientRect(),
+            graph = header.parentElement!.getBoundingClientRect();
+          const add = header
+            .querySelector<HTMLButtonElement>('button[aria-label^="Добавить"]')!
+            .getBoundingClientRect();
+          const card = header
+            .parentElement!.querySelector<HTMLElement>(
+              header === headers[0]
+                ? '[data-dependency-direction="incoming"]'
+                : '[data-dependency-direction="outgoing"]',
+            )!
+            .getBoundingClientRect();
+          return {
+            label: header.querySelector('span')!.textContent,
+            left: bounds.left - graph.left,
+            right: graph.right - bounds.right,
+            height: bounds.height,
+            cardInset: card.top - bounds.top,
+            addRight: graph.right - add.right,
+            addWidth: add.width,
+            addHeight: add.height,
+          };
+        }),
+      );
+    expect(sections).toHaveLength(2);
+    expect(sections[0]!.label).toBe('Предшественники (2)');
+    expect(sections[1]!.label).toBe('Последователи (2)');
+    for (const section of sections) {
+      expect(section.height).toBe(36);
+      expect(section.cardInset).toBe(44);
+      expect(section.addWidth).toBeGreaterThanOrEqual(28);
+      expect(section.addHeight).toBeGreaterThanOrEqual(28);
+    }
+    expect(sections[0]!.left).toBe(sections[1]!.left);
+    expect(sections[0]!.right).toBe(sections[1]!.right);
+    expect(sections[0]!.addRight).toBe(sections[1]!.addRight);
     const geometry = await graph.evaluate((element, edges) => {
       const graph = element.getBoundingClientRect();
       function card(title: string) {
@@ -1699,4 +1743,96 @@ test('fan-in and fan-out arrows meet their real cards with visible arrowheads', 
         expect(brightness, geometry[index]!.label).toBeLessThan(220);
   }
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+});
+
+test('five-neighbor graph paging keeps unsaved section headers inside the narrow graph', async ({
+  page,
+  runtime,
+}, info) => {
+  let tree = await project(page, runtime);
+  for (const title of [
+    'T',
+    'P0',
+    'P1',
+    'P2',
+    'P3',
+    'P4',
+    'S0',
+    'S1',
+    'S2',
+    'S3',
+    'S4',
+  ])
+    tree = await create(page, runtime, tree, title);
+  for (let index = 0; index < 5; index++) {
+    tree = await send(page, runtime.origin, tree, {
+      type: 'dependency.create',
+      predecessorId: taskId(tree, `P${index}`),
+      successorId: taskId(tree, 'T'),
+    });
+    tree = await send(page, runtime.origin, tree, {
+      type: 'dependency.create',
+      predecessorId: taskId(tree, 'T'),
+      successorId: taskId(tree, `S${index}`),
+    });
+  }
+  await page.setViewportSize({ width: 375, height: 812 });
+  await show(page);
+  await row(page, taskId(tree, 'T')).click();
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  const graph = panel(page).locator('.dependency-graph');
+  const headers = graph.locator('.dependency-section-header');
+  const incoming = graph.locator('[data-dependency-direction="incoming"]');
+  const outgoing = graph.locator('[data-dependency-direction="outgoing"]');
+  await expect(incoming).toHaveCount(4);
+  await expect(outgoing).toHaveCount(4);
+  await headers
+    .nth(0)
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(incoming).toHaveCount(1);
+  await expect(outgoing).toHaveCount(4);
+  await headers
+    .nth(1)
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(outgoing).toHaveCount(1);
+  const deletion = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/commands') &&
+      response.request().method() === 'POST',
+  );
+  await outgoing.getByRole('button', { name: /^Удалить связь:/ }).click();
+  expect((await deletion).status()).toBe(200);
+  await expect(outgoing).toHaveCount(4);
+  await expect(incoming).toHaveCount(1);
+  await incoming.getByRole('button', { name: /^Удалить связь:/ }).click();
+  await expect(
+    incoming.getByText('Ожидает удаления', { exact: true }),
+  ).toBeVisible();
+  const geometry = await headers.evaluateAll((headers) =>
+    headers.map((header) => {
+      const bounds = header.getBoundingClientRect(),
+        label = header.querySelector('span')!.getBoundingClientRect();
+      return {
+        height: bounds.height,
+        labelTop: label.top - bounds.top,
+        labelBottom: label.bottom - bounds.top,
+      };
+    }),
+  );
+  for (const section of geometry) {
+    expect(section.height).toBe(36);
+    expect(section.labelTop).toBeGreaterThanOrEqual(0);
+    expect(section.labelBottom).toBeLessThanOrEqual(36);
+  }
+  await expect(headers.nth(0)).toHaveText(/\(4\).*Не сохранено/);
+  await expect(headers.nth(1)).toHaveText(/\(4\)/);
+  await expect(graph.locator('.dependency-card.current')).toHaveCount(1);
+  await graph.screenshot({
+    path: `/tmp/leaf-task2-five-${info.project.name}.png`,
+  });
+  const saved = await readTree(page, runtime.origin, tree.project.id);
+  expect(saved.project.revision).toBe(tree.project.revision + 1);
+  expect(saved.dependencies).toHaveLength(9);
 });

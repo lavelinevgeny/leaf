@@ -2719,7 +2719,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       await user.click(screen.getByRole('button', { name: 'Повторить' }));
       await waitFor(() =>
         expect(
-          screen.queryByRole('dialog', { name: 'После окончания' }),
+          screen.queryByRole('dialog', { name: 'Добавить предшественника' }),
         ).not.toBeInTheDocument(),
       );
       await waitFor(() => expect(trigger).toHaveFocus());
@@ -2884,7 +2884,7 @@ it('keeps confirmed immediate chips/query on rejection and sends one deletion on
   );
   expect(
     await within(
-      screen.getByRole('dialog', { name: 'После окончания' }),
+      screen.getByRole('dialog', { name: 'Добавить предшественника' }),
     ).findByRole('alert'),
   ).toHaveTextContent('Связь отклонена.');
   expect(
@@ -2896,7 +2896,7 @@ it('keeps confirmed immediate chips/query on rejection and sends one deletion on
   );
   await waitFor(() =>
     expect(
-      screen.queryByRole('dialog', { name: 'После окончания' }),
+      screen.queryByRole('dialog', { name: 'Добавить предшественника' }),
     ).not.toBeInTheDocument(),
   );
   expect(commands[0]?.command).toEqual({
@@ -2991,7 +2991,7 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
   row.focus();
   await user.keyboard('{Alt>}l{/Alt}');
   expect(
-    screen.queryByRole('dialog', { name: 'После окончания' }),
+    screen.queryByRole('dialog', { name: 'Добавить предшественника' }),
   ).not.toBeInTheDocument();
   expect(row).toHaveFocus();
   await user.click(row);
@@ -3012,7 +3012,7 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
   ).getByRole('treeitem', { name: /^A,/ });
   fireEvent.keyDown(mainRow, { key: 'l', altKey: true });
   expect(
-    screen.queryByRole('dialog', { name: 'После окончания' }),
+    screen.queryByRole('dialog', { name: 'Добавить предшественника' }),
   ).not.toBeInTheDocument();
   expect(
     within(mainRow).queryByRole('button', { name: 'После окончания: A' }),
@@ -3027,7 +3027,7 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
     ).getByRole('button', { name: 'После окончания: A' }),
   ).toBeDisabled();
   expect(
-    screen.queryByRole('dialog', { name: 'После окончания' }),
+    screen.queryByRole('dialog', { name: 'Добавить предшественника' }),
   ).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
   expect(

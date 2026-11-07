@@ -35,7 +35,7 @@
 | Задача | Ответственность и файлы | Контракт для следующей задачи |
 |---|---|---|
 | 1 | `src/shared/contracts.ts`, `src/server/repository.ts`; `tests/optional-api.test.ts`, `tests/fs-cascade-repository.test.ts` | Optional create-only successorIds, atomic create/replay/undo. Единственный writer shared command schema. |
-| 2 | `src/client/predecessor-view.ts`, `PredecessorPicker.tsx`, `Dependencies.tsx`, `strings.ts`, `styles/app.css`; небольшие адаптации вызовов `App.tsx`/`QuickAdd.tsx` | Полный DependencyProposal, направленные callbacks, fixed graph. Старые App/QuickAdd пока выбирают incoming через fixed mode. |
+| 2 | `src/client/predecessor-view.ts`, `PredecessorPicker.tsx`, `Dependencies.tsx`, `strings.ts`, `styles/planning.css`; небольшие адаптации вызовов `App.tsx`/`QuickAdd.tsx` | Полный DependencyProposal, направленные callbacks, fixed graph. Старые App/QuickAdd пока выбирают incoming через fixed mode. |
 | 3 | `src/client/quick-add-view.ts`, `QuickAdd.tsx`, `App.tsx` и их tests | Обязательный successorIds в RAM QuickDraft, двустороннее создание обоих scope. |
 | 4 | `src/client/TaskTree.tsx`, `TaskTimeline.tsx`, `TaskPanel.tsx`, `App.tsx`, `styles/app.css` и их tests | Одна row chain/count и общий directional immediate host строки/полосы Ганта. |
 | 5 | `tests/e2e/dependency-ux.spec.ts`, при необходимости узкие browser regression updates; `docs/ACCEPTANCE.md`, `docs/STATUS.md`, `START_HERE.md` | Полная DUX evidence matrix, native zoom и финальные gates. |
@@ -170,7 +170,7 @@ for (const successorId of command.successorIds ?? []) {
 
 ### Task 2: Полный proposal, общий picker и симметричный граф
 
-**Files:** Modify `src/client/predecessor-view.ts`, `PredecessorPicker.tsx`, `Dependencies.tsx`, `QuickAdd.tsx`, `App.tsx`, `strings.ts`, `styles/app.css`; Test `tests/client/predecessor-view.test.ts`, `predecessor-picker.test.tsx`, `dependencies.test.tsx`, `task-panel.test.tsx`, `task-panel-navigation.test.tsx`, существующие picker callers в `quick-add.test.tsx`/`App.test.tsx`; Modify `docs/STATUS.md`.
+**Files:** Modify `src/client/predecessor-view.ts`, `PredecessorPicker.tsx`, `Dependencies.tsx`, `QuickAdd.tsx`, `App.tsx`, `strings.ts`, `styles/planning.css`; Test `tests/client/predecessor-view.test.ts`, `predecessor-picker.test.tsx`, `dependencies.test.tsx`, `task-panel.test.tsx`, `task-panel-navigation.test.tsx`, существующие picker callers в `quick-add.test.tsx`/`App.test.tsx`; Modify `docs/STATUS.md`.
 
 **Interfaces:** Consumes Task 1 without writes to shared schema. Produces ровно общий контракт выше. Dependencies Props и TaskPanel incoming draft contract не расширять до outgoing draft. QuickAdd/App пока fixed predecessor: только адаптация props/callbacks, без новых create параметров.
 

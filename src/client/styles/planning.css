@@ -388,17 +388,34 @@
 .panel-back {
   margin-left: -8px;
 }
-.dependency-section-label {
+.dependency-section-header {
+  position: absolute;
+  inset-inline: 16px 12px;
+  height: 36px;
   display: flex;
+  gap: 6px;
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  margin: 14px 0 0;
   color: #59675f;
 }
-.dependency-section-label button {
+.dependency-section-header > span {
+  flex: 1;
+  min-width: 0;
   font-size: 11px;
+  line-height: 16px;
+}
+.dependency-section-header button {
+  flex-shrink: 0;
+  min-height: 28px;
   padding: 2px 4px;
+  font-size: 11px;
+}
+.dependency-section-header .dependency-draft-marker {
+  display: inline;
+  margin-inline-start: 4px;
+  font-size: 10px;
+  line-height: 12px;
 }
 .dependency-graph {
   position: relative;
@@ -482,8 +499,7 @@
   padding: 3px 6px;
   margin-right: 4px;
 }
-.graph-empty,
-.graph-section-title {
+.graph-empty {
   position: absolute;
   left: 16px;
   right: 12px;
@@ -829,7 +845,57 @@
 }
 .predecessor-heading button,
 .predecessor-chip button {
+  min-width: 28px;
+  min-height: 28px;
+  flex-shrink: 0;
   padding: 2px 6px;
+}
+.dependency-picker-context {
+  display: grid;
+  overflow-wrap: anywhere;
+  margin-block: 8px;
+}
+.dependency-picker-context small {
+  color: var(--leaf-text-muted);
+}
+.dependency-direction {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.dependency-direction > span {
+  width: 100%;
+  font-size: 12px;
+}
+.dependency-direction button {
+  min-height: 28px;
+  padding: 2px 10px;
+}
+.dependency-direction button[aria-pressed='true'] {
+  background: var(--leaf-accent-soft);
+  border-color: var(--leaf-accent);
+}
+.dependency-picker-groups {
+  max-height: 132px;
+  overflow: auto;
+  margin-block: 8px;
+}
+.dependency-group-label {
+  font-size: 12px;
+}
+.dependency-preview {
+  margin: 8px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.predecessor-chip > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.predecessor-chip .field-error {
+  display: block;
+  font-size: 11px;
 }
 .predecessor-chips {
   display: flex;
@@ -867,6 +933,11 @@
 }
 .predecessor-results button[aria-selected='true'] {
   background: #e9f3ed;
+}
+.predecessor-results button > span,
+.predecessor-results small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .predecessor-results small {
   color: #66756c;
@@ -948,15 +1019,6 @@
 }
 .dependency-card.dependency-pending {
   border-style: dashed;
-}
-.graph-section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.graph-section-title button {
-  padding: 2px 4px;
-  font-size: 11px;
 }
 .dependency-calculation {
   margin-top: 16px;

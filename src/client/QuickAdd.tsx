@@ -10,7 +10,7 @@ import { PredecessorPicker } from './PredecessorPicker.js';
 import { ControlIcon } from './ControlIcon.js';
 import { canonicalPredecessorIds } from './predecessor-view.js';
 import { QuickSchedule, type QuickScheduleDraft } from './QuickSchedule.js';
-import { scheduleChip } from './quick-add-view.js';
+import { scheduleChip, draftTask } from './quick-add-view.js';
 import { newTaskPlan } from './planning-view.js';
 import { orderedChildren } from './tree-view.js';
 import { strings } from './strings.js';
@@ -480,13 +480,18 @@ export function QuickAdd({
       {predecessorsOpen && (
         <PredecessorPicker
           tree={tree}
-          successorId={null}
-          selectedIds={predecessorIds}
+          proposal={{
+            task: draftTask(tree, context, title, plan),
+            isNew: true,
+            predecessorIds,
+            successorIds: [],
+          }}
+          direction="predecessor"
           disabled={busy || blocked}
-          onAdd={(id) =>
+          onAdd={(_direction, id) =>
             onPredecessors(canonicalPredecessorIds([...predecessorIds, id]))
           }
-          onRemove={(id) =>
+          onRemove={(_direction, id) =>
             onPredecessors(predecessorIds.filter((selected) => selected !== id))
           }
           onClose={() => {

@@ -78,7 +78,10 @@ import {
   type QuickDraft,
 } from './quick-add-view.js';
 import { PredecessorPicker } from './PredecessorPicker.js';
-import { incomingPredecessorIds } from './predecessor-view.js';
+import {
+  incomingPredecessorIds,
+  outgoingSuccessorIds,
+} from './predecessor-view.js';
 import './styles/app.css';
 import './styles/planning.css';
 
@@ -2465,22 +2468,40 @@ export function App() {
           )}
         </div>
       </main>
-      {immediateHost && tree && immediateHost.projectId === tree.project.id && (
-        <div className="immediate-predecessors">
-          <PredecessorPicker
-            tree={tree}
-            successorId={immediateHost.taskId}
-            selectedIds={incomingPredecessorIds(tree, immediateHost.taskId)}
-            disabled={
-              busy || loading || !!pending || conflict || dirty || projectDirty
-            }
-            {...(error ? { error: error.message } : {})}
-            onAdd={(id) => immediateRelation(id, false)}
-            onRemove={(id) => immediateRelation(id, true)}
-            onClose={closePredecessors}
-          />
-        </div>
-      )}
+      {immediateHost &&
+        tree &&
+        immediateHost.projectId === tree.project.id &&
+        tree.tasks.some((task) => task.id === immediateHost.taskId) && (
+          <div className="immediate-predecessors">
+            <PredecessorPicker
+              tree={tree}
+              proposal={{
+                task: tree.tasks.find(
+                  (task) => task.id === immediateHost.taskId,
+                )!,
+                isNew: false,
+                predecessorIds: incomingPredecessorIds(
+                  tree,
+                  immediateHost.taskId,
+                ),
+                successorIds: outgoingSuccessorIds(tree, immediateHost.taskId),
+              }}
+              direction="predecessor"
+              disabled={
+                busy ||
+                loading ||
+                !!pending ||
+                conflict ||
+                dirty ||
+                projectDirty
+              }
+              {...(error ? { error: error.message } : {})}
+              onAdd={(_direction, id) => immediateRelation(id, false)}
+              onRemove={(_direction, id) => immediateRelation(id, true)}
+              onClose={closePredecessors}
+            />
+          </div>
+        )}
       {durationChoice && (
         <div
           role="dialog"
