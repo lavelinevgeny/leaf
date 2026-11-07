@@ -22,7 +22,10 @@ interface Props {
   tree: ProjectTree;
   disabled: boolean;
   navigationDisabled?: boolean;
-  onCommand: (command: Command) => Promise<boolean>;
+  onCommand: (
+    command: Command,
+    onAcknowledged?: () => void,
+  ) => Promise<boolean>;
   onSelect: (task: Task) => void;
   onShow: (task: Task) => void;
 }
@@ -41,9 +44,11 @@ export function Dependencies({
 }: Props) {
   const [picker, setPicker] = useState<{
     taskId: string;
+    projectId: string;
     direction: DependencyDirection;
     version: number;
   } | null>(null);
+  const livePicker = useRef<typeof picker>(null);
   const direction = picker?.taskId === task.id ? picker.direction : null;
   const panel = useRef<HTMLDivElement>(null);
   const beforeHeader = useRef<HTMLDivElement>(null);
@@ -51,6 +56,7 @@ export function Dependencies({
   const focusVersion = useRef(0);
   const focusIntent = useRef<{
     taskId: string;
+    projectId: string;
     direction: DependencyDirection;
     trigger: HTMLButtonElement;
     revoked: boolean;
@@ -63,6 +69,8 @@ export function Dependencies({
       if (!intent || !(event.target instanceof Node)) return;
       if (
         event.target === intent.trigger ||
+        (event.target instanceof Element &&
+          event.target.closest('[data-immediate-recovery]')) ||
         (panel.current?.contains(event.target) &&
           event.target instanceof Element &&
           !!event.target.closest('.predecessor-picker'))
@@ -74,6 +82,7 @@ export function Dependencies({
     document.addEventListener('focusin', changed);
     document.addEventListener('pointerdown', changed, true);
     return () => {
+      livePicker.current = null;
       focusIntent.current = null;
       document.removeEventListener('focusin', changed);
       document.removeEventListener('pointerdown', changed, true);
@@ -81,9 +90,20 @@ export function Dependencies({
   }, []);
   useLayoutEffect(() => {
     const intent = focusIntent.current;
-    if (intent && intent.taskId !== task.id) focusIntent.current = null;
-    if (picker && picker.taskId !== task.id) setPicker(null);
-  }, [task.id, picker]);
+    if (
+      intent &&
+      (intent.taskId !== task.id || intent.projectId !== task.projectId)
+    )
+      focusIntent.current = null;
+    if (
+      picker &&
+      (picker.taskId !== task.id || picker.projectId !== task.projectId)
+    ) {
+      livePicker.current = null;
+      focusIntent.current = null;
+      setPicker(null);
+    }
+  }, [task.id, task.projectId, picker]);
   useLayoutEffect(() => {
     const intent = focusIntent.current;
     if (
@@ -112,14 +132,22 @@ export function Dependencies({
     if (disabled || (direction === 'successor' && taskDirty)) return;
     focusIntent.current = {
       taskId: task.id,
+      projectId: task.projectId,
       direction,
       trigger: anchor,
       revoked: false,
       restore: false,
     };
-    setPicker({ taskId: task.id, direction, version: ++focusVersion.current });
+    livePicker.current = {
+      taskId: task.id,
+      projectId: task.projectId,
+      direction,
+      version: ++focusVersion.current,
+    };
+    setPicker(livePicker.current);
   }
   function close() {
+    livePicker.current = null;
     setPicker(null);
     if (focusIntent.current) focusIntent.current.restore = true;
     setRestoreVersion((version) => version + 1);
@@ -478,18 +506,23 @@ export function Dependencies({
                 onIncomingChange(canonicalPredecessorIds([...incomingIds, id]));
               else if (!taskDirty) {
                 const sentIntent = focusIntent.current;
-                void onCommand({
-                  type: 'dependency.create',
-                  predecessorId: task.id,
-                  successorId: id,
-                }).then((success) => {
-                  if (
-                    success &&
-                    focusIntent.current === sentIntent &&
-                    sentIntent?.taskId === task.id
-                  )
-                    close();
-                });
+                const sentPicker = livePicker.current;
+                void onCommand(
+                  {
+                    type: 'dependency.create',
+                    predecessorId: task.id,
+                    successorId: id,
+                  },
+                  () => {
+                    if (
+                      sentPicker &&
+                      livePicker.current === sentPicker &&
+                      focusIntent.current === sentIntent &&
+                      sentIntent?.taskId === task.id
+                    )
+                      close();
+                  },
+                );
               }
             }}
             onRemove={(selectedDirection, id) => {

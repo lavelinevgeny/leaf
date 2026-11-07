@@ -58,7 +58,10 @@ interface Props {
   tree: ProjectTree;
   tab: PanelTab;
   onTab: (tab: PanelTab) => void;
-  onDependency: (command: Command) => Promise<boolean>;
+  onDependency: (
+    command: Command,
+    onAcknowledged?: () => void,
+  ) => Promise<boolean>;
   onNeighbor: (task: Task) => void;
   onShow: (task: Task) => void;
   backTask: Task | null;

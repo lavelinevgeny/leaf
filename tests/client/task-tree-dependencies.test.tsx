@@ -101,3 +101,30 @@ it('omits zero text, explains summary/dirty locks and excludes preview controls'
     2,
   );
 });
+
+it.each(['Зависимости', 'Добавить подзадачу', 'Добавить запись'])(
+  'lets Escape and global Undo bubble from the shared %s action',
+  (name) => {
+    setup({ onJournal: vi.fn() });
+    const button = screen.getByRole('button', {
+      name: `${name}: ${target.title}`,
+    });
+    const keydown = vi.fn();
+    window.addEventListener('keydown', keydown);
+    try {
+      fireEvent.keyDown(button, { key: 'Escape' });
+      fireEvent.keyDown(button, { key: 'z', ctrlKey: true });
+      fireEvent.keyDown(button, { key: 'z', metaKey: true });
+      expect(keydown.mock.calls.map(([event]) => event.key)).toEqual([
+        'Escape',
+        'z',
+        'z',
+      ]);
+      fireEvent.keyDown(button, { key: 'Enter' });
+      fireEvent.keyDown(button, { key: ' ' });
+      expect(keydown).toHaveBeenCalledTimes(3);
+    } finally {
+      window.removeEventListener('keydown', keydown);
+    }
+  },
+);

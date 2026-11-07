@@ -1470,6 +1470,186 @@ test('C25 graph saves title source incoming in one revision and Undo; cycle enve
   expect(rejected).toEqual(reverse);
 });
 
+test('row chain add/delete acknowledgement preserves global Undo and layered subtree Escape', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await project(page, runtime);
+  tree = await create(page, runtime, tree, 'P');
+  tree = await create(page, runtime, tree, 'A', taskId(tree, 'P'));
+  tree = await create(page, runtime, tree, 'B', taskId(tree, 'P'));
+  await show(page);
+  const chain = row(page, taskId(tree, 'B')).getByRole('button', {
+    name: 'Зависимости: B',
+  });
+  async function add() {
+    await chain.focus();
+    await chain.press('Enter');
+    const search = picker(page).getByRole('searchbox');
+    await search.fill('A');
+    await search.press('Enter');
+    await expect(picker(page)).toHaveCount(0);
+    await expect(chain).toBeFocused();
+  }
+  for (const modifier of ['Control', 'Meta']) {
+    await add();
+    await chain.press(`${modifier}+z`);
+    await expect
+      .poll(
+        async () =>
+          (await readTree(page, runtime.origin, tree.project.id)).dependencies
+            .length,
+      )
+      .toBe(0);
+    await expect(chain).toHaveAttribute('data-count', '0');
+    await expect(chain).toBeFocused();
+    await add();
+    await chain.press('Enter');
+    await picker(page)
+      .getByRole('button', { name: 'Убрать предшественника: A' })
+      .click();
+    await expect(picker(page)).toHaveCount(0);
+    await expect(chain).toBeFocused();
+    await chain.press(`${modifier}+z`);
+    await expect
+      .poll(
+        async () =>
+          (await readTree(page, runtime.origin, tree.project.id)).dependencies
+            .length,
+      )
+      .toBe(1);
+    await expect(chain).toHaveAttribute('data-count', '1');
+    await expect(chain).toBeFocused();
+    // Reset the existing edge by another acknowledged delete for the next keyboard case.
+    await chain.press('Enter');
+    await picker(page)
+      .getByRole('button', { name: 'Убрать предшественника: A' })
+      .click();
+    await expect(picker(page)).toHaveCount(0);
+    await expect(chain).toHaveAttribute('data-count', '0');
+    await expect(chain).toBeFocused();
+  }
+  await row(page, taskId(tree, 'P')).click();
+  const subtreeChain = panel(page).getByRole('button', {
+    name: 'Зависимости: B',
+  });
+  await subtreeChain.focus();
+  await subtreeChain.press('Enter');
+  await picker(page).getByRole('searchbox').press('Escape');
+  await expect(subtreeChain).toBeFocused();
+  await subtreeChain.press('Escape');
+  await expect(panel(page)).toHaveCount(0);
+  for (const action of ['Добавить подзадачу: B', 'Добавить запись: B']) {
+    await row(page, taskId(tree, 'P')).click();
+    const button = panel(page).getByRole('button', { name: action });
+    await button.focus();
+    await button.press('Escape');
+    await expect(panel(page)).toHaveCount(0);
+  }
+});
+
+for (const mode of [
+  'owned',
+  'close',
+  'outside-focus',
+  'outside-pointer',
+  'delete',
+] as const)
+  test(`graph outgoing exact retry preserves picker ownership: ${mode}`, async ({
+    page,
+    runtime,
+  }) => {
+    let tree = await project(page, runtime);
+    for (const name of ['A', 'B'])
+      tree = await create(page, runtime, tree, name);
+    if (mode === 'delete')
+      tree = await send(page, runtime.origin, tree, {
+        type: 'dependency.create',
+        predecessorId: taskId(tree, 'A'),
+        successorId: taskId(tree, 'B'),
+      });
+    const before = tree;
+    await show(page);
+    await row(page, taskId(tree, 'A')).click();
+    await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+    const trigger = panel(page).getByRole('button', {
+      name: 'Добавить последователя',
+      exact: true,
+    });
+    await trigger.click();
+    const dialog = page.getByRole('dialog', {
+      name: 'Добавить последователя',
+      exact: true,
+    });
+    await dialog.getByRole('searchbox').fill('B');
+    const envelopes: unknown[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/projects/*/commands', async (route) => {
+      envelopes.push(route.request().postDataJSON());
+      const reply = await route.fetch();
+      expect(reply.status()).toBe(200);
+      if (envelopes.length === 1) await route.abort('failed');
+      else {
+        await held;
+        await route.fulfill({ response: reply });
+      }
+    });
+    if (mode === 'delete')
+      await dialog
+        .getByRole('button', { name: 'Убрать последователя: B' })
+        .click();
+    else await dialog.getByRole('searchbox').press('Enter');
+    const retry = page.getByRole('button', { name: 'Повторить', exact: true });
+    await expect(retry).toBeVisible();
+    expect(
+      (await readTree(page, runtime.origin, tree.project.id)).project.revision,
+    ).toBe(before.project.revision + 1);
+    if (mode === 'close') {
+      await dialog
+        .getByRole('button', { name: 'Закрыть выбор последователей' })
+        .click();
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeDisabled();
+    }
+    await retry.click();
+    await expect.poll(() => envelopes.length).toBe(2);
+    await expect(trigger).toBeDisabled();
+    if (mode.startsWith('outside')) {
+      const outside = page.getByRole('searchbox', { name: 'Поиск задач' });
+      if (mode === 'outside-pointer') await outside.click();
+      else await outside.focus();
+      await outside.blur();
+    }
+    release();
+    await expect(trigger).toBeEnabled();
+    expect(envelopes).toHaveLength(2);
+    expect(envelopes[1]).toEqual(envelopes[0]);
+    const after = await readTree(page, runtime.origin, tree.project.id);
+    expect(after.project.revision).toBe(before.project.revision + 1);
+    expect(after.dependencies).toHaveLength(mode === 'delete' ? 0 : 1);
+    if (mode === 'delete') {
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('searchbox')).toHaveValue('B');
+      await expect(
+        dialog.getByRole('button', { name: 'Убрать последователя: B' }),
+      ).toHaveCount(0);
+      await dialog
+        .getByRole('button', { name: 'Закрыть выбор последователей' })
+        .click();
+    } else {
+      await expect(dialog).toHaveCount(0);
+      if (mode.startsWith('outside')) await expect(trigger).not.toBeFocused();
+      else await expect(trigger).toBeFocused();
+    }
+    await page.unroute('**/api/projects/*/commands');
+    const undone = await send(page, runtime.origin, after, { type: 'undo' });
+    expect(undone.tasks).toEqual(before.tasks);
+    expect(undone.dependencies).toEqual(before.dependencies);
+  });
+
 for (const direction of ['incoming', 'outgoing'] as const)
   test(`graph ${direction} lost response exact retry resolves frozen ack and refreshes newer tree without another write`, async ({
     page,
@@ -1546,6 +1726,20 @@ for (const direction of ['incoming', 'outgoing'] as const)
       latest,
     );
     await expect(row(page, c)).toContainText('C newer');
+    if (direction === 'outgoing')
+      await expect(
+        page.getByRole('dialog', {
+          name: 'Добавить последователя',
+          exact: true,
+        }),
+      ).toHaveCount(0);
+    if (direction === 'outgoing')
+      await expect(
+        panel(page).getByRole('button', {
+          name: 'Добавить последователя',
+          exact: true,
+        }),
+      ).toBeFocused();
     // Busy/uncertain locks intentionally prevent a new local draft until retry resolves.
     await expect(
       panel(page).getByRole('button', {

@@ -333,7 +333,10 @@ export function TaskTree({
               className="task-row-actions"
               onClick={(event) => event.stopPropagation()}
               onPointerDown={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ')
+                  event.stopPropagation();
+              }}
             >
               <span className="task-row-actions-secondary">
                 <button

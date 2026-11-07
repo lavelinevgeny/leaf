@@ -14,6 +14,119 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dependencies } from '../../src/client/Dependencies.js';
 import { emptySchedule, project, task } from './fixtures.js';
 afterEach(cleanup);
+it.each([
+  'ack',
+  'outside-focus',
+  'outside-pointer',
+  'close',
+  'reopen',
+  'task',
+  'project',
+  'unmount',
+] as const)(
+  'scopes a delayed outgoing acknowledgement to its picker owner: %s',
+  async (mode) => {
+    const current = task(40),
+      successor = task(41);
+    const snapshot = {
+      contractVersion: 2 as const,
+      project,
+      tasks: [current, successor],
+      dependencies: [],
+      canUndo: false,
+      schedule: emptySchedule,
+    };
+    let acknowledge!: () => void;
+    const onCommand = vi.fn((_, callback?: () => void) => {
+      acknowledge = callback!;
+      return Promise.resolve(false);
+    });
+    const props = {
+      task: current,
+      tree: snapshot,
+      incomingIds: [],
+      onIncomingChange: vi.fn(),
+      taskDirty: false,
+      scheduleDirty: false,
+      disabled: false,
+      onCommand,
+      onSelect: vi.fn(),
+      onShow: vi.fn(),
+    };
+    const view = render(
+      <>
+        <button>Outside</button>
+        <Dependencies {...props} />
+      </>,
+    );
+    const trigger = screen.getByRole('button', {
+      name: 'Добавить последователя',
+    });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('option', { name: /Работа 41/ }));
+    await act(async () => {});
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(acknowledge).toBeTypeOf('function');
+    // Even an edge appearing in another snapshot cannot acknowledge this operation.
+    view.rerender(
+      <>
+        <button>Outside</button>
+        <Dependencies
+          {...props}
+          tree={{
+            ...snapshot,
+            dependencies: [
+              {
+                id: 'unrelated-read-edge',
+                projectId: project.id,
+                predecessorId: current.id,
+                successorId: successor.id,
+              },
+            ],
+          }}
+        />
+      </>,
+    );
+    expect(screen.getByRole('dialog')).toBeVisible();
+    if (mode === 'close' || mode === 'reopen') {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Закрыть выбор последователей' }),
+      );
+      if (mode === 'reopen') fireEvent.click(trigger);
+    }
+    if (mode === 'task' || mode === 'project') {
+      const changed =
+        mode === 'task'
+          ? successor
+          : { ...current, projectId: 'another-project' };
+      view.rerender(
+        <>
+          <button>Outside</button>
+          <Dependencies {...props} task={changed} />
+        </>,
+      );
+    }
+    if (
+      mode.startsWith('outside') ||
+      mode === 'close' ||
+      mode === 'task' ||
+      mode === 'project'
+    ) {
+      const outside = screen.getByRole('button', { name: 'Outside' });
+      if (mode === 'outside-pointer') fireEvent.pointerDown(outside);
+      else outside.focus();
+      outside.blur();
+    }
+    if (mode === 'unmount') view.unmount();
+    act(() => acknowledge());
+    if (mode === 'reopen') expect(screen.getByRole('dialog')).toBeVisible();
+    else expect(screen.queryByRole('dialog')).toBeNull();
+    if (mode === 'ack') expect(trigger).toHaveFocus();
+    else if (mode !== 'reopen')
+      expect(document.activeElement).toBe(document.body);
+    expect(onCommand).toHaveBeenCalledTimes(1);
+  },
+);
 describe('direct dependency graph', () => {
   const a = task(1),
     b = task(2),
@@ -175,11 +288,14 @@ describe('direct dependency graph', () => {
     );
     expect(screen.queryByRole('option', { name: /Работа 1/ })).toBeNull();
     fireEvent.click(screen.getByRole('option', { name: /Работа 7/ }));
-    expect(onCommand).toHaveBeenCalledExactlyOnceWith({
-      type: 'dependency.create',
-      predecessorId: current.id,
-      successorId: task(7).id,
-    });
+    expect(onCommand).toHaveBeenCalledExactlyOnceWith(
+      {
+        type: 'dependency.create',
+        predecessorId: current.id,
+        successorId: task(7).id,
+      },
+      expect.any(Function),
+    );
   });
   it.each([false, true])(
     'restores outgoing focus after busy clears unless the user focused then blurred: %s',
@@ -203,8 +319,11 @@ describe('direct dependency graph', () => {
               taskDirty={false}
               scheduleDirty={false}
               disabled={busy}
-              onCommand={() => {
+              onCommand={(_, onAcknowledged) => {
                 setBusy(true);
+                void pending.then((success) => {
+                  if (success) onAcknowledged?.();
+                });
                 return pending;
               }}
               onSelect={vi.fn()}

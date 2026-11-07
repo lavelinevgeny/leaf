@@ -3719,6 +3719,163 @@ it.each(['predecessor', 'successor'] as const)(
     await waitFor(() => expect(trigger).toHaveFocus());
   },
 );
+it('drops an outgoing graph acknowledgement after the owning session expires', async () => {
+  tree.tasks = [task(1, 'A'), task(2, 'B')];
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+  await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить последователя' }),
+  );
+  const base = fetchMock.getMockImplementation()! as (
+    url: string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  let release!: (response: Response) => void;
+  let accepted!: Response;
+  let expired = false;
+  fetchMock.mockImplementation(async (url, init) => {
+    if (url.endsWith('/commands')) {
+      accepted = await base(url, init);
+      return new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    }
+    if (expired && /\/journal(?:\?|$)/.test(url))
+      return json({ code: 'UNAUTHORIZED', message: 'Сессия завершена' }, 401);
+    return base(url, init);
+  });
+  await user.click(screen.getByRole('option', { name: /^B/ }));
+  await waitFor(() => expect(accepted).toBeDefined());
+  expired = true;
+  fireEvent(window, new Event('focus'));
+  const password = await screen.findByLabelText('Пароль');
+  expect(password).toBeDisabled();
+  await act(async () => release(accepted));
+  expect(password).toBeEnabled();
+  expect(document.activeElement).toBe(document.body);
+  expect(screen.queryByRole('complementary', { name: 'Задача' })).toBeNull();
+  expect(
+    screen.queryByRole('dialog', { name: 'Добавить последователя' }),
+  ).toBeNull();
+  expect(commands).toHaveLength(1);
+});
+
+it.each([400, 409])(
+  'keeps graph add query/context on a definite %s refusal without acknowledgement',
+  async (status) => {
+    tree.tasks = [task(1, 'A'), task(2, 'B')];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Добавить последователя' }),
+    );
+    const dialog = screen.getByRole('dialog', {
+      name: 'Добавить последователя',
+    });
+    const search = within(dialog).getByRole('searchbox');
+    await user.type(search, 'B');
+    fetchMock.mockImplementationOnce(() =>
+      json(
+        {
+          code: status === 409 ? 'STALE_REVISION' : 'INVALID_COMMAND',
+          message: 'Synthetic refusal',
+        },
+        status,
+      ),
+    );
+    await user.keyboard('{Enter}');
+    if (status === 409)
+      await screen.findByRole('button', {
+        name: 'Загрузить актуальный проект',
+      });
+    else await screen.findByText('Synthetic refusal');
+    expect(dialog).toBeVisible();
+    expect(search).toHaveValue('B');
+    expect(tree.dependencies).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();
+  },
+);
+
+it.each(['add', 'delete'] as const)(
+  'closes only the graph add picker after exact retry: %s',
+  async (kind) => {
+    tree.tasks = [task(1, 'A'), task(2, 'B')];
+    if (kind === 'delete')
+      tree.dependencies = [
+        {
+          id: id(90),
+          projectId: project.id,
+          predecessorId: id(1),
+          successorId: id(2),
+        },
+      ];
+    const base = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    const envelopes: CommandEnvelope[] = [];
+    let frozen!: ProjectTree;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (url.endsWith('/commands')) {
+        envelopes.push(JSON.parse(String(init?.body)));
+        if (envelopes.length === 1) {
+          frozen = await (await base(url, init)).json();
+          throw new TypeError('synthetic lost response');
+        }
+        return json(frozen);
+      }
+      return base(url, init);
+    });
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    const trigger = screen.getByRole('button', {
+      name: 'Добавить последователя',
+    });
+    await user.click(trigger);
+    const dialog = screen.getByRole('dialog', {
+      name: 'Добавить последователя',
+    });
+    const search = within(dialog).getByRole('searchbox');
+    await user.type(search, 'B');
+    if (kind === 'add') await user.keyboard('{Enter}');
+    else
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Убрать последователя: B' }),
+      );
+    const retry = await screen.findByRole('button', {
+      name: 'Повторить',
+    });
+    expect(dialog).toBeVisible();
+    expect(search).toHaveValue('B');
+    // The owning retry control is recovery, not deliberate navigation away.
+    await user.click(retry);
+    await waitFor(() => expect(trigger).toBeEnabled());
+    expect(envelopes).toHaveLength(2);
+    expect(envelopes[1]).toEqual(envelopes[0]);
+    expect(tree.project.revision).toBe(1);
+    if (kind === 'add') {
+      expect(
+        screen.queryByRole('dialog', { name: 'Добавить последователя' }),
+      ).toBeNull();
+      expect(trigger).toHaveFocus();
+    } else {
+      expect(dialog).toBeVisible();
+      expect(search).toHaveValue('B');
+      expect(
+        within(dialog).queryByRole('button', {
+          name: 'Убрать последователя: B',
+        }),
+      ).toBeNull();
+    }
+  },
+);
+
 it('deletes the outgoing chip while After is selected, keeping saved counts until ack', async () => {
   tree.tasks = [task(1, 'A'), task(2, 'T', null, 1), task(3, 'B', null, 2)];
   const outbound = {

@@ -101,6 +101,7 @@ type Mutation =
       sentQuickRawVersion?: number;
       panelTaskId?: string;
       immediateTaskId?: string;
+      onAcknowledged?: (() => void) | undefined;
     }
   | { kind: 'rename'; projectId: string; envelope: RenameProject };
 interface PanelVisit {
@@ -959,6 +960,9 @@ export function App() {
       }
       if (job.kind === 'command' && job.panelTaskId)
         setPanelAcknowledgement(next);
+      // This observer belongs to the exact job, including a global retry. It is
+      // never serialized, and ordinary rejection/uncertainty cannot acknowledge it.
+      if (job.kind === 'command') job.onAcknowledged?.();
       if (
         job.kind === 'command' &&
         job.immediateTaskId &&
@@ -1035,6 +1039,7 @@ export function App() {
       sentQuickRawVersion?: number;
       panelTaskId?: string;
       immediateTaskId?: string;
+      onAcknowledged?: (() => void) | undefined;
     } = {},
   ) {
     if (
@@ -1059,8 +1064,8 @@ export function App() {
       },
     });
   }
-  async function command(value: Command) {
-    return !!(await commandTree(value));
+  async function command(value: Command, onAcknowledged?: () => void) {
+    return !!(await commandTree(value, { onAcknowledged }));
   }
   function openPredecessors(task: Task, trigger: HTMLElement) {
     if (
@@ -2731,8 +2736,10 @@ export function App() {
               }}
             />
           )}
-          onDependency={(value) =>
-            canNavigate() ? command(value) : Promise.resolve(false)
+          onDependency={(value, onAcknowledged) =>
+            canNavigate()
+              ? command(value, onAcknowledged)
+              : Promise.resolve(false)
           }
           onNeighbor={selectNeighbor}
           onShow={showOnGantt}
