@@ -140,6 +140,101 @@ async function travel(direction: 'back' | 'forward') {
     });
   });
 }
+it('searches current titles independently, reveals collapsed results and restores disclosure on clear', async () => {
+  await start();
+  const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
+  expect(
+    screen.queryByRole('button', { name: 'Фильтры' }),
+  ).not.toBeInTheDocument();
+  await userEvent.type(search, '  РАБОТА 2  ');
+  expect(
+    current().queryByRole('button', { name: /Работа 1/ }),
+  ).not.toBeInTheDocument();
+  expect(current().getByRole('button', { name: /Работа 2/ })).toBeVisible();
+  expect(current().getByRole('button', { name: 'Сегодня 0' })).toBeVisible();
+  await userEvent.click(current().getByRole('button', { name: 'Позже 1' }));
+  expect(
+    current().queryByRole('button', { name: /Работа 2/ }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Очистить поиск' }));
+  expect(search).toHaveFocus();
+  expect(search).toHaveValue('');
+  expect(current().getByRole('button', { name: 'Позже 1' })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  expect(current().getByRole('button', { name: /Работа 1/ })).toBeVisible();
+  await userEvent.type(search, 'Ничего такого');
+  expect(current().getByRole('status')).toHaveTextContent('Нет совпадений');
+  await userEvent.keyboard('{Escape}');
+  expect(search).toHaveValue('');
+  expect(search).toHaveFocus();
+  expect(api.command).not.toHaveBeenCalled();
+});
+
+it('preserves separate current and Gantt queries across tabs and browser history', async () => {
+  await start();
+  await userEvent.type(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
+    'Работа 2',
+  );
+  await userEvent.click(document.getElementById('project-tab-tasks')!);
+  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+    '',
+  );
+  await userEvent.type(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
+    'Работа 1',
+  );
+  await userEvent.click(document.getElementById('project-tab-current')!);
+  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+    'Работа 2',
+  );
+  await userEvent.click(current().getByRole('button', { name: /Работа 2/ }));
+  await travel('back');
+  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+    'Работа 2',
+  );
+  await travel('back');
+  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+    'Работа 1',
+  );
+  await travel('forward');
+  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+    'Работа 2',
+  );
+  expect(current().getByRole('button', { name: /Работа 2/ })).toBeVisible();
+  expect(window.location.search).not.toContain('Работа');
+});
+
+it('searches only unfinished leaf titles while retaining complete parent paths', async () => {
+  const server = mockJournalApp();
+  server.tree.tasks = [
+    task(1, { title: 'Найти группу' }),
+    task(2, { title: 'Найти лист', parentId: task(1).id }),
+    task(3, { title: 'Другой лист', parentId: task(1).id }),
+    task(4, { title: 'Найти завершённое', status: 'done' }),
+  ];
+  window.history.replaceState(
+    null,
+    '',
+    `?project=${server.tree.project.id}&view=current`,
+  );
+  render(<App />);
+  await screen.findByRole('tab', { name: 'Актуальное', selected: true });
+  await userEvent.type(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
+    'НАЙТИ',
+  );
+  expect(
+    current().getByRole('button', { name: 'Без окончания 1' }),
+  ).toBeVisible();
+  expect(
+    current().getByRole('button', { name: /Найти лист.*Найти группу/ }),
+  ).toBeVisible();
+  expect(current().queryByText('Другой лист')).not.toBeInTheDocument();
+  expect(current().queryByText('Найти завершённое')).not.toBeInTheDocument();
+});
 it.each(['done', 'summary', 'missing', 'dependencies'] as const)(
   'direct current link handles %s without inventing a row; close focuses the current tab',
   async (kind) => {
@@ -618,6 +713,10 @@ it('new project uses defaults, pending load shows no old rows, Back restores RAM
   await userEvent.click(
     current().getByRole('button', { name: 'Без окончания 0' }),
   );
+  await userEvent.type(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
+    'Работа',
+  );
   const read = deferred<typeof server.tree>();
   vi.mocked(api.tree).mockReturnValueOnce(read.promise);
   await userEvent.click(screen.getByRole('button', { name: 'Проект B' }));
@@ -632,9 +731,15 @@ it('new project uses defaults, pending load shows no old rows, Back restores RAM
   expect(
     current().getByRole('button', { name: 'Без окончания 0' }),
   ).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+    '',
+  );
   await travel('back');
   await travel('back');
   await screen.findByRole('heading', { name: 'Демо-проект' });
+  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+    'Работа',
+  );
   await waitFor(() =>
     expect(
       current().getByRole('button', { name: 'Без окончания 0' }),

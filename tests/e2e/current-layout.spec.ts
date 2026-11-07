@@ -64,7 +64,7 @@ test('current rows use the space before the card and keep narrow titles readable
   await expect(panel).toHaveCount(0);
 });
 
-test('current project heading uses the free header width with an open card', async ({
+test('current header shares space between the project title, undo and search with an open card', async ({
   page,
   runtime,
 }) => {
@@ -81,7 +81,15 @@ test('current project heading uses the free header width with an open card', asy
     const undo = (await page
       .getByRole('button', { name: 'Отменить изменение плана' })
       .boundingBox())!;
-    expect(title.width).toBeGreaterThan(heading.width * 0.75);
+    const search = (await page
+      .getByRole('searchbox', { name: 'Поиск задач' })
+      .boundingBox())!;
+    expect(title.width).toBeGreaterThanOrEqual(60);
+    expect(search.width).toBeGreaterThanOrEqual(100);
+    expect(undo.x + undo.width).toBeLessThanOrEqual(search.x);
+    expect(search.x + search.width).toBeLessThanOrEqual(
+      heading.x + heading.width,
+    );
     expect(title.x + title.width).toBeLessThanOrEqual(undo.x);
     expect(undo.x + undo.width).toBeLessThanOrEqual(heading.x + heading.width);
   }

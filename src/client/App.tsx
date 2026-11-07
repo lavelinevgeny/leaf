@@ -59,6 +59,7 @@ import { strings } from './strings.js';
 import { ProjectControls } from './ProjectControls.js';
 import { TaskViewControl } from './TaskViewControl.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
+import { TaskSearch } from './TaskSearch.js';
 import { TaskFilters } from './TaskFilters.js';
 import { ControlIcon } from './ControlIcon.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
@@ -119,6 +120,7 @@ function isTextInput(target: EventTarget | null) {
 }
 export function App() {
   const initialVisit = useRef(parseWorkspaceUrl(new URL(window.location.href)));
+  const [currentQuery, setCurrentQuery] = useState('');
   const [projectView, setProjectView] = useState<ProjectView>('tasks');
   const [currentCollapsed, setCurrentCollapsed] = useState(
     defaultCurrentCollapsed,
@@ -155,6 +157,7 @@ export function App() {
     index: number;
     collapsed: Set<string>;
     currentCollapsed: Set<CurrentGroupId>;
+    currentQuery: string;
     currentScrollTop: number;
     currentOrigin: CurrentOrigin | null;
     filter: TaskFilter;
@@ -376,6 +379,7 @@ export function App() {
     setProjectPlanDirty(false);
     visits.current.clear();
     visitId.current = null;
+    setCurrentQuery('');
   }
   const journal = useJournal(
     session?.authenticated &&
@@ -668,6 +672,7 @@ export function App() {
     setNotice('');
     if (!preserveDraft) {
       setCurrentCollapsed(defaultCurrentCollapsed());
+      setCurrentQuery('');
       currentScrollTop.current = 0;
       restoreCurrentScroll.current = null;
       currentOrigin.current = null;
@@ -1196,7 +1201,7 @@ export function App() {
       )
         focusCurrent(lost.origin);
     }
-  }, [projectView, currentCollapsed, tree, projectToday]);
+  }, [projectView, currentCollapsed, currentQuery, tree, projectToday]);
   function closePanel() {
     requestTaskNavigation(() => {
       const id = selected?.id;
@@ -1603,6 +1608,7 @@ export function App() {
       ++loadSequence.current;
       visits.current.clear();
       visitId.current = null;
+      setCurrentQuery('');
       setSession({
         authenticated: false,
         setupRequired: false,
@@ -1641,6 +1647,7 @@ export function App() {
       ...previous,
       collapsed: new Set(collapsed),
       currentCollapsed: new Set(currentCollapsed),
+      currentQuery,
       currentScrollTop: currentScrollTop.current,
       currentOrigin: currentOrigin.current,
       filter: taskFilter,
@@ -1674,6 +1681,7 @@ export function App() {
       ...(snapshot ?? {
         collapsed: new Set(),
         currentCollapsed: defaultCurrentCollapsed(),
+        currentQuery: '',
         currentScrollTop: 0,
         currentOrigin: null,
         filter: emptyTaskFilter,
@@ -1755,6 +1763,7 @@ export function App() {
     undoFocus.current = null;
     currentRowFocus.current = null;
     setCurrentCollapsed(new Set(saved.currentCollapsed));
+    setCurrentQuery(saved.currentQuery);
     currentScrollTop.current = saved.currentScrollTop;
     restoreCurrentScroll.current = saved.currentScrollTop;
     currentOrigin.current = saved.currentOrigin;
@@ -1789,6 +1798,7 @@ export function App() {
         index: 0,
         collapsed: new Set(),
         currentCollapsed: defaultCurrentCollapsed(),
+        currentQuery: '',
         currentScrollTop: 0,
         currentOrigin: null,
         filter: emptyTaskFilter,
@@ -1838,6 +1848,7 @@ export function App() {
       index: old ? old.index + 1 : 0,
       collapsed: new Set(collapsed),
       currentCollapsed: new Set(currentCollapsed),
+      currentQuery,
       currentScrollTop: currentScrollTop.current,
       currentOrigin: currentOrigin.current,
       filter: taskFilter,
@@ -1859,7 +1870,14 @@ export function App() {
   ]);
   useEffect(() => {
     captureVisit();
-  }, [collapsed, currentCollapsed, taskFilter, showGantt, journalQuery]);
+  }, [
+    collapsed,
+    currentCollapsed,
+    currentQuery,
+    taskFilter,
+    showGantt,
+    journalQuery,
+  ]);
   const errorView = (
     <>
       {notice && (
@@ -2201,6 +2219,20 @@ export function App() {
                     />
                   </label>
                 )}
+                {projectView === 'current' && (
+                  <form
+                    role="search"
+                    aria-label={strings.searchTasks}
+                    className="task-filters"
+                    onSubmit={(event) => event.preventDefault()}
+                  >
+                    <TaskSearch
+                      value={currentQuery}
+                      onChange={setCurrentQuery}
+                      disabled={loading}
+                    />
+                  </form>
+                )}
                 {projectView === 'tasks' && (
                   <TaskFilters
                     key={tree.project.id}
@@ -2382,6 +2414,7 @@ export function App() {
                 }}
               >
                 <CurrentTasks
+                  query={currentQuery}
                   groups={currentGroups(
                     tree.tasks,
                     tree.project.calendarType,
