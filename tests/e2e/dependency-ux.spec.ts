@@ -224,6 +224,11 @@ test('DUX01/04 shared rows keep saved counts, directional routing, Undo and comp
   const a = tree.tasks.find((t) => t.title === 'Работа A')!;
   const c = tree.tasks.find((t) => t.title === 'Работа C')!;
   tree = await send(page, runtime.origin, tree, {
+    type: 'task.edit',
+    taskId: c.id,
+    changes: { inputStart: '2026-10-07', inputFinish: '2026-10-09' },
+  });
+  tree = await send(page, runtime.origin, tree, {
     type: 'dependency.create',
     predecessorId: a.id,
     successorId: c.id,
@@ -237,6 +242,7 @@ test('DUX01/04 shared rows keep saved counts, directional routing, Undo and comp
     exact: true,
   });
   await expect(trigger).toHaveText('1');
+  const originalControl = await trigger.elementHandle();
   for (const view of ['Список', 'Гант']) {
     await page.getByRole('button', { name: view, exact: true }).click();
     if (view === 'Гант') {
@@ -280,6 +286,16 @@ test('DUX01/04 shared rows keep saved counts, directional routing, Undo and comp
         height: node.getBoundingClientRect().height,
       };
     });
+    await expect(trigger).toBeVisible();
+    await expect(row.locator('.task-date')).toBeVisible();
+    await expect(row.locator('.task-date')).toHaveText('7–9 окт.');
+    await expect(trigger).toBeEnabled();
+    expect(
+      await trigger.evaluate(
+        (node, original) => node === original,
+        originalControl,
+      ),
+    ).toBe(true);
     expect(before.height).toBe(38);
     expect(before.chain.width).toBeGreaterThanOrEqual(28);
     expect(before.chain.height).toBeGreaterThanOrEqual(28);
@@ -292,12 +308,32 @@ test('DUX01/04 shared rows keep saved counts, directional routing, Undo and comp
       Math.abs(header!.x + header!.width - before.date.right),
     ).toBeLessThanOrEqual(1);
     await row.hover();
+    expect(
+      await trigger.evaluate(
+        (node, original) => node === original,
+        originalControl,
+      ),
+    ).toBe(true);
     expect(await row.locator('.task-title').boundingBox()).toEqual({
       x: before.title.x,
       y: before.title.y,
       width: before.title.width,
       height: before.title.height,
     });
+    for (const name of [
+      'Добавить подзадачу: Работа C',
+      'Добавить запись: Работа C',
+      'Зависимости: Работа C',
+    ]) {
+      const control = row.getByRole('button', { name, exact: true });
+      const bounds = await control.boundingBox();
+      const visibleColumn = await row.locator('..').boundingBox();
+      expect(bounds!.width).toBeGreaterThanOrEqual(28);
+      expect(bounds!.height).toBeGreaterThanOrEqual(28);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
+        visibleColumn!.x + visibleColumn!.width + 1,
+      );
+    }
     await trigger.focus();
     expect(await row.locator('.task-title').boundingBox()).toEqual({
       x: before.title.x,
@@ -305,6 +341,23 @@ test('DUX01/04 shared rows keep saved counts, directional routing, Undo and comp
       width: before.title.width,
       height: before.title.height,
     });
+    await row.focus();
+    await page.keyboard.press('Tab');
+    await expect(
+      row.getByRole('button', {
+        name: 'Добавить подзадачу: Работа C',
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(
+      row.getByRole('button', {
+        name: 'Добавить запись: Работа C',
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(trigger).toBeFocused();
     await trigger.press('Enter');
     const picker = page.getByRole('dialog', {
       name: 'Зависимости',
@@ -492,3 +545,404 @@ for (const host of ['row', 'gantt'] as const) {
     });
   }
 }
+
+async function expectPopupWithinViewport(popup: Locator) {
+  await expect
+    .poll(() =>
+      popup.evaluate((node) => {
+        const r = node.getBoundingClientRect();
+        const v = window.visualViewport!;
+        return (
+          r.left >= v.offsetLeft - 1 &&
+          r.top >= v.offsetTop - 1 &&
+          r.right <= v.offsetLeft + v.width + 1 &&
+          r.bottom <= v.offsetTop + v.height + 1
+        );
+      }),
+    )
+    .toBe(true);
+}
+
+test('DUX01/05 graph headers, directed arrows, five neighbors and last-page removal use real snapshots', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await seedOptionalRuntime(page, runtime);
+  const target = tree.tasks.find((t) => t.title === 'Работа C')!;
+  for (const direction of ['incoming', 'outgoing'] as const) {
+    for (let index = 0; index < 5; ++index) {
+      tree = await send(page, runtime.origin, tree, {
+        type: 'task.create',
+        parentId: null,
+        title: `${direction} ${index}`,
+        ...(direction === 'incoming'
+          ? { successorIds: [target.id] }
+          : { predecessorIds: [target.id] }),
+      });
+    }
+  }
+  await page.goto(runtime.origin);
+  const row = page
+    .getByRole('tree', { name: 'Задачи', exact: true })
+    .locator(`[data-task-id="${target.id}"]`);
+  await expect(
+    row.getByRole('button', { name: 'Зависимости: Работа C', exact: true }),
+  ).toHaveText('10');
+  await row.click();
+  const panel = page.getByRole('complementary', { name: 'Задача' });
+  await panel.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  const graph = panel.locator('.dependency-graph');
+  const headers = graph.locator('.dependency-section-header');
+  await expect(headers.nth(0)).toContainText('(5)');
+  await expect(headers.nth(1)).toContainText('(5)');
+  for (const name of ['Добавить предшественника', 'Добавить последователя']) {
+    const button = graph.getByRole('button', { name, exact: true });
+    await expect(button).toHaveText('+ Добавить');
+    await expect(button).toBeEnabled();
+  }
+  expect(
+    await graph
+      .getByRole('button', { name: 'Добавить предшественника', exact: true })
+      .evaluate((n) => n.getBoundingClientRect().width),
+  ).toBe(
+    await graph
+      .getByRole('button', { name: 'Добавить последователя', exact: true })
+      .evaluate((n) => n.getBoundingClientRect().width),
+  );
+  await expect(
+    graph.locator('[data-dependency-direction="incoming"]'),
+  ).toHaveCount(4);
+  await expect(
+    graph.locator('[data-dependency-direction="outgoing"]'),
+  ).toHaveCount(4);
+  const arrows = await graph
+    .locator('[data-dependency-edge]')
+    .evaluateAll((nodes) =>
+      nodes.map((n) => {
+        const p = n as SVGPathElement;
+        const start = p.getPointAtLength(0),
+          end = p.getPointAtLength(p.getTotalLength());
+        return {
+          start: start.y,
+          end: end.y,
+          marker: p.getAttribute('marker-end'),
+          title: p.textContent,
+        };
+      }),
+    );
+  expect(arrows).toHaveLength(8);
+  for (const arrow of arrows) {
+    expect(arrow.end).toBeGreaterThan(arrow.start);
+    expect(arrow.marker).toMatch(/^url\(#.+-dep\)$/);
+    expect(arrow.title).toContain('→');
+  }
+  await headers
+    .nth(0)
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(
+    graph.locator('[data-dependency-direction="incoming"]'),
+  ).toHaveCount(1);
+  await graph
+    .locator('[data-dependency-direction="incoming"]')
+    .getByRole('button', { name: /^Удалить связь:/ })
+    .click();
+  await expect(headers.nth(0)).toContainText('(4)');
+  await expect(headers.nth(0)).toContainText('Не сохранено');
+  await expect(
+    headers
+      .nth(1)
+      .getByRole('button', { name: 'Добавить последователя', exact: true }),
+  ).toBeDisabled();
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+  await panel.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(
+    headers.nth(0).getByText('Не сохранено', { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    graph.locator('[data-dependency-direction="incoming"]'),
+  ).toHaveCount(4);
+  const incomingSaved = await readTree(page, runtime.origin, tree.project.id);
+  expect(incomingSaved.dependencies).toHaveLength(9);
+  await headers
+    .nth(1)
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(
+    graph.locator('[data-dependency-direction="outgoing"]'),
+  ).toHaveCount(1);
+  await graph
+    .locator('[data-dependency-direction="outgoing"]')
+    .getByRole('button', { name: /^Удалить связь:/ })
+    .click();
+  await expect(
+    graph.locator('[data-dependency-direction="outgoing"]'),
+  ).toHaveCount(4);
+  const outgoingSaved = await readTree(page, runtime.origin, tree.project.id);
+  expect(outgoingSaved.dependencies).toHaveLength(8);
+  expect(
+    outgoingSaved.dependencies.every((edge) =>
+      incomingSaved.dependencies.some((previous) => previous.id === edge.id),
+    ),
+  ).toBe(true);
+  await page
+    .getByRole('button', { name: 'Отменить изменение плана', exact: true })
+    .click();
+  await expect(headers.nth(1)).toContainText('(5)');
+  expect(
+    (await readTree(page, runtime.origin, tree.project.id)).dependencies,
+  ).toEqual(incomingSaved.dependencies);
+  const openedTitle = await graph
+    .locator('[data-dependency-direction="outgoing"] strong')
+    .first()
+    .textContent();
+  await graph
+    .locator('[data-dependency-direction="outgoing"]')
+    .getByRole('button', { name: /^Открыть:/ })
+    .first()
+    .click();
+  await expect(
+    panel.getByRole('heading', { name: openedTitle!, exact: true }),
+  ).toBeVisible();
+  await expect(
+    panel.locator('.dependency-section-header').nth(0),
+  ).toContainText('(1)');
+  await expect(
+    panel.locator('.dependency-section-header').nth(1),
+  ).toContainText('(0)');
+});
+
+for (const scope of ['main', 'subtask'] as const) {
+  test(`DUX09 ${scope}: mixed lost-success response freezes exact envelope until single replay`, async ({
+    page,
+    runtime,
+  }) => {
+    const tree = await seedOptionalRuntime(page, runtime);
+    await page.goto(runtime.origin);
+    const form = await openQuick(page, scope);
+    const title = form.getByLabel('Новая задача', { exact: true });
+    await title.fill('Lost mixed T');
+    await selectMixed(page, form);
+    const envelopes: unknown[] = [];
+    let frozen: unknown;
+    await page.route('**/api/projects/*/commands', async (route) => {
+      envelopes.push(route.request().postDataJSON());
+      if (envelopes.length === 1) {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        frozen = await response.json();
+        await route.abort('failed');
+      } else await route.continue();
+    });
+    await title.press('Enter');
+    await expect(
+      page.getByRole('button', { name: 'Повторить', exact: true }),
+    ).toBeVisible();
+    await expect(title).toBeDisabled();
+    await expect(
+      form.getByRole('button', { name: /^Связи новой задачи:/ }),
+    ).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(title).toBeDisabled();
+    const applied = await readTree(page, runtime.origin, tree.project.id);
+    expect(applied).toEqual(frozen);
+    expect(applied.project.revision).toBe(tree.project.revision + 1);
+    expect(applied.dependencies).toHaveLength(2);
+    expect(
+      applied.tasks.filter((t) => t.title === 'Lost mixed T'),
+    ).toHaveLength(1);
+    const reply = page.waitForResponse((r) => r.url().endsWith('/commands'));
+    await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+    const response = await reply;
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toEqual(frozen);
+    await expect(title).toHaveValue('');
+    expect(envelopes).toHaveLength(2);
+    expect(envelopes[1]).toEqual(envelopes[0]);
+    expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(
+      applied,
+    );
+    if (scope === 'subtask')
+      await expect(page.locator('#quick-task')).toHaveValue(
+        'Основной черновик',
+      );
+  });
+}
+
+test('DUX03/04/10/11 popup preserves groups, IME, duplicate paths and active scroll through resize', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await seedOptionalRuntime(page, runtime);
+  for (let branch = 0; branch < 2; ++branch) {
+    tree = await send(page, runtime.origin, tree, {
+      type: 'task.create',
+      parentId: null,
+      title: `Ветка ${branch}`,
+    });
+    const parentId = tree.tasks.find((t) => t.title === `Ветка ${branch}`)!.id;
+    tree = await send(page, runtime.origin, tree, {
+      type: 'task.create',
+      parentId,
+      title: 'Одинаковая',
+    });
+  }
+  for (let index = 0; index < 12; ++index)
+    tree = await send(page, runtime.origin, tree, {
+      type: 'task.create',
+      parentId: null,
+      title: `Длинное название кандидата ${index} `.repeat(3).trim(),
+    });
+  await page.goto(runtime.origin);
+  const form = await openQuick(page, 'main');
+  await form.getByLabel('Новая задача', { exact: true }).fill('Черновик');
+  const chain = form.getByRole('button', { name: /^Связи новой задачи:/ });
+  await chain.click();
+  const popup = page.getByRole('dialog', { name: 'Зависимости', exact: true });
+  const search = popup.getByRole('searchbox');
+  await search.fill('Одинаковая');
+  await expect(popup.getByRole('option')).toHaveCount(2);
+  await expect(popup.getByRole('option').nth(0)).toContainText('Ветка 0');
+  await expect(popup.getByRole('option').nth(1)).toContainText('Ветка 1');
+  await search.dispatchEvent('compositionstart');
+  await search.press('Enter');
+  await expect(popup.locator('.predecessor-chip')).toHaveCount(0);
+  await search.dispatchEvent('compositionend');
+  await search.press('Enter');
+  await popup.getByRole('button', { name: 'Перед', exact: true }).click();
+  await expect(search).toHaveValue('Одинаковая');
+  await search.press('Enter');
+  await expect(popup.locator('.predecessor-chip')).toHaveCount(2);
+  await expect(
+    popup.getByRole('button', {
+      name: 'Убрать предшественника: Одинаковая · Ветка 0',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    popup.getByRole('button', {
+      name: 'Убрать последователя: Одинаковая · Ветка 1',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await search.fill('Нет такого имени');
+  await expect(popup.getByRole('status')).toContainText('Ничего не найдено');
+  await expectPopupWithinViewport(popup);
+  await page.setViewportSize({ width: 850, height: 650 });
+  await expectPopupWithinViewport(popup);
+  await search.fill('Длинное название');
+  for (let index = 0; index < 12; ++index) await search.press('ArrowDown');
+  const active = popup.getByRole('option', { selected: true });
+  await expect(active).toHaveCount(1);
+  const activeBox = await active.boundingBox(),
+    listBox = await popup.getByRole('listbox').boundingBox();
+  expect(activeBox!.y).toBeGreaterThanOrEqual(listBox!.y - 1);
+  expect(activeBox!.y + activeBox!.height).toBeLessThanOrEqual(
+    listBox!.y + listBox!.height + 1,
+  );
+  await expect(popup.locator('.dependency-preview')).toContainText(
+    'Черновик →',
+  );
+  await search.press('Escape');
+  await expect(chain).toBeFocused();
+  await chain.press('Space');
+  await expect(
+    popup.getByRole('button', { name: 'После', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(popup.locator('.predecessor-chip')).toHaveCount(2);
+  await search.press('Escape');
+  expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+});
+
+test('DUX02/12 touch without hover opens an empty row chain independently of task panel', async ({
+  browser,
+  runtime,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 900, height: 800 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  try {
+    const page = await context.newPage();
+    const tree = await seedOptionalRuntime(page, runtime);
+    await page.goto(runtime.origin);
+    expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(
+      true,
+    );
+    const target = tree.tasks.find((t) => t.title === 'Работа C')!;
+    const chain = page
+      .getByRole('tree', { name: 'Задачи', exact: true })
+      .locator(`[data-task-id="${target.id}"]`)
+      .getByRole('button', { name: 'Зависимости: Работа C', exact: true });
+    await expect(chain).toHaveText('');
+    await chain.tap();
+    const popup = page.getByRole('dialog', {
+      name: 'Зависимости',
+      exact: true,
+    });
+    await expect(popup).toBeVisible();
+    await expect(
+      page.getByRole('complementary', { name: 'Задача' }),
+    ).toHaveCount(0);
+    await popup.getByRole('button', { name: 'Перед', exact: true }).tap();
+    await expect(
+      popup.getByRole('button', { name: 'Перед', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expectPopupWithinViewport(popup);
+    expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+  } finally {
+    await context.close();
+  }
+});
+
+test('DUX06/10 row pending ack preserves outside focus after blur to body and keeps saved count', async ({
+  page,
+  runtime,
+}) => {
+  const tree = await seedOptionalRuntime(page, runtime);
+  await page.goto(runtime.origin);
+  const chain = page
+    .getByRole('tree', { name: 'Задачи', exact: true })
+    .getByRole('button', { name: 'Зависимости: Работа C', exact: true });
+  await chain.focus();
+  await chain.press('Space');
+  const popup = page.getByRole('dialog', { name: 'Зависимости', exact: true });
+  let release!: () => void;
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  let accepted = false;
+  await page.route('**/commands', async (route) => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    accepted = true;
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await popup.getByRole('option', { name: /^Работа A/ }).click();
+    await expect.poll(() => accepted).toBe(true);
+    await expect(chain).toHaveText('');
+    await expect(chain).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(popup).toHaveCount(0);
+    const outside = page.getByRole('searchbox', {
+      name: 'Поиск задач',
+      exact: true,
+    });
+    await outside.focus();
+    await outside.evaluate((node) => (node as HTMLElement).blur());
+    release();
+    await expect(chain).toHaveText('1');
+    expect(
+      await page.evaluate(() => document.activeElement === document.body),
+    ).toBe(true);
+    expect(
+      (await readTree(page, runtime.origin, tree.project.id)).project.revision,
+    ).toBe(tree.project.revision + 1);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
