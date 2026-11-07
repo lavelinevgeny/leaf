@@ -550,7 +550,7 @@ test('row quick actions have their own pointer hit targets over the date', async
       const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
       await row.hover();
       const geometry = await row.evaluate((node) =>
-        [...node.querySelectorAll('.task-row-actions-inner > button')].map(
+        [...node.querySelectorAll('.task-row-actions-secondary > button')].map(
           (button) => {
             const a = button.getBoundingClientRect();
             const hit = document.elementFromPoint(

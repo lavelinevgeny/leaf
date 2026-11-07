@@ -215,3 +215,280 @@ for (const scope of ['main', 'subtask'] as const) {
     ]);
   });
 }
+
+test('DUX01/04 shared rows keep saved counts, directional routing, Undo and compact geometry', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await seedOptionalRuntime(page, runtime);
+  const a = tree.tasks.find((t) => t.title === 'Работа A')!;
+  const c = tree.tasks.find((t) => t.title === 'Работа C')!;
+  tree = await send(page, runtime.origin, tree, {
+    type: 'dependency.create',
+    predecessorId: a.id,
+    successorId: c.id,
+  });
+  await page.goto(runtime.origin);
+  const row = page
+    .getByRole('tree', { name: 'Задачи', exact: true })
+    .locator(`[data-task-id="${c.id}"]`);
+  const trigger = row.getByRole('button', {
+    name: 'Зависимости: Работа C',
+    exact: true,
+  });
+  await expect(trigger).toHaveText('1');
+  for (const view of ['Список', 'Гант']) {
+    await page.getByRole('button', { name: view, exact: true }).click();
+    if (view === 'Гант') {
+      await page.getByRole('separator', { name: 'Ширина дерева' }).focus();
+      await page
+        .getByRole('separator', { name: 'Ширина дерева' })
+        .press('ArrowLeft');
+      await page
+        .getByRole('separator', { name: 'Ширина дерева' })
+        .press('ArrowLeft');
+      await page
+        .getByRole('separator', { name: 'Ширина дерева' })
+        .press('ArrowLeft');
+      await page
+        .getByRole('separator', { name: 'Ширина дерева' })
+        .press('ArrowLeft');
+      await page
+        .getByRole('separator', { name: 'Ширина дерева' })
+        .press('ArrowLeft');
+      await page
+        .getByRole('separator', { name: 'Ширина дерева' })
+        .press('ArrowLeft');
+    }
+    await page.getByRole('searchbox', { name: 'Поиск задач' }).focus();
+    await page.mouse.move(0, 0);
+    const before = await row.evaluate((node) => {
+      const rect = (selector: string) => {
+        const r = node.querySelector(selector)!.getBoundingClientRect();
+        return {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          right: r.right,
+        };
+      };
+      return {
+        title: rect('.task-title'),
+        date: rect('.task-date'),
+        chain: rect('.task-row-dependency'),
+        height: node.getBoundingClientRect().height,
+      };
+    });
+    expect(before.height).toBe(38);
+    expect(before.chain.width).toBeGreaterThanOrEqual(28);
+    expect(before.chain.height).toBeGreaterThanOrEqual(28);
+    expect(before.date.right).toBeLessThanOrEqual(before.chain.x);
+    const header = await page
+      .locator('.timeline-heading-labels > span')
+      .last()
+      .boundingBox();
+    expect(
+      Math.abs(header!.x + header!.width - before.date.right),
+    ).toBeLessThanOrEqual(1);
+    await row.hover();
+    expect(await row.locator('.task-title').boundingBox()).toEqual({
+      x: before.title.x,
+      y: before.title.y,
+      width: before.title.width,
+      height: before.title.height,
+    });
+    await trigger.focus();
+    expect(await row.locator('.task-title').boundingBox()).toEqual({
+      x: before.title.x,
+      y: before.title.y,
+      width: before.title.width,
+      height: before.title.height,
+    });
+    await trigger.press('Enter');
+    const picker = page.getByRole('dialog', {
+      name: 'Зависимости',
+      exact: true,
+    });
+    await expect(
+      picker.getByRole('button', { name: 'После', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      page.getByRole('complementary', { name: 'Задача' }),
+    ).toHaveCount(0);
+    await picker.getByRole('searchbox').press('Escape');
+    await expect(trigger).toBeFocused();
+  }
+  await trigger.click();
+  const picker = page.getByRole('dialog', { name: 'Зависимости', exact: true });
+  await picker.getByRole('button', { name: 'Перед', exact: true }).click();
+  // Remove the incoming group while the opposite direction is selected.
+  await picker
+    .getByRole('button', {
+      name: 'Убрать предшественника: Работа A',
+      exact: true,
+    })
+    .click();
+  await expect(picker).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveText('');
+  let saved = await readTree(page, runtime.origin, tree.project.id);
+  expect(saved.dependencies).toEqual([]);
+  await page.getByRole('button', { name: 'Отменить изменение плана' }).click();
+  await expect(trigger).toHaveText('1');
+  saved = await readTree(page, runtime.origin, tree.project.id);
+  expect(saved.dependencies).toEqual(tree.dependencies);
+  expect(saved.tasks).toEqual(tree.tasks);
+  await page.getByRole('treeitem', { name: /^Этап P,/ }).click();
+  const subtask = page
+    .getByRole('tree', { name: 'Подзадачи', exact: true })
+    .getByRole('button', { name: 'Зависимости: Работа C', exact: true });
+  await subtask.click();
+  await picker.getByRole('searchbox').press('Escape');
+  await expect(subtask).toBeFocused();
+});
+
+test('DUX04 compact slot stays shared across hidden neighbors and deep horizontal scroll', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await seedOptionalRuntime(page, runtime);
+  let parentId = tree.tasks.find((t) => t.title === 'Этап P')!.id;
+  for (let level = 0; level < 8; ++level) {
+    const title =
+      level === 7
+        ? 'Глубокая задача с длинным названием '.repeat(4).trim()
+        : `Уровень ${level}`;
+    tree = await send(page, runtime.origin, tree, {
+      type: 'task.create',
+      parentId,
+      title,
+    });
+    parentId = tree.tasks.find((t) => t.title === title)!.id;
+  }
+  for (let index = 0; index < 12; ++index) {
+    const title = `Сосед ${index}`;
+    tree = await send(page, runtime.origin, tree, {
+      type: 'task.create',
+      parentId: null,
+      title,
+      successorIds: [parentId],
+    });
+  }
+  tree = await send(page, runtime.origin, tree, {
+    type: 'task.create',
+    parentId: null,
+    title: 'Другой скрытый сосед',
+  });
+  await page.goto(runtime.origin);
+  const separator = page.getByRole('separator', { name: 'Ширина дерева' });
+  await separator.focus();
+  for (let index = 0; index < 6; ++index) await separator.press('ArrowLeft');
+  await expect(separator).toHaveAttribute('aria-valuenow', '300');
+  const scope = page.locator('.timeline-tree');
+  const row = scope.locator(`[data-task-id="${parentId}"]`);
+  const chain = row.getByRole('button', { name: /^Зависимости:/ });
+  await expect(chain).toHaveText('12');
+  const width = await scope.evaluate((node) =>
+    getComputedStyle(node).getPropertyValue('--leaf-dependency-slot-width'),
+  );
+  expect(width).toBe('calc(28px + 4px + 2ch)');
+  await scope.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  const edge = await scope.boundingBox(),
+    button = await chain.boundingBox();
+  expect(button!.x).toBeGreaterThanOrEqual(edge!.x);
+  expect(button!.x + button!.width).toBeLessThanOrEqual(edge!.x + edge!.width);
+  expect(button!.width).toBeGreaterThanOrEqual(28);
+  expect(button!.height).toBeGreaterThanOrEqual(28);
+  await chain.click();
+  const picker = page.getByRole('dialog', { name: 'Зависимости', exact: true });
+  await expect(
+    picker.getByRole('button', { name: /^Убрать предшественника:/ }),
+  ).toHaveCount(12);
+  await picker.getByRole('searchbox').press('Escape');
+  await expect(chain).toBeFocused();
+  await page
+    .getByRole('searchbox', { name: 'Поиск задач' })
+    .fill('Глубокая задача');
+  await expect(chain).toHaveText('12');
+  expect(
+    await scope.evaluate((node) =>
+      getComputedStyle(node).getPropertyValue('--leaf-dependency-slot-width'),
+    ),
+  ).toBe(width);
+  await chain.click();
+  await expect(
+    picker.getByRole('button', {
+      name: 'Убрать предшественника: Сосед 11',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await picker.getByRole('searchbox').fill('Другой скрытый сосед');
+  await expect(
+    picker.getByRole('option', { name: /Другой скрытый сосед/ }),
+  ).toBeVisible();
+});
+
+for (const host of ['row', 'gantt'] as const) {
+  for (const key of ['Enter', 'Space']) {
+    test(`DUX06 ${host}: focused candidate ${key} keeps Escape available during pending write`, async ({
+      page,
+      runtime,
+    }) => {
+      const tree = await seedOptionalRuntime(page, runtime);
+      const target = tree.tasks.find((task) => task.title === 'Работа C')!;
+      await page.goto(runtime.origin);
+      const trigger =
+        host === 'row'
+          ? page
+              .getByRole('tree', { name: 'Задачи', exact: true })
+              .getByRole('button', {
+                name: 'Зависимости: Работа C',
+                exact: true,
+              })
+          : page
+              .locator(`[data-gantt-row="${target.id}"]`)
+              .getByRole('button', {
+                name: 'После окончания: Работа C',
+                exact: true,
+              });
+      await trigger.focus();
+      await trigger.press('Enter');
+      const picker = page.getByRole('dialog', {
+        name: 'Зависимости',
+        exact: true,
+      });
+      const candidate = picker.getByRole('option', { name: /^Работа A/ });
+      let release!: () => void;
+      const gate = new Promise<void>((done) => {
+        release = done;
+      });
+      let accepted = false;
+      await page.route('**/commands', async (route) => {
+        const response = await route.fetch();
+        accepted = true;
+        await gate;
+        await route.fulfill({ response });
+      });
+      try {
+        await candidate.focus();
+        await candidate.press(key);
+        await expect.poll(() => accepted).toBe(true);
+        await expect(candidate).toBeDisabled();
+        await page.keyboard.press('Escape');
+        await expect(picker).toHaveCount(0);
+        await expect(trigger).toBeDisabled();
+        release();
+        await expect(trigger).toBeFocused();
+        expect(
+          (await readTree(page, runtime.origin, tree.project.id)).dependencies,
+        ).toHaveLength(1);
+      } finally {
+        release();
+        await page.unrouteAll({ behavior: 'wait' });
+      }
+    });
+  }
+}

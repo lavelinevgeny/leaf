@@ -59,6 +59,19 @@ export function PredecessorPicker(props: PredecessorPickerProps): ReactNode {
   const search = useRef<HTMLInputElement>(null);
   const results = useRef<HTMLDivElement>(null);
   const id = useId();
+  function updateFromControl(trigger: HTMLElement, update: () => void) {
+    if (blocked) return;
+    const ownedFocus = document.activeElement === trigger;
+    update();
+    // A removed or disabled choice must not lose keyboard Escape. This move
+    // is synchronous and respects focus deliberately moved by the owner.
+    if (
+      ownedFocus &&
+      document.activeElement === trigger &&
+      search.current?.isConnected
+    )
+      search.current.focus();
+  }
   function keepActiveVisible() {
     const list = results.current;
     const option = list?.querySelector<HTMLElement>('[aria-selected="true"]');
@@ -253,20 +266,11 @@ export function PredecessorPicker(props: PredecessorPickerProps): ReactNode {
                       type="button"
                       aria-label={`${group === 'predecessor' ? strings.removePredecessor : strings.removeSuccessor}: ${removalTitle}`}
                       disabled={blocked}
-                      onClick={(event) => {
-                        if (blocked) return;
-                        const ownedFocus =
-                          document.activeElement === event.currentTarget;
-                        onRemove(group, selected);
-                        // The chip may disappear immediately. Keep keyboard Escape in this layer;
-                        // this synchronous move creates no late focus request after navigation.
-                        if (
-                          ownedFocus &&
-                          document.activeElement === event.currentTarget &&
-                          search.current?.isConnected
+                      onClick={(event) =>
+                        updateFromControl(event.currentTarget, () =>
+                          onRemove(group, selected),
                         )
-                          search.current.focus();
-                      }}
+                      }
                     >
                       ×
                     </button>
@@ -391,9 +395,11 @@ export function PredecessorPicker(props: PredecessorPickerProps): ReactNode {
                   .filter(Boolean)
                   .join(' / ')}
                 onFocus={() => setActive(candidateIndex)}
-                onClick={() => {
-                  if (!blocked) onAdd(direction, candidate.task.id);
-                }}
+                onClick={(event) =>
+                  updateFromControl(event.currentTarget, () =>
+                    onAdd(direction, candidate.task.id),
+                  )
+                }
               >
                 <span>{candidate.task.title}</span>
                 {candidate.path && <small>{candidate.path}</small>}

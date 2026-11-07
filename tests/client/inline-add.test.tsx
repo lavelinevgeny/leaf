@@ -296,7 +296,7 @@ it('keeps the inline editor, selection and selected tree row on actual pointer s
 });
 
 it.each([false, true])(
-  'keeps tree rows free of chain actions while child creation works (Gantt: %s)',
+  'shares row chain actions while child creation works (Gantt: %s)',
   async (show) => {
     const tree = optionalTreeFixture(),
       onPredecessors = vi.fn(),
@@ -320,14 +320,20 @@ it.each([false, true])(
     const row = screen.getByRole('treeitem', { name: /^Работа C,/ });
     await userEvent.hover(row);
     expect(
-      within(row).queryByRole('button', { name: /^После окончания:/ }),
-    ).not.toBeInTheDocument();
+      within(row).getByRole('button', { name: 'Зависимости: Работа C' }),
+    ).toBeEnabled();
     row.focus();
     expect(
-      within(row).queryByRole('button', { name: /^После окончания:/ }),
-    ).not.toBeInTheDocument();
+      within(row).getByRole('button', { name: 'Зависимости: Работа C' }),
+    ).toBeEnabled();
     fireEvent.keyDown(row, { key: 'l', altKey: true });
     expect(onPredecessors).not.toHaveBeenCalled();
+    const chain = within(row).getByRole('button', {
+      name: 'Зависимости: Работа C',
+    });
+    await userEvent.click(chain);
+    expect(onPredecessors).toHaveBeenLastCalledWith(tree.tasks[2], chain);
+    expect(onSelect).not.toHaveBeenCalled();
     await userEvent.click(
       within(row).getByRole('button', { name: 'Добавить подзадачу: Работа C' }),
     );

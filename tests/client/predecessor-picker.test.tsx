@@ -672,3 +672,50 @@ it('does not overwrite focus deliberately moved by a removal owner', async () =>
   );
   expect(screen.getByRole('button', { name: 'Вне выбора' })).toHaveFocus();
 });
+
+it.each(['{Enter}', ' '] as const)(
+  'keeps Escape in the picker when a focused candidate starts a pending command: %s',
+  async (key) => {
+    const onClose = vi.fn();
+    function PendingHost() {
+      const [disabled, setDisabled] = useState(false);
+      return (
+        <PredecessorPicker
+          tree={{ ...optionalTreeFixture(), tasks: [task(1)] }}
+          proposal={proposal()}
+          direction="selectable"
+          disabled={disabled}
+          onAdd={() => setDisabled(true)}
+          onRemove={vi.fn()}
+          onClose={onClose}
+        />
+      );
+    }
+    render(<PendingHost />);
+    const candidate = screen.getByRole('option');
+    candidate.focus();
+    await userEvent.keyboard(key);
+    expect(candidate).toBeDisabled();
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  },
+);
+it('does not overwrite focus deliberately moved by a candidate owner', async () => {
+  render(
+    <>
+      <PredecessorPicker
+        tree={{ ...optionalTreeFixture(), tasks: [task(1)] }}
+        proposal={proposal()}
+        direction="selectable"
+        disabled={false}
+        onAdd={() => screen.getByRole('button', { name: 'Вне выбора' }).focus()}
+        onRemove={vi.fn()}
+        onClose={vi.fn()}
+      />
+      <button>Вне выбора</button>
+    </>,
+  );
+  await userEvent.click(screen.getByRole('option'));
+  expect(screen.getByRole('button', { name: 'Вне выбора' })).toHaveFocus();
+});

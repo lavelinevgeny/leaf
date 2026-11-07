@@ -11,7 +11,7 @@ import {
 } from 'react';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { treeRows } from './tree-view.js';
-import { TaskTree, type TreeAction } from './TaskTree.js';
+import { TaskTree, dependencySlotWidth, type TreeAction } from './TaskTree.js';
 import type { AddContext } from './QuickAdd.js';
 import {
   draftTaskId,
@@ -64,6 +64,7 @@ interface Props {
   onToggle: (id: string) => void;
   onSelect: (task: Task) => boolean | void;
   onAction: (action: TreeAction, task: Task) => boolean | void;
+  dependencyBlockedReason?: string | undefined;
   onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onPlan: (task: Task, kind: PlanGestureKind, target: string) => void;
   disabled: boolean;
@@ -94,6 +95,7 @@ export function TaskTimeline({
   onAction,
   onPlan,
   onPredecessors,
+  dependencyBlockedReason,
   disabled,
   show,
   reveal,
@@ -282,6 +284,9 @@ export function TaskTimeline({
   };
   const treeProps = {
     tasks: tree.tasks,
+    dependencies: tree.dependencies,
+    onDependencies: onPredecessors,
+    dependencyBlockedReason,
     rows,
     schedule: tree.schedule,
     selectedId,
@@ -298,6 +303,9 @@ export function TaskTimeline({
       className="task-timeline"
       style={
         {
+          '--leaf-dependency-slot-width': dependencySlotWidth(
+            tree.dependencies,
+          ),
           '--tree-width': `${width}px`,
           '--plan-header-height': `${HEADER_HEIGHT}px`,
           '--plan-row-height': `${ROW_HEIGHT}px`,

@@ -31,7 +31,7 @@ import { useTaskPanelLayout } from './use-task-panel-layout.js';
 import { sourceOf } from './planning-view.js';
 import { Dependencies } from './Dependencies.js';
 import type { Command } from '../shared/contracts.js';
-import { TaskTree, type TreeAction } from './TaskTree.js';
+import { TaskTree, dependencySlotWidth, type TreeAction } from './TaskTree.js';
 import { ActionMenu } from './ActionMenu.js';
 import { TaskMoveDialog } from './TaskMoveDialog.js';
 import { strings } from './strings.js';
@@ -48,6 +48,7 @@ export type TaskPanelActions = {
   save: () => Promise<boolean>;
   reset: () => void;
   focusInvalid: () => void;
+  revealSubtaskInput: () => void;
 };
 interface Props {
   registerActions?: (actions: TaskPanelActions | null) => void;
@@ -87,6 +88,7 @@ interface Props {
   journalMetadata?: JournalMetadata | null | undefined;
   journalNavigationDisabled?: boolean;
   onAncestor?: ((task: Task, tab: PanelTab) => void) | undefined;
+  onRowDependencies?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onJournal?:
     ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
 }
@@ -125,6 +127,7 @@ export function TaskPanel({
   journalNavigationDisabled = true,
   onAncestor,
   onJournal,
+  onRowDependencies,
   registerActions,
 }: Props) {
   const visibleTab = visiblePanelTab(tab);
@@ -572,7 +575,12 @@ export function TaskPanel({
     });
   }
   useEffect(() => {
-    registerActions?.({ save, reset, focusInvalid });
+    registerActions?.({
+      save,
+      reset,
+      focusInvalid,
+      revealSubtaskInput: () => setSubtaskOpen(true),
+    });
   });
   useEffect(
     () => () => {
@@ -883,6 +891,13 @@ export function TaskPanel({
             />
             <section
               className="panel-subtasks"
+              style={
+                {
+                  '--leaf-dependency-slot-width': dependencySlotWidth(
+                    tree.dependencies,
+                  ),
+                } as React.CSSProperties
+              }
               aria-labelledby="panel-subtasks-heading"
             >
               <div className="panel-section-heading">
@@ -944,6 +959,11 @@ export function TaskPanel({
                     return onAction(action, child);
                   }}
                   onJournal={onJournal}
+                  dependencies={tree.dependencies}
+                  onDependencies={onRowDependencies}
+                  dependencyBlockedReason={
+                    dirty ? strings.saveOrCancelTask : undefined
+                  }
                   label={strings.subtasks}
                   schedule={tree.schedule}
                   quickInputId="quick-subtask"

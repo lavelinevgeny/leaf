@@ -81,6 +81,7 @@ import { PredecessorPicker } from './PredecessorPicker.js';
 import {
   incomingPredecessorIds,
   outgoingSuccessorIds,
+  type DependencyDirection,
 } from './predecessor-view.js';
 import './styles/app.css';
 import './styles/planning.css';
@@ -217,11 +218,43 @@ export function App() {
     taskId: string;
     projectId: string;
     trigger: HTMLElement;
+    scope: HTMLElement | null;
+    inputId: string;
+    cancelled: boolean;
+    sequence: number;
   } | null>(null);
+  const immediateSequence = useRef(0);
   const immediateHostRef = useRef(immediateHost);
   immediateHostRef.current = immediateHost;
   const [restoreImmediate, setRestoreImmediate] =
     useState<typeof immediateHost>(null);
+  const restoreImmediateRef = useRef(restoreImmediate);
+  restoreImmediateRef.current = restoreImmediate;
+  function cancelImmediateFocus() {
+    if (immediateHostRef.current) immediateHostRef.current.cancelled = true;
+    if (restoreImmediateRef.current)
+      restoreImmediateRef.current.cancelled = true;
+  }
+  useEffect(() => {
+    const revoke = (event: Event) => {
+      const host = immediateHostRef.current ?? restoreImmediateRef.current;
+      const target = event.target;
+      if (!host || !(target instanceof Node)) return;
+      if (host.trigger.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest('.immediate-predecessors, [data-immediate-recovery]')
+      )
+        return;
+      host.cancelled = true;
+    };
+    document.addEventListener('focusin', revoke, true);
+    document.addEventListener('pointerdown', revoke, true);
+    return () => {
+      document.removeEventListener('focusin', revoke, true);
+      document.removeEventListener('pointerdown', revoke, true);
+    };
+  }, []);
   const undoFocus = useRef<UndoFocus | null>(null);
   const [restoreUndo, setRestoreUndo] = useState<{
     request: UndoFocus;
@@ -359,6 +392,7 @@ export function App() {
     ++branchRestore.current;
   }
   function expireSession() {
+    cancelImmediateFocus();
     clearTaskNavigation();
     ++loadSequence.current;
     journal.clearPrivateState();
@@ -604,6 +638,7 @@ export function App() {
     return true;
   }
   function requestTaskNavigation(proceed: () => void): void {
+    cancelImmediateFocus();
     ++branchRestore.current;
     if (!canNavigate(false, true)) return;
     if (!dirtyRef.current) {
@@ -665,6 +700,7 @@ export function App() {
     };
   }
   async function loadProject(id: string, preserveDraft = false) {
+    if (!preserveDraft) cancelImmediateFocus();
     if (restoreStartHandle.current?.projectId !== id) cancelStartFocus();
     undoFocus.current = null;
     currentRowFocus.current = null;
@@ -1010,14 +1046,35 @@ export function App() {
     if (
       !canNavigate() ||
       !treeRef.current ||
-      task.projectId !== treeRef.current.project.id
+      task.projectId !== treeRef.current.project.id ||
+      !treeRef.current.tasks.some((item) => item.id === task.id)
     )
       return;
     if (treeRef.current.tasks.some((child) => child.parentId === task.id)) {
       setNotice(strings.chooseLeaf);
       return;
     }
-    setImmediateHost({ taskId: task.id, projectId: task.projectId, trigger });
+    const scope =
+      trigger.closest<HTMLElement>('[role="tree"]') ??
+      trigger
+        .closest('.task-timeline')
+        ?.querySelector<HTMLElement>('[role="tree"]') ??
+      null;
+    const host = {
+      taskId: task.id,
+      projectId: task.projectId,
+      trigger,
+      scope,
+      inputId: scope?.closest('.panel-subtasks')
+        ? 'quick-subtask'
+        : 'quick-task',
+      cancelled: false,
+      sequence: ++immediateSequence.current,
+    };
+    cancelImmediateFocus();
+    setRestoreImmediate(null);
+    immediateHostRef.current = host;
+    setImmediateHost(host);
   }
   function closePredecessors() {
     setRestoreImmediate(immediateHostRef.current);
@@ -1025,51 +1082,70 @@ export function App() {
   }
   useEffect(() => {
     if (!restoreImmediate || busy || loading || pending) return;
-    if (
-      restoreImmediate.trigger.isConnected &&
-      !restoreImmediate.trigger.matches(':disabled') &&
-      !restoreImmediate.trigger.closest('[hidden]')
-    )
-      restoreImmediate.trigger.focus();
-    else {
-      const inputId =
-        restoreImmediate.trigger.dataset.quickInput ?? 'quick-task';
-      const scope =
-        inputId === 'quick-subtask'
-          ? document.querySelector<HTMLElement>(
-              '#panel-details .panel-subtasks',
-            )
-          : document;
-      if (!scope || !focusTaskRow(restoreImmediate.taskId, scope))
-        (
-          document.getElementById(inputId) ??
-          document.getElementById('quick-task')
-        )?.focus();
-    }
-    setRestoreImmediate(null);
+    const host = restoreImmediate;
+    let frame = requestAnimationFrame(() => {
+      if (!host.cancelled && treeRef.current?.project.id === host.projectId) {
+        if (!focusVisible(host.trigger)) {
+          const scope = host.scope;
+          const row =
+            scope?.isConnected && !scope.closest('[hidden]')
+              ? scope.querySelector<HTMLElement>(
+                  `[data-task-id="${host.taskId}"]`,
+                )
+              : null;
+          if (
+            !focusVisible(row || null) &&
+            !focusVisible(document.getElementById(host.inputId)) &&
+            host.inputId === 'quick-subtask' &&
+            scope?.isConnected
+          ) {
+            panelActions.current?.revealSubtaskInput();
+            frame = requestAnimationFrame(() => {
+              if (
+                !host.cancelled &&
+                treeRef.current?.project.id === host.projectId
+              )
+                focusVisible(document.getElementById(host.inputId));
+              setRestoreImmediate((previous) =>
+                previous === host ? null : previous,
+              );
+            });
+            return;
+          }
+        }
+      }
+      setRestoreImmediate((previous) => (previous === host ? null : previous));
+    });
+    return () => cancelAnimationFrame(frame);
   }, [restoreImmediate, busy, loading, pending]);
-  function immediateRelation(id: string, remove: boolean) {
+  function immediateRelation(
+    direction: DependencyDirection,
+    id: string,
+    remove: boolean,
+  ) {
     const host = immediateHostRef.current,
       current = treeRef.current;
     if (
       !host ||
       !current ||
       host.projectId !== current.project.id ||
+      !current.tasks.some((task) => task.id === host.taskId) ||
+      current.tasks.some((task) => task.parentId === host.taskId) ||
       !canNavigate()
     )
       return;
+    const predecessorId = direction === 'predecessor' ? id : host.taskId;
+    const successorId = direction === 'predecessor' ? host.taskId : id;
     const edge = current.dependencies.find(
-      (edge) => edge.predecessorId === id && edge.successorId === host.taskId,
+      (item) =>
+        item.predecessorId === predecessorId &&
+        item.successorId === successorId,
     );
     if (remove && !edge) return;
     void commandTree(
       remove
         ? { type: 'dependency.delete', dependencyId: edge!.id }
-        : {
-            type: 'dependency.create',
-            predecessorId: id,
-            successorId: host.taskId,
-          },
+        : { type: 'dependency.create', predecessorId, successorId },
       { immediateTaskId: host.taskId },
     );
   }
@@ -1594,6 +1670,7 @@ export function App() {
     }
   }
   async function logout() {
+    cancelImmediateFocus();
     if (journalLocked) {
       setNotice('Повторите сохранение записи перед выходом.');
       return;
@@ -1931,6 +2008,7 @@ export function App() {
               type="button"
               disabled={busy || loading}
               data-gantt-start-recovery
+              data-immediate-recovery
               onClick={() => void loadProject(tree.project.id, true)}
             >
               {strings.reload}
@@ -1941,6 +2019,7 @@ export function App() {
               type="button"
               disabled={busy}
               data-gantt-start-recovery
+              data-immediate-recovery
               onClick={() => {
                 if (pendingRef.current)
                   void execute(pendingRef.current).then((success) => {
@@ -2410,6 +2489,9 @@ export function App() {
                     );
                   }}
                   onPredecessors={openPredecessors}
+                  dependencyBlockedReason={
+                    dirty ? strings.saveOrCancelTask : undefined
+                  }
                   onPlan={(task, kind, target) =>
                     void planTask(task, kind, target)
                   }
@@ -2490,7 +2572,7 @@ export function App() {
         tree &&
         immediateHost.projectId === tree.project.id &&
         tree.tasks.some((task) => task.id === immediateHost.taskId) && (
-          <div className="immediate-predecessors">
+          <div className="immediate-predecessors" key={immediateHost.sequence}>
             <PredecessorPicker
               tree={tree}
               proposal={{
@@ -2504,18 +2586,22 @@ export function App() {
                 ),
                 successorIds: outgoingSuccessorIds(tree, immediateHost.taskId),
               }}
-              direction="predecessor"
+              direction="selectable"
+              {...(dirty ? { blockedReason: strings.saveOrCancelTask } : {})}
               disabled={
                 busy ||
                 loading ||
                 !!pending ||
                 conflict ||
                 dirty ||
-                projectDirty
+                projectDirty ||
+                journalLocked
               }
               {...(error ? { error: error.message } : {})}
-              onAdd={(_direction, id) => immediateRelation(id, false)}
-              onRemove={(_direction, id) => immediateRelation(id, true)}
+              onAdd={(direction, id) => immediateRelation(direction, id, false)}
+              onRemove={(direction, id) =>
+                immediateRelation(direction, id, true)
+              }
               onClose={closePredecessors}
             />
           </div>
@@ -2560,6 +2646,7 @@ export function App() {
             }
           }}
           onJournal={openTaskJournal}
+          onRowDependencies={openPredecessors}
           journalMetadata={journal.taskFeed?.metadata}
           journalNavigationDisabled={!journalFeedCoherent(journal.taskFeed)}
           onAncestor={selectAncestor}

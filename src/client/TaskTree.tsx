@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ControlIcon } from './ControlIcon.js';
 import { draftTaskId } from './quick-add-view.js';
-import type { ProjectTree, Task } from '../shared/contracts.js';
+import type { Dependency, ProjectTree, Task } from '../shared/contracts.js';
 import { treeDateLabel, computedDateLabel } from './gantt-view.js';
 import { treeRows } from './tree-view.js';
 import { actionableDiagnostics } from './schedule-diagnostics.js';
@@ -17,6 +17,9 @@ interface Props {
   onAction: (action: TreeAction, task: Task) => boolean | void;
   onJournal?:
     ((task: Task, trigger: HTMLElement) => boolean | void) | undefined;
+  dependencies?: readonly Dependency[];
+  onDependencies?: ((task: Task, trigger: HTMLElement) => void) | undefined;
+  dependencyBlockedReason?: string | undefined;
   rootId?: string;
   label?: string;
   rows?: ReturnType<typeof treeRows>;
@@ -25,6 +28,17 @@ interface Props {
   quickInputId?: string;
   draftInput?: ReactNode;
   disabled?: boolean;
+}
+export function dependencySlotWidth(
+  dependencies: readonly Dependency[],
+): string {
+  const counts = new Map<string, number>();
+  for (const edge of dependencies) {
+    counts.set(edge.predecessorId, (counts.get(edge.predecessorId) ?? 0) + 1);
+    counts.set(edge.successorId, (counts.get(edge.successorId) ?? 0) + 1);
+  }
+  const maximum = Math.max(0, ...counts.values());
+  return maximum ? `calc(28px + 4px + ${String(maximum).length}ch)` : '28px';
 }
 export function focusTaskRow(id: string, scope: ParentNode = document) {
   const row = scope.querySelector<HTMLElement>(`[data-task-id="${id}"]`);
@@ -39,6 +53,9 @@ export function TaskTree({
   onSelect,
   onAction,
   onJournal,
+  dependencies = [],
+  onDependencies,
+  dependencyBlockedReason,
   rootId,
   label = strings.tasks,
   rows: suppliedRows,
@@ -48,6 +65,7 @@ export function TaskTree({
   draftInput,
   disabled = false,
 }: Props) {
+  const descriptionPrefix = useId();
   const [rowFocused, setRowFocused] = useState(false);
   const summaryIds = new Set(tasks.map((task) => task.parentId));
   const global = new Set(
@@ -118,6 +136,14 @@ export function TaskTree({
               {draftInput}
             </div>
           );
+        const count = dependencies.filter(
+          (edge) =>
+            edge.predecessorId === task.id || edge.successorId === task.id,
+        ).length;
+        const dependencyReason = summaryIds.has(task.id)
+          ? strings.chooseLeaf
+          : dependencyBlockedReason;
+        const dependencyDescription = `${descriptionPrefix}-${task.id}`;
         const taskErrors = errors.filter((item) =>
           item.taskIds.includes(task.id),
         );
@@ -302,14 +328,14 @@ export function TaskTree({
             >
               {treeDateLabel(task, schedule) || strings.noDate}
             </span>
-            {/* Zero-width sticky anchor: the actions overlay the row end (and
-                its date) instead of reserving space, and stay at the visible
-                edge of a horizontally scrolled tree (C30). */}
+            {/* The sticky chain reserves its compact slot; secondary actions overlay the date. */}
             <span
               className="task-row-actions"
               onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
             >
-              <span className="task-row-actions-inner">
+              <span className="task-row-actions-secondary">
                 <button
                   type="button"
                   aria-label={`${strings.addChild}: ${task.title}`}
@@ -330,6 +356,28 @@ export function TaskTree({
                   </button>
                 )}
               </span>
+              {onDependencies && (
+                <>
+                  <button
+                    type="button"
+                    tabIndex={0}
+                    className="task-row-dependency"
+                    data-count={count}
+                    aria-label={`${strings.dependencies}: ${task.title}`}
+                    aria-describedby={dependencyDescription}
+                    disabled={disabled || !!dependencyReason}
+                    onClick={(event) =>
+                      onDependencies(task, event.currentTarget)
+                    }
+                  >
+                    <ControlIcon name="chain" />
+                    {count > 0 && <span>{count}</span>}
+                  </button>
+                  <span id={dependencyDescription} className="sr-only">
+                    {`Связей: ${count}${dependencyReason ? `. ${dependencyReason}` : ''}`}
+                  </span>
+                </>
+              )}
             </span>
           </div>
         );

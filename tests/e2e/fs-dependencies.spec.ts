@@ -371,7 +371,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   expect(restored.dependencies).toEqual(tree.dependencies);
 });
 
-test('tree rows show the row action trigger without a chain in list, Gantt and subtask views', async ({
+test('tree rows share chain actions in list, Gantt and subtask views', async ({
   page,
   runtime,
 }) => {
@@ -384,9 +384,9 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     await page.getByRole('button', { name: view, exact: true }).click();
     await taskRow.hover();
     await expect(
-      taskRow.getByRole('button', { name: /^После окончания:/ }),
-    ).toHaveCount(0);
-    await expect(taskRow.locator('.task-row-actions-inner')).toHaveCSS(
+      taskRow.getByRole('button', { name: 'Зависимости: B', exact: true }),
+    ).toHaveCount(1);
+    await expect(taskRow.locator('.task-row-actions-secondary')).toHaveCSS(
       'opacity',
       '1',
     );
@@ -394,8 +394,8 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     await taskRow.press('Alt+l');
     await expect(picker(page)).toHaveCount(0);
     await expect(
-      taskRow.getByRole('button', { name: /^После окончания:/ }),
-    ).toHaveCount(0);
+      taskRow.getByRole('button', { name: 'Зависимости: B', exact: true }),
+    ).toHaveCount(1);
   }
   const ganttRow = page.locator(`[data-gantt-row="${taskId(tree, 'B')}"]`);
   await ganttRow.hover();
@@ -417,9 +417,9 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     .locator(`[data-task-id="${taskId(tree, 'B')}"]`);
   await subtaskRow.hover();
   await expect(
-    subtaskRow.getByRole('button', { name: /^После окончания:/ }),
-  ).toHaveCount(0);
-  await expect(subtaskRow.locator('.task-row-actions-inner')).toHaveCSS(
+    subtaskRow.getByRole('button', { name: 'Зависимости: B', exact: true }),
+  ).toHaveCount(1);
+  await expect(subtaskRow.locator('.task-row-actions-secondary')).toHaveCSS(
     'opacity',
     '1',
   );
