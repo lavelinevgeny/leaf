@@ -21,6 +21,9 @@ export const uuidSchema = z.uuid();
 const predecessorIdsSchema = z
   .array(uuidSchema)
   .refine((ids) => new Set(ids).size === ids.length, 'Duplicate predecessors');
+const successorIdsSchema = z
+  .array(uuidSchema)
+  .refine((ids) => new Set(ids).size === ids.length, 'Duplicate successors');
 export const taskTitleSchema = z.string().trim().min(1).max(300);
 export const projectTitleSchema = z.string().trim().min(1).max(120);
 export const calendarTypeSchema = z.enum(['weekdays', 'all-days']);
@@ -382,6 +385,7 @@ export const commandV2Schema = z.discriminatedUnion('type', [
     afterId: uuidSchema.optional(),
     preserveWork: z.boolean().optional(),
     predecessorIds: predecessorIdsSchema.optional(),
+    successorIds: successorIdsSchema.optional(),
   }),
   z.strictObject({
     type: z.literal('task.move'),

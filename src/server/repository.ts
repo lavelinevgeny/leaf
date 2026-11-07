@@ -740,6 +740,14 @@ export class Repository {
         tasks.push(task);
         if (command.predecessorIds !== undefined)
           this.replacePredecessors(snapshot, task.id, command.predecessorIds);
+        for (const successorId of command.successorIds ?? []) {
+          snapshot.dependencies.push({
+            id: randomUUID(),
+            projectId: snapshot.project.id,
+            predecessorId: task.id,
+            successorId,
+          });
+        }
         break;
       }
       case 'task.update': {
