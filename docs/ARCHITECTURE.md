@@ -59,6 +59,8 @@ Migration004 аддитивна: historical beforeSnapshot, operation payload/re
 
 ## API и изменения
 
+C33/D28: [ADR 015](adr/015-create-successor-dependencies.md) задаёт предстоящее backward-compatible расширение task.create необязательным command-only successorIds. Входящие и исходящие новой задачи валидируются и сохраняются вместе с cascade/revision/undo; DTO/SQL/task.edit не меняются. Старые payload и frozen replay не дополняются default полем. Реализация ещё не выполнена.
+
 Небольшой REST/JSON. Схемы запросов/ответов валидируются на границе (например, Zod), ограничения длины и размера тела обязательны. Внутренние и транспортные ошибки не раскрывают stack traces и пути.
 
 Предлагаемые endpoints: `/api/auth/login`, `/api/auth/logout`, `/api/auth/session`, `/api/projects`, `/api/projects/:id/tree`, `/api/projects/:id/schedule`, `/api/projects/:id/commands`, `/api/projects/:id/export`, `/api/projects/import`, `/healthz`, `/readyz`. Здоровье не раскрывает список проектов или настройки.

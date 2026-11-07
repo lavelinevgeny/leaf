@@ -60,7 +60,7 @@ Domain unit + property tests, SQLite integration, API auth/validation/transactio
 
 ## FS-зависимости C24 / D17
 
-Уточнение 2026-10-09: hover/focus строки в обоих видах «Список / Гант» и во вкладке «Подзадачи» не показывает кнопку связи; подзадачу создают иконка «Добавить подзадачу» строки ([C30](DECISIONS.md)) и Shift+Enter, отдельная кнопка «+ Подзадача» удалена по C29. На диаграмме цепочка появляется при hover/keyboard focus, открывает picker и возвращает фокус после закрытия. Действия представления не меняют snapshot.
+Историческое уточнение 2026-10-09 (запрет цепочки заменён C33, новая приёмка DUX ниже): hover/focus строки в обоих видах «Список / Гант» и во вкладке «Подзадачи» не показывает кнопку связи; подзадачу создают иконка «Добавить подзадачу» строки ([C30](DECISIONS.md)) и Shift+Enter, отдельная кнопка «+ Подзадача» удалена по C29. На диаграмме цепочка появляется при hover/keyboard focus, открывает picker и возвращает фокус после закрытия. Действия представления не меняют snapshot.
 
 [Нормативная спецификация](superpowers/specs/2026-10-08-fs-dependencies-design.md) задаёт независимые literal F01–F16: поздний push/tight pull, промежуток/max/diamond, weekdays/all-days, null и unknown barriers, direct-edit/done/unavailable rollback, удаление/overflow и отсутствие ремонта прежних конфликтов. §6.1 требует двух равных critical ветвей, после одного edit только A/B/AB critical, literal projectFloat 0/0/2/2 и constraintFloat 0/0/0/2, parent ranges P/Q/R, одну точную undo и restart. Expected values не выводятся из реализации.
 
@@ -245,3 +245,9 @@ Public export/import и контейнерная приёмка не подме�
 | K08 | Actual-server root/child, dates/FS draft, validation correction и следующая запись, panel/list/Gantt smoke, geometry. |
 
 Browser composition проверяется синтетическими DOM events, аппаратная OS IME не автоматизирована. Результаты команд — в [STATUS](STATUS.md).
+
+## Зависимости C33 / D28 — DUX01–DUX12
+
+Нормативная матрица — [спецификация направленного picker и симметричного графа](superpowers/specs/2026-11-07-dependency-ux-design.md#8-приёмка-dux01dux12). Статус 2026-11-07: требования подготовлены, **реализация и application evidence ещё не выполнены**. Прежние тесты FS/D22/C30 не означают выполнения новой приёмки.
+
+Проверить общий row entry/count в списке, дереве Ганта и подзадачах; оба направления поиска и mixed QuickAdd; fixed-direction graph symmetry без изменения panel draft semantics. Серверные независимые fixtures покрывают create successor-only/mixed, полный rollback последней неверной связи и parent conversion, causal cascade, nullable, done, exact replay и один Undo. Клиентские — весь draft ownership, dirty/pending guards, 409/retry, count только после ack и отсутствие кражи фокуса. Browser — настоящий HTTP/SQLite, оба desktop viewport, колонка 300 px, touch/keyboard, узкая панель и настоящий zoom 200%. Точные критерии DUX01–DUX12 и будущие результаты не смешивать; фактические запуски добавляются в STATUS после реализации.

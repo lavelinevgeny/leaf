@@ -38,6 +38,8 @@ S4 начат 2026-10-08: [первая задача](docs/superpowers/plans/202
 
 Уточнение 2026-11-06: реализованы три отдельные UI-доработки — [D25: доступное управление Гантом и сворачивание проектов](docs/superpowers/specs/2026-11-06-workspace-layout-design.md), [D26: короткие даты с годом timezone проекта и явные подписи неполных сроков](docs/superpowers/specs/2026-11-06-date-entry-design.md), [D27: обнаруживаемый клавиатурный ввод](docs/superpowers/specs/2026-11-06-keyboard-entry-design.md). Независимые reviews и полная локальная application-приёмка завершены; результаты и ограничение preflight — в [STATUS](docs/STATUS.md). API/scheduler и C18/C19 сохранены; S4–S6 и первый релиз не завершены.
 
+Уточнение 2026-11-07: C33 утверждает симметричные секции графа зависимостей и цепочку общих строк с направленным picker «После / Перед», общим с QuickAdd. [Спецификация C33/D28](docs/superpowers/specs/2026-11-07-dependency-ux-design.md) и [ADR 015](docs/adr/015-create-successor-dependencies.md) сохраняют incoming draft панели/outgoing guarded commands и задают optional create-only successorIds для одной атомарной операции. Спецификация подготовлена; план, реализация и DUX01–DUX12 ещё впереди. Предыдущий запрет цепочки строк отменён; трёх PNG и scheduler semantics это не меняет.
+
 ## 1. Сначала проверь расположение
 
 Содержимое архива предназначено для **корня Git-репозитория**, без дополнительной вложенной папки `leaf/`.
