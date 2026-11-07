@@ -1,6 +1,22 @@
 # Статус разработки
 
-## C33/D28 — исправления финального review, 2026-11-07
+## C33/D28 — окончательная реализация и приёмка, 2026-11-07
+
+Реализация C33 и [DUX01–DUX12](ACCEPTANCE.md#зависимости-c33--d28--dux01dux12) завершена: общий направленный picker, оба QuickAdd, симметричный граф, chain/count общих строк, atomic create-only successorIds и сохранение серверных replay/Undo/CPM правил. Независимые reviews спецификации, плана, этапов и всей ветки завершены; находки F1/F2/F3 закрыты отдельным Spec/Quality PASS. F1 сохраняет глобальные Ctrl/Cmd+Z и layered Escape; F2 закрывает outgoing ADD по подтверждению точного job, включая exact retry, с отменяемым владением фокусом; DELETE остаётся открытым. D28 остаётся рабочим уточнением, не новым решением владельца.
+
+Окончательный application source — `5d57144c9c665a1591660591f50676ed067f76b3`; source+tests candidate — `632fd2b8c2b992469f576cb8583b6e5374498830`. PASS `npm run verify`: typecheck/lint, **83 файла / 1540 tests**, свежий production build; `npm run format:check`; `npm run check:package`. Полный `npm run test:e2e` — **434/434 PASS**, 11,3 минуты, оба viewport 1440×900 и 1280×800, workers=1/retries=0, exit 0, без failures/skips/interruptions. Source/tests после этих проверок не менялись. PASS `npm run check:kit`: 85 Markdown, 565 local links, 3 approved references, 10 CPM / 4 calendar examples; `git diff --check` PASS.
+
+PASS полный `npm run preflight` координатора в обычном чистом LOCAL clone точного `632fd2b`: clone/checkout/обычные hooks и все стадии preflight завершились exit 0. Отдельный FAIL owner-checkout остаётся прежним: doctor PASS, затем workspace privacy guard отказал на LOCAL_AGENT_FILE/UNREVIEWED_BINARY; следующие стадии того invocation NOT RUN. Private файлы не читались/менялись/удалялись и не добавлялись в разрешения. Защита не ослаблена; проверка чистого кандидата не переименовывает отказ owner-checkout в PASS.
+
+PASS повтор настоящего browser zoom 200% на final source с новым headed Chromium/profile и отдельным Xvfb. Нативные XTest Ctrl+0/Ctrl+equal×5: физическое окно 1440×900, inner 1440×813 / DPR 1 → 720×406 / DPR 2; после native resize 1280×800 — CSS 640×356 / DPR 2. Проверены прежние graph/chips/preview/409/resize/QuickAdd/journal Close и F1: Control/Meta Undo с фокусом chain после add/delete возвращает snapshots, Escape закрывает picker, затем панель. Строка 38 px, chain 36×28, дата заканчивается перед chain; fullscreen panel 720×406.5, clientWidth=scrollWidth 719.
+
+F2 recovery отдельно пройден при том же нативном 200% в физическом окне 2880×1800, CSS 1440×856 / DPR 2: dropped-success exact envelope/одна revision/один Undo, ADD закрывает свой picker с локальным фокусом, outside focus→body отменяет возврат, pending close не открывается заново, DELETE retry сохраняет picker/query. Это wide recovery evidence, не заявление полной mobile recovery компоновки. Синтетические XGetImage screenshots осмотрены вне checkout; browser/profile/runtime/Xvfb закрыты, новых assets нет. CSS zoom/pageScaleFactor/deviceScaleFactor не применялись.
+
+История не скрыта: до gate-fix были 411 PASS / 1 FAIL journal-origin и отдельный SIGTERM/143 после 48 PASS; последующий кандидат cc54bf7 прошёл 422/422. Initial definitive verify на 5d дал 1538 PASS/1 FAIL из-за гонки baseline начального journal GET в test fixture; отдельный reviewed test-only 632fd2b ждёт существующее loaded-empty состояние и сохраняет исходные assertions, production source не менялся. Первый full 632 дал 433 PASS/1 FAIL — C27 period timeout 45s на 1440; причина **UNKNOWN**, оба isolated repro и diagnostic 8/8 прошли, speculative patch не создан. Повтор 434/434 выше выполнен на неизменённом 632; он не объявляется исправлением причины прежнего timeout.
+
+Остаются build warning client chunk 556.44 kB >500 kB и прежнее переполнение underlying mobile workspace; сама fullscreen panel не добавляет горизонтальный overflow. Физическая OS IME, Docker runtime/image execution, remote CI, push/deploy/release NOT RUN. Следующие шаги координатора — review итоговой документации и preflight её точного commit, затем уже разрешённая локальная интеграция; merge здесь ещё не заявлен. Дальнейшая продуктовая работа — оставшиеся S4, S5 и S6; первый релиз не завершён. Ниже сохранены исторические результаты прежних кандидатов.
+
+## История: C33/D28 — исправления финального review, 2026-11-07
 
 F1: общие row actions подавляют только Enter/Space; Escape и Ctrl/Cmd+Z снова доходят до существующих глобальных handlers. F2: outgoing graph add закрывает свой picker по подтверждению конкретной Mutation, включая exact retry/frozen ack; callback не входит в envelope. Закрытие, новая picker instance, смена task/project и unmount отменяют владение; outside focus/pointer отзывает поздний возврат даже после blur-to-body, recovery controls сохраняют ещё действующее намерение. Delete ack/retry оставляет picker открытым; ошибки и 409 сохраняют query/context. F3: текущие UI/architecture/decision/ADR/spec summaries согласованы с фактом реализации; D28 остаётся рабочим уточнением.
 
@@ -8,7 +24,7 @@ PASS: focused RED→GREEN для обеих поведенческих нахо�
 
 Следующий шаг — независимое scoped review исправлений, затем новые definitive full gates и factual handoff. Приведённые ниже 1523/422/native evidence относятся к предыдущему кандидату и не заменяют эти финальные проверки. Известное предупреждение client chunk >500 kB сохраняется; native zoom, полный preflight/verify/E2E, Docker и remote CI в этом цикле не повторялись. S4–S6, первый релиз и публикация не завершены.
 
-## C33/D28 — итоговая DUX-приёмка, 2026-11-07
+## История: C33/D28 — приёмка кандидата cc54bf7, 2026-11-07
 
 Tasks 1–4 реализовали atomic create-only successorIds, общий направленный picker «После / Перед», симметричные секции графа, оба QuickAdd и единственную chain/count общих строк списка/Ганта/подзадач. Task 5 расширяет только actual-server browser acceptance и документацию: 5+ соседей с последней страницей, directed arrows/navigation/Undo, mixed dropped-success exact replay обоих scope, duplicate paths/IME/active scroll/resize, hover:none touchscreen, Tab/Enter/Space/Escape и late ack после outside→blur→body. Проверяется reviewed application source `cc54bf75648696816237d917a0ee7d0130d0828c`; Task 5 исходники приложения не менял. Фактическая [DUX01–DUX12 матрица](ACCEPTANCE.md#зависимости-c33--d28--dux01dux12) отделяет component/server assertions от browser/native evidence; D28 не повышен до решения владельца.
 
