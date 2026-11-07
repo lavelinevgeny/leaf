@@ -16,7 +16,11 @@ import {
   type ProjectView,
   type WorkspaceVisit,
 } from './workspace-navigation.js';
-import { journalFeedCoherent, type JournalPosition } from './journal-state.js';
+import {
+  journalFeedCoherent,
+  type JournalFeedState,
+  type JournalPosition,
+} from './journal-state.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
 import type {
   TimelineRestoreRequest,
@@ -148,6 +152,11 @@ export function App() {
     undefined,
   );
   const journalOrigin = useRef<HTMLElement | null>(null);
+  const journalPanelReturn = useRef<{
+    projectId: string;
+    origin: HTMLElement | null;
+    feedAtClose: JournalFeedState | null;
+  } | null>(null);
   const journalFocus = useRef(0);
   const journalFocusRequest = useRef<{ taskId: string; token: number } | null>(
     null,
@@ -237,6 +246,13 @@ export function App() {
   }
   useEffect(() => {
     const revoke = (event: Event) => {
+      const panelReturn = journalPanelReturn.current;
+      if (
+        panelReturn &&
+        event.target instanceof Node &&
+        !panelReturn.origin?.contains(event.target)
+      )
+        journalPanelReturn.current = null;
       const host = immediateHostRef.current ?? restoreImmediateRef.current;
       const target = event.target;
       if (!host || !(target instanceof Node)) return;
@@ -392,6 +408,7 @@ export function App() {
     ++branchRestore.current;
   }
   function expireSession() {
+    journalPanelReturn.current = null;
     cancelImmediateFocus();
     clearTaskNavigation();
     ++loadSequence.current;
@@ -505,6 +522,7 @@ export function App() {
     )
       return false;
     lastCapture.current();
+    journalPanelReturn.current = null;
     cancelStartFocus();
     ++journalFocus.current;
     ++branchRestore.current;
@@ -638,6 +656,7 @@ export function App() {
     return true;
   }
   function requestTaskNavigation(proceed: () => void): void {
+    journalPanelReturn.current = null;
     cancelImmediateFocus();
     ++branchRestore.current;
     if (!canNavigate(false, true)) return;
@@ -700,6 +719,7 @@ export function App() {
     };
   }
   async function loadProject(id: string, preserveDraft = false) {
+    journalPanelReturn.current = null;
     if (!preserveDraft) cancelImmediateFocus();
     if (restoreStartHandle.current?.projectId !== id) cancelStartFocus();
     undoFocus.current = null;
@@ -1270,6 +1290,32 @@ export function App() {
       focusVisible(document.getElementById('quick-task'));
   }
   useLayoutEffect(() => {
+    const request = journalPanelReturn.current;
+    if (!request) return;
+    if (
+      selected ||
+      projectView !== 'journal' ||
+      currentProject.current !== request.projectId
+    ) {
+      journalPanelReturn.current = null;
+      return;
+    }
+    const feed = journal.projectFeed;
+    // Closing changes the journal context and reloads the project feed. A
+    // synchronous return is blurred when that reload disables the origin.
+    // Wait for its next settled DOM, preserving any explicit outside intent.
+    if (
+      !feed ||
+      feed === request.feedAtClose ||
+      feed.phase === 'loading' ||
+      feed.phase === 'loading-more'
+    )
+      return;
+    journalPanelReturn.current = null;
+    if (!focusVisible(request.origin))
+      focusVisible(document.getElementById('project-tab-journal'));
+  });
+  useLayoutEffect(() => {
     if (projectView !== 'current') return;
     const panel = document.getElementById('project-view-current');
     if (panel && restoreCurrentScroll.current !== null) {
@@ -1294,9 +1340,19 @@ export function App() {
     requestTaskNavigation(() => {
       const id = selected?.id;
       ++journalFocus.current;
+      const journalReturn =
+        projectView === 'journal' && treeRef.current
+          ? {
+              projectId: treeRef.current.project.id,
+              origin: journalOrigin.current,
+              feedAtClose: journal.projectFeed,
+            }
+          : null;
       setSelected(null);
       setPanelHistory([]);
       focusActiveView(id);
+      // Our own synchronous fallback is part of this return, not outside intent.
+      journalPanelReturn.current = journalReturn;
     });
   }
   function selectSubtask(task: Task): boolean {
@@ -1795,6 +1851,7 @@ export function App() {
       suppressedPop.current = false;
       return;
     }
+    journalPanelReturn.current = null;
     const targetId = (
       event.state as { leaf?: { version?: number; visitId?: string } } | null
     )?.leaf?.visitId;

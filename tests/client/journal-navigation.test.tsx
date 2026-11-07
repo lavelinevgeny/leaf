@@ -891,3 +891,76 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
   await travel('forward');
   await waitFor(() => expect(feed.scrollTop).toBe(7525));
 });
+
+it.each(['stay', 'focus', 'pointer', 'navigate', 'history'] as const)(
+  'returns to the journal origin after the close-triggered reload, respecting %s intent',
+  async (intent) => {
+    mockJournalApp();
+    render(<App />);
+    await projectJournal();
+    const origin = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Работа 1',
+    });
+    await userEvent.click(origin);
+    await screen.findByLabelText('Текст записи');
+    await waitFor(() => expect(origin).toBeEnabled());
+    const read = vi.mocked(api.journalProject);
+    const response = await read.mock.results.at(-1)!.value;
+    let release!: (value: typeof response) => void;
+    read.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          release = done;
+        }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Закрыть панель' }),
+    );
+    await waitFor(() => expect(origin).toBeDisabled());
+    // jsdom retains focus on disabled controls; emulate the native browser blur.
+    origin.disabled = false;
+    origin.blur();
+    origin.disabled = true;
+    expect(document.activeElement).toBe(document.body);
+    if (intent === 'focus') {
+      screen.getByLabelText('Поиск записей').focus();
+      (document.activeElement as HTMLElement).blur();
+    } else if (intent === 'pointer') fireEvent.pointerDown(document.body);
+    else if (intent === 'navigate')
+      await userEvent.click(document.getElementById('project-tab-tasks')!);
+    if (intent === 'history') await travel('back');
+    await act(async () => release(response));
+    await waitFor(() => expect(origin).toBeEnabled());
+    if (intent === 'stay') expect(origin).toHaveFocus();
+    else expect(origin).not.toHaveFocus();
+  },
+);
+
+it('keeps its own journal-tab fallback from cancelling return when the feed was already loading at Close', async () => {
+  mockJournalApp();
+  render(<App />);
+  await projectJournal();
+  const origin = screen.getByRole('button', { name: 'Работа 1' });
+  await userEvent.click(origin);
+  await screen.findByLabelText('Текст записи');
+  await waitFor(() => expect(origin).toBeEnabled());
+  const read = vi.mocked(api.journalProject);
+  const response = await read.mock.results.at(-1)!.value;
+  const releases: ((value: typeof response) => void)[] = [];
+  read.mockImplementation(
+    () =>
+      new Promise((done) => {
+        releases.push(done);
+      }),
+  );
+  fireEvent(window, new Event('focus'));
+  await waitFor(() => expect(origin).toBeDisabled());
+  await userEvent.click(screen.getByRole('button', { name: 'Закрыть панель' }));
+  expect(document.getElementById('project-tab-journal')).toHaveFocus();
+  await waitFor(() => expect(releases).toHaveLength(2));
+  await act(async () => {
+    for (const release of releases) release(response);
+  });
+  await waitFor(() => expect(origin).toBeEnabled());
+  expect(origin).toHaveFocus();
+});
