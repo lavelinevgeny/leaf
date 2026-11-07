@@ -203,6 +203,15 @@ beforeEach(() => {
             successorId: tree.tasks.at(-1)!.id,
           })),
         );
+      if (command.type === 'task.create' && command.successorIds)
+        tree.dependencies.push(
+          ...command.successorIds.map((successorId, index) => ({
+            id: id(110 + index),
+            projectId: project.id,
+            predecessorId: tree.tasks.at(-1)!.id,
+            successorId,
+          })),
+        );
       if (command.type === 'task.delete')
         tree.tasks = tree.tasks.filter((t) => t.id !== command.taskId);
       tree = {
@@ -461,7 +470,7 @@ describe('client HTTP interactions', () => {
       undo.disabled = false;
       undo.blur();
       undo.disabled = true;
-      const search = screen.getByRole('searchbox');
+      const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
       act(() => {
         search.focus();
         if (blur) search.blur();
@@ -579,10 +588,11 @@ describe('client HTTP interactions', () => {
   it('keeps source drafts separate and resets only the confirmed branch on exact retry', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-06T12:00:00Z'));
-    tree.tasks = [task(1, 'Этап')];
+    tree.tasks = [task(1, 'Этап'), task(2, 'A'), task(3, 'B')];
     await open();
     const user = userEvent.setup();
     const main = within(screen.getByLabelText('Новая задача').closest('form')!);
+    await selectQuickMixed(user, main as typeof screen, 'A', 'B');
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.clear(main.getByLabelText('Длительность, рабочих дней'));
     await user.type(main.getByLabelText('Длительность, рабочих дней'), '5');
@@ -597,6 +607,7 @@ describe('client HTTP interactions', () => {
     await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     await user.type(panel.getByLabelText('Новая задача'), 'Ребёнок');
+    await selectQuickMixed(user, panel as typeof screen, 'B', 'A');
     await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.clear(
       within(
@@ -641,6 +652,8 @@ describe('client HTTP interactions', () => {
       durationDays: null,
       inputStart: '2026-11-07',
       inputFinish: null,
+      predecessorIds: [id(3)],
+      successorIds: [id(2)],
     });
     await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(
@@ -650,6 +663,9 @@ describe('client HTTP interactions', () => {
     ).toHaveValue('1');
     await user.keyboard('{Escape}');
     await user.click(panel.getByRole('button', { name: 'Закрыть панель' }));
+    expect(
+      main.getByRole('button', { name: 'Связи новой задачи: 2, не сохранено' }),
+    ).toBeInTheDocument();
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue('5');
     expect(main.getByLabelText('Начало')).toHaveValue(' 31.2 ');
@@ -703,6 +719,7 @@ describe('client HTTP interactions', () => {
     expect(commands[0]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1153,6 +1170,7 @@ describe('client HTTP interactions', () => {
       command: {
         type: 'task.create',
         predecessorIds: [],
+        successorIds: [],
         inputStart: null,
         inputFinish: null,
         durationDays: 1,
@@ -1179,6 +1197,7 @@ describe('client HTTP interactions', () => {
     expect(commands[2]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1205,6 +1224,7 @@ describe('client HTTP interactions', () => {
     expect(commands[2]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1243,6 +1263,7 @@ describe('client HTTP interactions', () => {
       expect(commands[1]?.command).toEqual({
         type: 'task.create',
         predecessorIds: [],
+        successorIds: [],
         inputStart: null,
         inputFinish: null,
         durationDays: 1,
@@ -1280,6 +1301,7 @@ describe('client HTTP interactions', () => {
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1339,6 +1361,7 @@ describe('client HTTP interactions', () => {
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1380,6 +1403,7 @@ describe('client HTTP interactions', () => {
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1400,6 +1424,7 @@ describe('client HTTP interactions', () => {
       command: {
         type: 'task.create',
         predecessorIds: [],
+        successorIds: [],
         inputStart: null,
         inputFinish: null,
         durationDays: 1,
@@ -1850,6 +1875,7 @@ describe('client HTTP interactions', () => {
     expect(commands[0]?.command).toMatchObject({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -2329,7 +2355,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     scope = screen,
   ) {
     await user.click(
-      scope.getByRole('button', { name: 'После окончания новой задачи' }),
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
     );
     await user.type(
       screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
@@ -2419,6 +2445,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         inputFinish: null,
         durationDays: 1,
         predecessorIds: [],
+        successorIds: [],
       });
       expect(commands[1]!.command).toMatchObject({
         type: 'task.create',
@@ -2429,6 +2456,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         inputFinish: null,
         durationDays: 1,
         predecessorIds: [],
+        successorIds: [],
       });
       expect(
         tree.tasks
@@ -2448,7 +2476,11 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
   it.each(['main', 'subtask'] as const)(
     'confirms %s IDs without stealing title focus after global exact retry',
     async (entry) => {
-      tree.tasks = [task(1, 'Этап'), task(2, 'A', null, 1)];
+      tree.tasks = [
+        task(1, 'Этап'),
+        task(2, 'A', null, 1),
+        task(3, 'X', null, 2),
+      ];
       await open();
       const user = userEvent.setup();
       await user.type(screen.getByLabelText('Новая задача'), 'Другой черновик');
@@ -2463,6 +2495,17 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       } else await user.clear(screen.getByLabelText('Новая задача'));
       await user.type(scope.getByLabelText('Новая задача'), 'B');
       await selectA(user, scope);
+      await user.click(
+        scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Перед' }));
+      await user.type(
+        screen.getByRole('searchbox', {
+          name: /Поиск (предшественника|последователя)/,
+        }),
+        'X',
+      );
+      await user.keyboard('{ArrowDown}{Enter}{Escape}');
       fetchMock.mockImplementationOnce(() =>
         Promise.reject(new TypeError('synthetic offline')),
       );
@@ -2473,6 +2516,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         .at(-1)?.[1]?.body;
       const envelope = JSON.parse(String(original));
       expect(envelope.command.predecessorIds).toEqual([id(2)]);
+      expect(envelope.command.successorIds).toEqual([id(3)]);
       await user.click(scope.getByRole('button', { name: 'Повторить' }));
       await waitFor(() =>
         expect(scope.getByLabelText('Новая задача')).toHaveValue(''),
@@ -2490,11 +2534,26 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
           'Другой черновик',
         );
       await user.click(
-        scope.getByRole('button', { name: 'После окончания новой задачи' }),
+        scope.getByRole('button', { name: /^Связи новой задачи:/ }),
       );
       expect(
         screen.queryByRole('button', { name: 'Убрать предшественника: A' }),
       ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Убрать последователя: X' }),
+      ).not.toBeInTheDocument();
+      expect(tree.dependencies).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            predecessorId: id(2),
+            successorId: id(51),
+          }),
+          expect.objectContaining({
+            predecessorId: id(51),
+            successorId: id(3),
+          }),
+        ]),
+      );
     },
   );
   it('guards relation-only quick drafts on unload/logout and restores them across projects', async () => {
@@ -2511,7 +2570,15 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     fetchMock.mockImplementationOnce(() => json([project, other]));
     await open();
     const user = userEvent.setup();
-    await selectA(user);
+    await user.click(
+      screen.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Перед' }));
+    await user.type(
+      screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+      'A',
+    );
+    await user.keyboard('{ArrowDown}{Enter}{Escape}');
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
@@ -2524,10 +2591,10 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     await user.click(screen.getByRole('button', { name: /Демо-проект/ }));
     await screen.findByRole('heading', { name: project.title });
     await user.click(
-      screen.getByRole('button', { name: 'После окончания новой задачи' }),
+      screen.getByRole('button', { name: /^Связи новой задачи:/ }),
     );
     expect(
-      screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+      screen.getByRole('button', { name: 'Убрать последователя: A' }),
     ).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Выйти' }));
@@ -2598,7 +2665,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
   ] as const)(
     'coordinates non-default %s raw generation with the real parent acknowledgement; newer=%s',
     async (entry, newer) => {
-      tree.tasks = [task(1, 'A')];
+      tree.tasks = [task(1, 'A'), task(2, 'X'), task(3, 'Y')];
       await open();
       const user = userEvent.setup();
       let scope = screen;
@@ -2609,9 +2676,13 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
           screen.getByRole('complementary', { name: 'Задача' }),
         ) as typeof screen;
       }
+      if (entry === 'main') {
+        screen.getByRole('treeitem', { name: /^A,/ }).focus();
+        await user.keyboard('{Shift>}{Enter}{/Shift}');
+      }
       const title = scope.getByLabelText('Новая задача');
       await user.type(title, 'B');
-      if (entry === 'main') await user.tab();
+      await selectQuickMixed(user, scope, 'X', 'Y');
       await user.click(
         scope.getByRole('button', { name: 'Сроки новой задачи' }),
       );
@@ -2635,7 +2706,11 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         'expectedRevision',
         'operationId',
       ]);
-      expect(commands[0]!.command).toMatchObject({ durationDays: 3 });
+      expect(commands[0]!.command).toMatchObject({
+        durationDays: 3,
+        predecessorIds: [id(2)],
+        successorIds: [id(3)],
+      });
       expect(title).toBeDisabled();
       expect(duration).toBeDisabled();
       // Existing late-ack boundary: a queued input event arrives after send; ordinary busy UI stays locked.
@@ -2905,67 +2980,84 @@ it('keeps confirmed immediate chips/query on rejection and sends one deletion on
   });
 });
 
-it('retains same-title changed relation IDs from queued draft events after a deferred create acknowledgement', async () => {
-  tree.tasks = [task(1, 'A'), task(2, 'X', null, 1)];
-  await open();
-  const user = userEvent.setup();
-  await user.type(screen.getByLabelText('Новая задача'), 'B');
-  await user.keyboard('{Alt>}l{/Alt}');
-  await user.type(
-    screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
-    'A',
-  );
-  await user.keyboard('{ArrowDown}{Enter}');
-  const remove = screen.getByRole('button', {
-    name: 'Убрать предшественника: A',
-  });
-  let resolve!: (response: Response) => void;
-  fetchMock.mockImplementationOnce(
-    () =>
-      new Promise<Response>((done) => {
-        resolve = done;
+it.each(['predecessor', 'successor'] as const)(
+  'retains same-title changed %s IDs from queued draft events after a deferred create acknowledgement',
+  async (direction) => {
+    tree.tasks = [task(1, 'A'), task(2, 'X', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Новая задача'), 'B');
+    await user.keyboard('{Alt>}l{/Alt}');
+    if (direction === 'successor')
+      await user.click(screen.getByRole('button', { name: 'Перед' }));
+    await user.type(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
       }),
-  );
-  // Two callbacks queued before React commits busy state; the second belongs to a newer draft.
-  act(() => {
-    fireEvent.submit(screen.getByLabelText('Новая задача').closest('form')!);
-    fireEvent.click(remove);
-  });
-  expect(screen.getByLabelText('Новая задача')).toBeDisabled();
-  expect(
-    JSON.parse(
-      String(
-        fetchMock.mock.calls
-          .filter(([url]) => String(url).endsWith('/commands'))
-          .at(-1)?.[1]?.body,
-      ),
-    ).command.predecessorIds,
-  ).toEqual([id(1)]);
-  tree = {
-    ...tree,
-    project: { ...project, revision: 1 },
-    tasks: [...tree.tasks, task(51, 'B', null, 2)],
-    dependencies: [
-      {
-        id: id(90),
-        projectId: project.id,
-        predecessorId: id(1),
-        successorId: id(51),
-      },
-    ],
-  };
-  resolve(await json(tree));
-  await waitFor(() =>
-    expect(screen.getByLabelText('Новая задача')).toBeEnabled(),
-  );
-  expect(screen.getByLabelText('Новая задача')).toHaveValue('B');
-  await user.click(
-    screen.getByRole('button', { name: 'После окончания новой задачи' }),
-  );
-  expect(
-    screen.queryByRole('button', { name: 'Убрать предшественника: A' }),
-  ).not.toBeInTheDocument();
-});
+      'A',
+    );
+    await user.keyboard('{ArrowDown}{Enter}');
+    const remove = screen.getByRole('button', {
+      name:
+        direction === 'predecessor'
+          ? 'Убрать предшественника: A'
+          : 'Убрать последователя: A',
+    });
+    let resolve!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((done) => {
+          resolve = done;
+        }),
+    );
+    // Two callbacks queued before React commits busy state; the second belongs to a newer draft.
+    act(() => {
+      fireEvent.submit(screen.getByLabelText('Новая задача').closest('form')!);
+      fireEvent.click(remove);
+    });
+    expect(screen.getByLabelText('Новая задача')).toBeDisabled();
+    expect(
+      JSON.parse(
+        String(
+          fetchMock.mock.calls
+            .filter(([url]) => String(url).endsWith('/commands'))
+            .at(-1)?.[1]?.body,
+        ),
+      ).command[
+        direction === 'predecessor' ? 'predecessorIds' : 'successorIds'
+      ],
+    ).toEqual([id(1)]);
+    tree = {
+      ...tree,
+      project: { ...project, revision: 1 },
+      tasks: [...tree.tasks, task(51, 'B', null, 2)],
+      dependencies: [
+        {
+          id: id(90),
+          projectId: project.id,
+          predecessorId: direction === 'predecessor' ? id(1) : id(51),
+          successorId: direction === 'predecessor' ? id(51) : id(1),
+        },
+      ],
+    };
+    resolve(await json(tree));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Новая задача')).toBeEnabled(),
+    );
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('B');
+    await user.click(
+      screen.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    expect(
+      screen.queryByRole('button', {
+        name:
+          direction === 'predecessor'
+            ? 'Убрать предшественника: A'
+            : 'Убрать последователя: A',
+      }),
+    ).not.toBeInTheDocument();
+  },
+);
 
 it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph actions with dirty Details', async () => {
   tree.tasks = [task(1, 'P'), task(2, 'B', id(1)), task(3, 'A', null, 1)];
@@ -3255,4 +3347,341 @@ it('keeps task dirty status and all write locks while a Journal POST is pending'
     'Синтетическая запись',
   );
   expect(commands).toHaveLength(0);
+});
+
+it.each(['main', 'subtask'] as const)(
+  'preserves mixed %s selections on ordinary rejection and 409 revalidates without silently dropping IDs',
+  async (entry) => {
+    tree.tasks = [task(1, 'P'), task(2, 'A', null, 1), task(3, 'B', null, 2)];
+    await open();
+    const user = userEvent.setup();
+    let scope = screen;
+    if (entry === 'subtask') {
+      await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+      await openPanelQuick(user);
+      scope = within(
+        screen.getByRole('complementary', { name: 'Задача' }),
+      ) as typeof screen;
+    }
+    const title = scope.getByLabelText('Новая задача');
+    await user.type(title, 'T');
+    await user.click(
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    await user.type(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
+      }),
+      'A',
+    );
+    await user.keyboard('{ArrowDown}{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Перед' }));
+    await user.clear(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
+      }),
+    );
+    await user.type(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
+      }),
+      'B',
+    );
+    await user.keyboard('{ArrowDown}{Enter}{Escape}');
+    fetchMock.mockImplementationOnce(() =>
+      json({ code: 'INVALID_REQUEST', message: 'Синтетический отказ.' }, 400),
+    );
+    await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+    await screen.findByText('Синтетический отказ.');
+    expect(title).toHaveValue('T');
+    await user.click(
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Убрать последователя: B' }),
+    ).toBeVisible();
+    await user.keyboard('{Escape}');
+    fetchMock.mockImplementationOnce(() =>
+      json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
+    );
+    await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+    await screen.findByRole('button', { name: 'Загрузить актуальный проект' });
+    tree = {
+      ...tree,
+      project: { ...project, revision: 1 },
+      tasks: tree.tasks.filter((t) => t.id !== id(3)),
+    };
+    await user.click(
+      screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+    );
+    await waitFor(() => expect(title).toBeEnabled());
+    expect(title).toHaveValue('T');
+    expect(
+      scope.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
+    await user.click(
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole('button', { name: /Убрать последователя:/ }),
+    );
+    await user.keyboard('{Escape}');
+    expect(
+      scope.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeEnabled();
+  },
+);
+
+async function selectQuickMixed(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: typeof screen,
+  after: string,
+  before: string,
+) {
+  await user.click(scope.getByRole('button', { name: /^Связи новой задачи:/ }));
+  await user.type(
+    screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
+    after,
+  );
+  await user.keyboard('{ArrowDown}{Enter}');
+  await user.click(screen.getByRole('button', { name: 'Перед' }));
+  await user.clear(
+    screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+  );
+  await user.type(
+    screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+    before,
+  );
+  await user.keyboard('{ArrowDown}{Enter}{Escape}');
+}
+
+it('successor-only main draft keeps its parent when selecting another row and clears both groups on cancel', async () => {
+  tree.tasks = [task(1, 'P'), task(2, 'X'), task(3, 'Y')];
+  await open();
+  const user = userEvent.setup();
+  const row = screen.getByRole('treeitem', { name: /^P,/ });
+  row.focus();
+  await user.keyboard('{Shift>}{Enter}{/Shift}');
+  await user.keyboard('{Alt>}l{/Alt}');
+  await user.click(screen.getByRole('button', { name: 'Перед' }));
+  await user.type(
+    screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+    'X',
+  );
+  await user.keyboard('{ArrowDown}{Enter}{Escape}');
+  await user.click(screen.getByRole('treeitem', { name: /^Y,/ }));
+  expect(screen.getByText('Родитель: P')).toBeInTheDocument();
+  await user.click(
+    screen.getByRole('button', { name: 'Отменить ввод задачи' }),
+  );
+  expect(
+    screen.getByRole('button', { name: 'Связи новой задачи: 0, не сохранено' }),
+  ).toBeInTheDocument();
+  const unload = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(false);
+});
+
+it('mixed quick exact replay below the metadata floor refreshes current tree and clears only matched draft', async () => {
+  tree.project.revision = 6;
+  tree.tasks = [task(1, 'P'), task(2, 'A'), task(3, 'B')];
+  const frozen: ProjectTree = {
+    ...structuredClone(tree),
+    project: { ...tree.project, revision: 7 },
+    tasks: [...tree.tasks, task(51, 'T')],
+    dependencies: [
+      {
+        id: id(90),
+        projectId: project.id,
+        predecessorId: id(2),
+        successorId: id(51),
+      },
+      {
+        id: id(91),
+        projectId: project.id,
+        predecessorId: id(51),
+        successorId: id(3),
+      },
+    ],
+    canUndo: true,
+  };
+  const envelopes: CommandEnvelope[] = [];
+  const base = fetchMock.getMockImplementation()! as (
+    url: string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation((url, init) => {
+    if (url.endsWith('/commands') && init?.method === 'POST') {
+      envelopes.push(JSON.parse(String(init.body)) as CommandEnvelope);
+      return envelopes.length === 1
+        ? Promise.reject(new TypeError('synthetic lost response'))
+        : json(frozen);
+    }
+    return base(url, init);
+  });
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+  const title = document.getElementById('quick-task')!;
+  await user.type(title, 'T');
+  await selectQuickMixed(
+    user,
+    within(title.closest('form')!) as typeof screen,
+    'A',
+    'B',
+  );
+  await user.click(
+    within(title.closest('form')!).getByRole('button', {
+      name: 'Добавить задачу',
+    }),
+  );
+  await screen.findByText(/Нет связи с сервером/);
+  tree = {
+    ...structuredClone(frozen),
+    project: { ...frozen.project, revision: 8 },
+    tasks: frozen.tasks.map((t) =>
+      t.id === id(1) ? { ...t, title: 'P revision 8' } : t,
+    ),
+  };
+  await user.click(
+    within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
+      'tab',
+      { name: 'Ход работы' },
+    ),
+  );
+  fireEvent(window, new Event('focus'));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/tree'))
+        .length,
+    ).toBeGreaterThan(1),
+  );
+  await waitFor(() =>
+    expect(screen.queryByText('Загрузка журнала…')).not.toBeInTheDocument(),
+  );
+  const readsBeforeRetry = fetchMock.mock.calls.filter(([url]) =>
+    String(url).endsWith('/tree'),
+  ).length;
+  await user.click(screen.getByRole('button', { name: 'Повторить' }));
+  await waitFor(() => expect(title).toHaveValue(''));
+  expect(envelopes).toHaveLength(2);
+  expect(envelopes[1]).toEqual(envelopes[0]);
+  expect(envelopes[0]?.command).toMatchObject({
+    predecessorIds: [id(2)],
+    successorIds: [id(3)],
+  });
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/tree'))
+      .length,
+  ).toBeGreaterThan(readsBeforeRetry);
+  expect(
+    screen.getByRole('treeitem', { name: /^P revision 8,/ }),
+  ).toBeInTheDocument();
+});
+
+it.each(['logout', '401'] as const)(
+  'clears both QuickAdd scopes on %s and fresh login starts clean',
+  async (mode) => {
+    tree.tasks = [task(1, 'P'), task(2, 'A'), task(3, 'B')];
+    await open();
+    const user = userEvent.setup();
+    const main = document.getElementById('quick-task')!;
+    await user.type(main, 'Main');
+    await selectQuickMixed(
+      user,
+      within(main.closest('form')!) as typeof screen,
+      'A',
+      'B',
+    );
+    await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+    await openPanelQuick(user);
+    const scope = within(
+      screen.getByRole('complementary', { name: 'Задача' }),
+    ) as typeof screen;
+    await user.type(scope.getByLabelText('Новая задача'), 'Sub');
+    await selectQuickMixed(user, scope, 'A', 'B');
+    if (mode === '401') {
+      fetchMock.mockImplementationOnce(() =>
+        json({ code: 'UNAUTHORIZED', message: 'Сессия завершена' }, 401),
+      );
+      await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Выйти' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Отбросить быстрые черновики' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Выйти' }));
+    }
+    await screen.findByLabelText('Пароль');
+    await user.type(screen.getByLabelText('Пароль'), 'synthetic-password');
+    fetchMock.mockImplementationOnce(() =>
+      json({ authenticated: true, setupRequired: false }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Войти' }));
+    await screen.findByRole('heading', { name: project.title });
+    expect(document.getElementById('quick-task')).toHaveValue('');
+    expect(
+      screen.getByRole('button', {
+        name: 'Связи новой задачи: 0, не сохранено',
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+    await openPanelQuick(user);
+    const fresh = within(screen.getByRole('complementary', { name: 'Задача' }));
+    expect(fresh.getByLabelText('Новая задача')).toHaveValue('');
+    expect(
+      fresh.getByRole('button', {
+        name: 'Связи новой задачи: 0, не сохранено',
+      }),
+    ).toBeInTheDocument();
+  },
+);
+
+it('reconciles the submitted subtask context after refresh and clears a matched mixed draft', async () => {
+  tree.tasks = [
+    task(1, 'P'),
+    task(2, 'Child', id(1)),
+    task(3, 'A'),
+    task(4, 'B'),
+  ];
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+  await openPanelQuick(user);
+  const scope = within(
+    screen.getByRole('complementary', { name: 'Задача' }),
+  ) as typeof screen;
+  const input = scope.getByLabelText('Новая задача');
+  await user.type(input, 'T');
+  await user.tab();
+  expect(scope.getByText('Родитель: Child')).toBeInTheDocument();
+  await selectQuickMixed(user, scope, 'A', 'B');
+  fetchMock.mockImplementationOnce(() =>
+    json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
+  );
+  await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+  await screen.findByRole('button', { name: 'Загрузить актуальный проект' });
+  tree = {
+    ...tree,
+    project: { ...project, revision: 1 },
+    tasks: tree.tasks.filter((t) => t.id !== id(2)),
+  };
+  await user.click(
+    screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+  );
+  await waitFor(() => expect(input).toBeEnabled());
+  expect(scope.getByText('Родитель: P')).toBeInTheDocument();
+  await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+  await waitFor(() => expect(input).toHaveValue(''));
+  expect(commands.at(-1)?.command).toMatchObject({
+    parentId: id(1),
+    predecessorIds: [id(3)],
+    successorIds: [id(4)],
+  });
 });

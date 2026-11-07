@@ -62,7 +62,9 @@ async function create(
 const taskId = (tree: ProjectTree, title: string) =>
   tree.tasks.find((t) => t.title === title)!.id;
 const picker = (page: Page) =>
-  page.getByRole('dialog', { name: 'Добавить предшественника', exact: true });
+  page.getByRole('dialog', {
+    name: /^(Добавить предшественника|Зависимости)$/,
+  });
 const panel = (page: Page) =>
   page.getByRole('complementary', { name: 'Задача', exact: true });
 const row = (page: Page, id: string) =>
@@ -182,7 +184,7 @@ test('subtask draft creates child plus edge atomically, retaining the main draft
   await choose(page, 'A');
   await expect(
     panel(page).getByRole('button', {
-      name: 'После окончания новой задачи',
+      name: /^Связи новой задачи:/,
       exact: true,
     }),
   ).toBeFocused();
@@ -1067,7 +1069,7 @@ test('bounded keyboard results and dynamic picker growth stay visible near viewp
   await search.press('Escape');
   await expect(
     page.getByRole('button', {
-      name: 'После окончания новой задачи',
+      name: /^Связи новой задачи:/,
       exact: true,
     }),
   ).toBeFocused();

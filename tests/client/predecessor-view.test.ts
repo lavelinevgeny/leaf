@@ -91,6 +91,7 @@ it('compares complete quick drafts, canonical predecessor sets and exact context
     context: { parentId: null },
     plan: { inputStart: null, inputFinish: null, durationDays: 1 },
     predecessorIds: ['A', 'X'],
+    successorIds: [],
   };
   expect(sameQuickDraft(draft, { ...draft, predecessorIds: ['X', 'A'] })).toBe(
     true,
@@ -312,4 +313,22 @@ it('replaces obsolete incident edges while preserving the opposite proposal and 
     expect.objectContaining({ direction: 'predecessor', taskId: a.id }),
     expect.objectContaining({ direction: 'successor', taskId: a.id }),
   ]);
+});
+
+it('owns successor-only quick drafts and compares successor sets canonically', () => {
+  const draft: QuickDraft = {
+    title: '',
+    context: { parentId: null },
+    plan: { inputStart: null, inputFinish: null, durationDays: 1 },
+    predecessorIds: [],
+    successorIds: ['B'],
+  };
+  expect(hasQuickDraft(draft)).toBe(true);
+  expect(sameQuickDraft(draft, { ...draft, successorIds: [] })).toBe(false);
+  expect(
+    sameQuickDraft(
+      { ...draft, successorIds: ['B', 'C'] },
+      { ...draft, successorIds: ['C', 'B'] },
+    ),
+  ).toBe(true);
 });

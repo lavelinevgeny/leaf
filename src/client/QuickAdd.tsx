@@ -8,7 +8,10 @@ import {
 } from '../shared/contracts.js';
 import { PredecessorPicker } from './PredecessorPicker.js';
 import { ControlIcon } from './ControlIcon.js';
-import { canonicalPredecessorIds } from './predecessor-view.js';
+import {
+  canonicalPredecessorIds,
+  dependencySelectionIssues,
+} from './predecessor-view.js';
 import { QuickSchedule, type QuickScheduleDraft } from './QuickSchedule.js';
 import { scheduleChip, draftTask } from './quick-add-view.js';
 import { newTaskPlan } from './planning-view.js';
@@ -23,6 +26,8 @@ interface Props {
   tree: ProjectTree;
   predecessorIds: string[];
   onPredecessors: (ids: string[]) => void;
+  successorIds: string[];
+  onSuccessors: (ids: string[]) => void;
   acknowledgement?: number;
   inputDraft?: QuickScheduleDraft | undefined;
   onInputDraft?: ((draft: QuickScheduleDraft | undefined) => void) | undefined;
@@ -34,6 +39,7 @@ interface Props {
     context: AddContext,
     plan: SourceFields,
     predecessorIds: string[],
+    successorIds: string[],
   ) => Promise<boolean>;
   plan: SourceFields;
   onPlan: (plan: SourceFields) => void;
@@ -57,6 +63,8 @@ export function QuickAdd({
   tree,
   predecessorIds,
   onPredecessors,
+  successorIds,
+  onSuccessors,
   acknowledgement,
   inputDraft,
   onInputDraft,
@@ -87,6 +95,32 @@ export function QuickAdd({
   const submitting = useRef(false);
   const chip = useRef<HTMLButtonElement>(null);
   const chain = useRef<HTMLButtonElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  // Picker close and successful creation have independent focus owners.
+  const pickerFocus = useRef<{ revoked: boolean } | null>(null);
+  function closeDependencies() {
+    pickerFocus.current = { revoked: false };
+    setPredecessorsOpen(false);
+  }
+  useEffect(() => {
+    const leavePicker = (event: Event) => {
+      const target = event.target;
+      if (!pickerFocus.current || !(target instanceof Node)) return;
+      if (
+        chain.current?.contains(target) ||
+        form.current?.querySelector('.predecessor-picker')?.contains(target)
+      )
+        return;
+      pickerFocus.current.revoked = true;
+    };
+    document.addEventListener('focusin', leavePicker);
+    document.addEventListener('pointerdown', leavePicker, true);
+    return () => {
+      document.removeEventListener('focusin', leavePicker);
+      document.removeEventListener('pointerdown', leavePicker, true);
+      pickerFocus.current = null;
+    };
+  }, []);
   const [predecessorsOpen, setPredecessorsOpen] = useState(false);
   function beginEditing() {
     setEditing(true);
@@ -97,6 +131,7 @@ export function QuickAdd({
     onTitle('');
     onPlan(newTaskPlan());
     onPredecessors([]);
+    onSuccessors([]);
     resetFields();
     setValid(true);
   }
@@ -141,7 +176,18 @@ export function QuickAdd({
     setValid(nextValid);
   }
   const scheduleId = useId();
-  const canSubmit = valid && sourceFieldsSchema.safeParse(plan).success;
+  const proposal = {
+    task: draftTask(tree, context, title, plan),
+    isNew: true,
+    predecessorIds,
+    successorIds,
+  };
+  const selectionIssues = dependencySelectionIssues(tree, proposal);
+  const canSubmit =
+    valid &&
+    sourceFieldsSchema.safeParse(plan).success &&
+    selectionIssues.length === 0;
+  const dependencyCount = predecessorIds.length + successorIds.length;
   const [restoreFocus, setRestoreFocus] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const parent = tasks.find((task) => task.id === context.parentId);
@@ -161,6 +207,8 @@ export function QuickAdd({
     };
   }, []);
   const previousContext = useRef({
+    inputId,
+    projectId: tree.project.id,
     parentId: context.parentId,
     afterId: context.afterId,
     acknowledgement,
@@ -170,19 +218,49 @@ export function QuickAdd({
     const previous = previousContext.current;
     if (
       !active ||
+      previous.inputId !== inputId ||
+      previous.projectId !== tree.project.id ||
       previous.parentId !== context.parentId ||
       (previous.afterId !== context.afterId &&
         previous.acknowledgement === acknowledgement)
     ) {
       if (focusRequest.current) focusRequest.current.revoked = true;
+      if (pickerFocus.current) pickerFocus.current.revoked = true;
     }
     previousContext.current = {
+      inputId,
+      projectId: tree.project.id,
       parentId: context.parentId,
       afterId: context.afterId,
       acknowledgement,
       active,
     };
-  }, [context.parentId, context.afterId, acknowledgement, active]);
+  }, [
+    context.parentId,
+    context.afterId,
+    acknowledgement,
+    active,
+    inputId,
+    tree.project.id,
+  ]);
+  useEffect(() => {
+    if (predecessorsOpen || busy || blocked) return;
+    const request = pickerFocus.current;
+    pickerFocus.current = null;
+    if (!request || request.revoked || !active) return;
+    const target = chain.current?.isConnected ? chain.current : input.current;
+    if (target?.isConnected && !target.disabled && !target.closest('[hidden]'))
+      target.focus();
+  }, [
+    predecessorsOpen,
+    busy,
+    blocked,
+    active,
+    context.parentId,
+    context.afterId,
+    inputId,
+    tree.project.id,
+  ]);
   useEffect(() => {
     if (!restoreFocus || busy || blocked) return;
     const request = focusRequest.current;
@@ -223,7 +301,7 @@ export function QuickAdd({
       focusRequest.current = { input: input.current, revoked: false };
     sentRawVersion.current = rawVersion.current;
     try {
-      if (await onCreate(title, context, plan, predecessorIds)) {
+      if (await onCreate(title, context, plan, predecessorIds, successorIds)) {
         acknowledgeFields();
         setRestoreFocus(true);
       }
@@ -233,6 +311,7 @@ export function QuickAdd({
   }
   return (
     <form
+      ref={form}
       className={`quick-add${inline ? ' inline-quick-add' : ''}`}
       onBlur={(event) => {
         if (
@@ -363,9 +442,9 @@ export function QuickAdd({
           ref={chain}
           type="button"
           className="predecessor-action"
-          aria-label={strings.newTaskPredecessors}
+          aria-label={`${strings.newTaskLinks}: ${dependencyCount}, не сохранено`}
           aria-expanded={predecessorsOpen}
-          title={`${strings.afterFinish} · Alt+L`}
+          title={`${strings.newTaskLinks} · Alt+L`}
           disabled={busy || blocked}
           onClick={() => {
             setPredecessorsOpen((open) => !open);
@@ -374,7 +453,7 @@ export function QuickAdd({
           }}
         >
           <ControlIcon name="chain" />
-          {predecessorIds.length > 0 && <span>{predecessorIds.length}</span>}
+          {dependencyCount > 0 && <span>{dependencyCount}</span>}
         </button>
         <button
           aria-label={strings.addTask}
@@ -450,7 +529,7 @@ export function QuickAdd({
             {strings.quickKeyboardHint} · {strings.quickExitHint}
           </span>
         )}
-        {(predecessorIds.length > 0 ||
+        {(dependencyCount > 0 ||
           title ||
           plan.inputStart !== null ||
           plan.inputFinish !== null ||
@@ -477,27 +556,31 @@ export function QuickAdd({
           {strings.planInputError}
         </p>
       )}
+      {selectionIssues.length > 0 && (
+        <p role="alert" className="field-error">
+          {selectionIssues[0]!.reason}
+        </p>
+      )}
       {predecessorsOpen && (
         <PredecessorPicker
           tree={tree}
-          proposal={{
-            task: draftTask(tree, context, title, plan),
-            isNew: true,
-            predecessorIds,
-            successorIds: [],
-          }}
-          direction="predecessor"
+          proposal={proposal}
+          direction="selectable"
           disabled={busy || blocked}
-          onAdd={(_direction, id) =>
-            onPredecessors(canonicalPredecessorIds([...predecessorIds, id]))
-          }
-          onRemove={(_direction, id) =>
-            onPredecessors(predecessorIds.filter((selected) => selected !== id))
-          }
-          onClose={() => {
-            setPredecessorsOpen(false);
-            chain.current?.focus();
+          onAdd={(direction, id) => {
+            if (direction === 'predecessor')
+              onPredecessors(canonicalPredecessorIds([...predecessorIds, id]));
+            else onSuccessors(canonicalPredecessorIds([...successorIds, id]));
           }}
+          onRemove={(direction, id) => {
+            if (direction === 'predecessor')
+              onPredecessors(
+                predecessorIds.filter((selected) => selected !== id),
+              );
+            else
+              onSuccessors(successorIds.filter((selected) => selected !== id));
+          }}
+          onClose={closeDependencies}
         />
       )}
       {(scheduleOpen || scheduleMounted) && (

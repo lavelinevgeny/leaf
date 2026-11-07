@@ -491,6 +491,7 @@ export function App() {
         previous[projectId] ?? {
           title: '',
           predecessorIds: [],
+          successorIds: [],
           context: { parentId: null },
           plan: newTaskPlan(),
         },
@@ -537,6 +538,7 @@ export function App() {
           inputDraft: saved?.inputDraft,
           title: saved?.title ?? '',
           predecessorIds: saved?.predecessorIds ?? [],
+          successorIds: saved?.successorIds ?? [],
           plan: saved?.plan ?? newTaskPlan(),
           context: {
             parentId,
@@ -934,6 +936,7 @@ export function App() {
             title: '',
             plan: newTaskPlan(),
             predecessorIds: [],
+            successorIds: [],
             context: created
               ? { parentId: created.parentId, afterId: created.id }
               : draft.context,
@@ -1087,16 +1090,21 @@ export function App() {
     addContext: AddContext,
     plan: SourceFields,
     predecessorIds: string[],
+    successorIds: string[],
     quickKey?: string,
   ) {
     if (!canNavigate()) return false;
     const preserved = preserveWork(addContext.parentId);
     if (preserved === null) return false;
     const key = quickKey ?? treeRef.current!.project.id;
+    // A refreshed subtask branch can rebase its displayed parent without editing text.
+    // Capture and acknowledge that submitted context as the RAM draft's current context.
+    updateQuick(key, (draft) => ({ ...draft, context: { ...addContext } }));
     return !!(await commandTree(
       {
         type: 'task.create',
         predecessorIds: [...predecessorIds],
+        successorIds: [...successorIds],
         ...plan,
         title,
         ...addContext,
@@ -1110,6 +1118,7 @@ export function App() {
           context: { ...addContext },
           plan: { ...plan },
           predecessorIds: [...predecessorIds],
+          successorIds: [...successorIds],
         },
       },
     ));
@@ -1900,6 +1909,7 @@ export function App() {
                         title: '',
                         plan: newTaskPlan(),
                         predecessorIds: [],
+                        successorIds: [],
                       },
                     ]),
                   ),
@@ -2286,15 +2296,23 @@ export function App() {
                     context,
                     active:
                       quickEditing ||
-                      !!quickDrafts[tree.project.id]?.title ||
-                      !!quickDrafts[tree.project.id]?.plan.inputStart ||
-                      !!quickDrafts[tree.project.id]?.plan.inputFinish,
+                      (!!quickDrafts[tree.project.id] &&
+                        hasQuickDraft(quickDrafts[tree.project.id]!)),
                     input: (
                       <QuickAdd
                         active={projectView === 'tasks'}
                         tree={tree}
                         predecessorIds={
                           quickDrafts[tree.project.id]?.predecessorIds ?? []
+                        }
+                        successorIds={
+                          quickDrafts[tree.project.id]?.successorIds ?? []
+                        }
+                        onSuccessors={(successorIds) =>
+                          updateQuick(tree.project.id, (draft) => ({
+                            ...draft,
+                            successorIds,
+                          }))
                         }
                         onPredecessors={(predecessorIds) =>
                           updateQuick(tree.project.id, (draft) => ({
@@ -2660,6 +2678,14 @@ export function App() {
               active={visiblePanelTab(panelTab) === 'details'}
               tree={tree}
               predecessorIds={subtaskDraft?.predecessorIds ?? []}
+              successorIds={subtaskDraft?.successorIds ?? []}
+              onSuccessors={(successorIds) =>
+                updateQuick(subtaskKey, (draft) => ({
+                  ...draft,
+                  context: subtaskContext,
+                  successorIds,
+                }))
+              }
               onPredecessors={(predecessorIds) =>
                 updateQuick(subtaskKey, (draft) => ({
                   ...draft,
@@ -2700,8 +2726,15 @@ export function App() {
                   context: subtaskContext,
                 }))
               }
-              onCreate={(title, context, plan, predecessorIds) =>
-                createTask(title, context, plan, predecessorIds, subtaskKey)
+              onCreate={(title, context, plan, predecessorIds, successorIds) =>
+                createTask(
+                  title,
+                  context,
+                  plan,
+                  predecessorIds,
+                  successorIds,
+                  subtaskKey,
+                )
               }
               busy={busy || loading}
               submitBlockedReason={dirty ? strings.saveTaskBeforeSubtask : null}

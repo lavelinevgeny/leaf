@@ -253,8 +253,19 @@ export function PredecessorPicker(props: PredecessorPickerProps): ReactNode {
                       type="button"
                       aria-label={`${group === 'predecessor' ? strings.removePredecessor : strings.removeSuccessor}: ${removalTitle}`}
                       disabled={blocked}
-                      onClick={() => {
-                        if (!blocked) onRemove(group, selected);
+                      onClick={(event) => {
+                        if (blocked) return;
+                        const ownedFocus =
+                          document.activeElement === event.currentTarget;
+                        onRemove(group, selected);
+                        // The chip may disappear immediately. Keep keyboard Escape in this layer;
+                        // this synchronous move creates no late focus request after navigation.
+                        if (
+                          ownedFocus &&
+                          document.activeElement === event.currentTarget &&
+                          search.current?.isConnected
+                        )
+                          search.current.focus();
                       }}
                     >
                       ×

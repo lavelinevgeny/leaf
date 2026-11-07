@@ -36,7 +36,7 @@
 |---|---|---|
 | 1 | `src/shared/contracts.ts`, `src/server/repository.ts`; `tests/optional-api.test.ts`, `tests/fs-cascade-repository.test.ts` | Optional create-only successorIds, atomic create/replay/undo. Единственный writer shared command schema. |
 | 2 | `src/client/predecessor-view.ts`, `PredecessorPicker.tsx`, `Dependencies.tsx`, `strings.ts`, `styles/planning.css`; небольшие адаптации вызовов `App.tsx`/`QuickAdd.tsx` | Полный DependencyProposal, направленные callbacks, fixed graph. Старые App/QuickAdd пока выбирают incoming через fixed mode. |
-| 3 | `src/client/quick-add-view.ts`, `QuickAdd.tsx`, `App.tsx` и их tests | Обязательный successorIds в RAM QuickDraft, двустороннее создание обоих scope. |
+| 3 | `src/client/quick-add-view.ts`, `QuickAdd.tsx`, `App.tsx`, узкая keyboard-коррекция `PredecessorPicker.tsx` и их tests | Обязательный successorIds в RAM QuickDraft, двустороннее создание обоих scope. |
 | 4 | `src/client/TaskTree.tsx`, `TaskTimeline.tsx`, `TaskPanel.tsx`, `App.tsx`, `styles/app.css` и их tests | Одна row chain/count и общий directional immediate host строки/полосы Ганта. |
 | 5 | `tests/e2e/dependency-ux.spec.ts`, при необходимости узкие browser regression updates; `docs/ACCEPTANCE.md`, `docs/STATUS.md`, `START_HERE.md` | Полная DUX evidence matrix, native zoom и финальные gates. |
 
@@ -237,7 +237,9 @@ validateDependency(tasks, proposedEdges, ...endpoints);
 
 ### Task 3: Обе стороны связей в основном и вложенном QuickAdd
 
-**Files:** Modify `src/client/quick-add-view.ts`, `QuickAdd.tsx`, `App.tsx`; Test `tests/client/predecessor-view.test.ts`, `quick-add.test.tsx`, `App.test.tsx`, `task-panel-navigation.test.tsx`; Create `tests/e2e/dependency-ux.spec.ts` (QuickAdd scenarios); Modify `docs/STATUS.md`.
+**Files:** Modify `src/client/quick-add-view.ts`, `QuickAdd.tsx`, `App.tsx`, `PredecessorPicker.tsx`; Test `tests/client/predecessor-view.test.ts`, `quick-add.test.tsx`, `App.test.tsx`, `task-panel-navigation.test.tsx`, `predecessor-picker.test.tsx`, `dependencies.test.tsx`; Create `tests/e2e/dependency-ux.spec.ts` (QuickAdd scenarios); Update selector contract in `tests/e2e/fs-dependencies.spec.ts`; Modify `docs/STATUS.md`.
+
+Интеграционное уточнение Task 3: удаление focused chip синхронно возвращает фокус в поиск того же picker, чтобы следующий Escape оставался в этом слое. Callback владельца, самостоятельно переместивший фокус, сохраняет своё намерение; позднего возврата здесь нет. Проверить последний chip, сохранение остальных IDs и outgoing graph busy/ack без промежуточного click. Интерфейс picker не расширяется.
 
 **Interfaces:** Consumes DependencyProposal/PredecessorPicker selectable and create.successorIds. Produces обязательное `QuickDraft.successorIds: string[]`; QuickAdd props `successorIds: string[]`, `onSuccessors: (ids: string[]) => void`; onCreate принимает `(title: string, context: AddContext, plan: SourceFields, predecessorIds: string[], successorIds: string[]) => Promise<boolean>`. App createTask добавляет successorIds перед optional quickKey. Обновить обе call sites/вложенную closure и все harness в одном этапе.
 

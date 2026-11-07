@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
+import { useState } from 'react';
 import {
   cleanup,
   render,
@@ -524,6 +525,8 @@ it('supports native Enter on direction removal and close buttons, with Tab in bo
   ).toHaveFocus();
   await user.keyboard('{Enter}');
   expect(onRemove).toHaveBeenCalledExactlyOnceWith('predecessor', task(1).id);
+  expect(screen.getByRole('searchbox')).toHaveFocus();
+  await user.tab({ shift: true });
   await user.tab({ shift: true });
   const before = screen.getByRole('button', { name: 'Перед' });
   expect(before).toHaveFocus();
@@ -597,4 +600,75 @@ it('keeps fixed chip arrows and distinguishes duplicate selected titles by their
     screen.getByRole('button', { name: 'Убрать предшественника: Same · Q' }),
   );
   expect(onRemove).toHaveBeenCalledExactlyOnceWith('predecessor', b.id);
+});
+
+it.each([false, true])(
+  'keyboard removal returns to search before Escape (last: %s)',
+  async (last) => {
+    const onClose = vi.fn(),
+      outsideEscape = vi.fn();
+    function Editor() {
+      const [ids, setIds] = useState(
+        last ? [task(1).id] : [task(1).id, task(2).id],
+      );
+      return (
+        <div
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') outsideEscape();
+          }}
+        >
+          <PredecessorPicker
+            tree={{ ...optionalTreeFixture(), tasks: [task(1), task(2)] }}
+            proposal={proposal(undefined, [], ids)}
+            direction="selectable"
+            disabled={false}
+            onAdd={vi.fn()}
+            onRemove={(_direction, id) =>
+              setIds((previous) =>
+                previous.filter((selected) => selected !== id),
+              )
+            }
+            onClose={onClose}
+          />
+        </div>
+      );
+    }
+    render(<Editor />);
+    const user = userEvent.setup();
+    screen
+      .getByRole('button', { name: 'Убрать последователя: Работа 1' })
+      .focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(outsideEscape).not.toHaveBeenCalled();
+    if (!last)
+      expect(
+        screen.getByRole('button', { name: 'Убрать последователя: Работа 2' }),
+      ).toBeVisible();
+  },
+);
+
+it('does not overwrite focus deliberately moved by a removal owner', async () => {
+  const onRemove = () =>
+    screen.getByRole('button', { name: 'Вне выбора' }).focus();
+  render(
+    <>
+      <PredecessorPicker
+        tree={{ ...optionalTreeFixture(), tasks: [task(1)] }}
+        proposal={proposal(undefined, [task(1).id])}
+        direction="selectable"
+        disabled={false}
+        onAdd={vi.fn()}
+        onRemove={onRemove}
+        onClose={vi.fn()}
+      />
+      <button>Вне выбора</button>
+    </>,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Убрать предшественника: Работа 1' }),
+  );
+  expect(screen.getByRole('button', { name: 'Вне выбора' })).toHaveFocus();
 });

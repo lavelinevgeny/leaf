@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { QuickAdd, type AddContext } from '../../src/client/QuickAdd.js';
 import { optionalTreeFixture, task } from './fixtures.js';
-import type { SourceFields } from '../../src/shared/contracts.js';
+import type { ProjectTree, SourceFields } from '../../src/shared/contracts.js';
 
 afterEach(() => {
   cleanup();
@@ -22,17 +22,23 @@ function Editor({
   create = vi.fn(async () => true),
   parentPlan = null,
   acknowledgement = 0,
+  snapshot,
+  parentId = null,
 }: {
   create?: (
     title: string,
     context: AddContext,
     plan: SourceFields,
     predecessorIds: string[],
+    successorIds: string[],
   ) => Promise<boolean>;
   parentPlan?: SourceFields | null;
   acknowledgement?: number;
+  snapshot?: ProjectTree;
+  parentId?: string | null;
 }) {
   const [predecessorIds, setPredecessorIds] = useState<string[]>([]);
+  const [successorIds, setSuccessorIds] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [plan, setPlan] = useState<SourceFields>({
     inputStart: null,
@@ -42,11 +48,23 @@ function Editor({
   return (
     <QuickAdd
       acknowledgement={acknowledgement}
-      tree={{ ...optionalTreeFixture(), tasks: [task(1, { title: 'A' })] }}
+      tree={
+        snapshot ?? {
+          ...optionalTreeFixture(),
+          tasks: [
+            task(1, { title: 'A' }),
+            task(2, { title: 'A2' }),
+            task(3, { title: 'B' }),
+            task(4, { title: 'B2' }),
+          ],
+        }
+      }
       predecessorIds={predecessorIds}
       onPredecessors={setPredecessorIds}
+      successorIds={successorIds}
+      onSuccessors={setSuccessorIds}
       tasks={[]}
-      context={{ parentId: null }}
+      context={{ parentId }}
       onContext={vi.fn()}
       title={title}
       onTitle={setTitle}
@@ -76,6 +94,7 @@ it('creates with one day and empty dates; clearing duration submits null', async
     { parentId: null },
     { inputStart: null, inputFinish: null, durationDays: 1 },
     [],
+    [],
   );
   await user.clear(screen.getByLabelText('Длительность, рабочих дней'));
   await user.tab();
@@ -84,6 +103,7 @@ it('creates with one day and empty dates; clearing duration submits null', async
     'Работа',
     { parentId: null },
     { inputStart: null, inputFinish: null, durationDays: null },
+    [],
     [],
   );
 });
@@ -142,6 +162,7 @@ it('Alt+D opens keyboard-accessible presets; invalid Today stays blocked across 
     { parentId: null },
     { inputStart: '2026-10-08', inputFinish: '2026-10-09', durationDays: 2 },
     [],
+    [],
   );
 });
 it('Today uses project timezone and linked fields locally; failed create keeps the draft', async () => {
@@ -161,6 +182,7 @@ it('Today uses project timezone and linked fields locally; failed create keeps t
     'Работа',
     { parentId: null },
     { inputStart: '2026-10-09', inputFinish: '2026-10-09', durationDays: 1 },
+    [],
     [],
   );
   expect(screen.getByLabelText('Начало')).toHaveValue('09.10.2026');
@@ -209,7 +231,7 @@ it('keeps predecessor IDs after rejection and inner Enter/Escape do not submit o
   ).toBeInTheDocument();
   await user.keyboard('{Escape}');
   expect(
-    screen.getByRole('button', { name: 'После окончания новой задачи' }),
+    screen.getByRole('button', { name: /^Связи новой задачи:/ }),
   ).toHaveFocus();
   expect(screen.getByLabelText('Новая задача')).toHaveValue('B');
   await user.click(screen.getByRole('button', { name: 'Добавить задачу' }));
@@ -218,9 +240,10 @@ it('keeps predecessor IDs after rejection and inner Enter/Escape do not submit o
     { parentId: null },
     { inputStart: null, inputFinish: null, durationDays: 1 },
     [task(1).id],
+    [],
   );
   await user.click(
-    screen.getByRole('button', { name: 'После окончания новой задачи' }),
+    screen.getByRole('button', { name: /^Связи новой задачи:/ }),
   );
   expect(
     screen.getByRole('button', { name: 'Убрать предшественника: A' }),
@@ -232,7 +255,7 @@ it('keeps predecessor IDs after rejection and inner Enter/Escape do not submit o
     screen.getByRole('button', { name: 'Очистить быстрый ввод' }),
   );
   await user.click(
-    screen.getByRole('button', { name: 'После окончания новой задачи' }),
+    screen.getByRole('button', { name: /^Связи новой задачи:/ }),
   );
   expect(
     screen.queryByRole('button', { name: 'Убрать предшественника: A' }),
@@ -281,6 +304,7 @@ it('keeps unfinished lexical duration through Escape/reopen, repairs the same nu
     'Работа',
     { parentId: null },
     { inputStart: null, inputFinish: null, durationDays: 1 },
+    [],
     [],
   );
   await user.click(duration);
@@ -417,7 +441,10 @@ function FocusEditor({
           {...(submitBlockedReason ? { submitBlockedReason } : {})}
           active={active}
           acknowledgement={acknowledgement}
-          tree={optionalTreeFixture()}
+          tree={{
+            ...optionalTreeFixture(),
+            tasks: [task(1), task(2), task(3)],
+          }}
           tasks={[task(1), task(2)]}
           context={{ parentId, afterId: task(2).id }}
           onContext={vi.fn()}
@@ -427,6 +454,8 @@ function FocusEditor({
           onPlan={onPlan}
           predecessorIds={predecessorIds}
           onPredecessors={onPredecessors}
+          successorIds={[]}
+          onSuccessors={vi.fn()}
           calendar="weekdays"
           timezone="Europe/Moscow"
           busy={busy}
@@ -499,6 +528,7 @@ it('K01 controlled plus preserves all source fields and respects busy/blocked', 
     { parentId: task(1).id, afterId: task(2).id },
     { inputStart: '2026-10-05', inputFinish: null, durationDays: 3 },
     [task(3).id],
+    [],
   );
   view.rerender(<FocusEditor create={create} busy />);
   expect(plus).toBeDisabled();
@@ -542,4 +572,155 @@ it('K01 independent editors focus only their title while submit reason stays enf
   buttons[0]!.focus();
   await user.keyboard(' ');
   expect(inputs[0]).toHaveFocus();
+});
+
+it('keeps both independent groups and query, removes by chip direction and reopens After', async () => {
+  const create = vi.fn(async () => false),
+    user = userEvent.setup();
+  render(<Editor create={create} />);
+  await user.type(screen.getByLabelText('Новая задача'), 'T');
+  await user.keyboard('{Alt>}l{/Alt}');
+  await user.type(screen.getByRole('searchbox'), 'A');
+  await user.click(screen.getByRole('option', { name: 'A' }));
+  await user.click(screen.getByRole('option', { name: 'A2' }));
+  await user.click(screen.getByRole('button', { name: 'Перед' }));
+  expect(screen.getByRole('searchbox')).toHaveValue('A');
+  await user.clear(screen.getByRole('searchbox'));
+  await user.type(screen.getByRole('searchbox'), 'B');
+  await user.click(screen.getByRole('option', { name: 'B' }));
+  await user.click(screen.getByRole('option', { name: 'B2' }));
+  await user.click(screen.getByRole('button', { name: 'После' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Убрать последователя: B2' }),
+  );
+  expect(
+    screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole('button', { name: 'Убрать предшественника: A2' }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole('button', { name: 'Убрать последователя: B' }),
+  ).toBeVisible();
+  await user.keyboard('{Escape}');
+  expect(
+    screen.getByRole('button', { name: 'Связи новой задачи: 3, не сохранено' }),
+  ).toHaveFocus();
+  await user.click(
+    screen.getByRole('button', { name: /^Связи новой задачи:/ }),
+  );
+  expect(screen.getByRole('button', { name: 'После' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(screen.getByRole('searchbox')).toHaveValue('');
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Добавить задачу' }));
+  expect(create).toHaveBeenCalledExactlyOnceWith(
+    'T',
+    { parentId: null },
+    { inputStart: null, inputFinish: null, durationDays: 1 },
+    [task(1).id, task(2).id],
+    [task(3).id],
+  );
+});
+
+it.each(['stay', 'outside', 'body', 'pointer', 'context', 'inputId'] as const)(
+  'deferred picker close keeps a separate chain focus intent: %s',
+  async (mode) => {
+    const create = vi.fn(async () => false),
+      user = userEvent.setup();
+    const view = render(<FocusEditor create={create} />);
+    await user.click(
+      screen.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    view.rerender(<FocusEditor create={create} busy />);
+    await user.keyboard('{Escape}');
+    if (mode === 'outside' || mode === 'body') {
+      const outside = screen.getByRole('button', { name: 'Вне ввода' });
+      outside.focus();
+      if (mode === 'body') outside.blur();
+    }
+    if (mode === 'pointer') fireEvent.pointerDown(document.body);
+    view.rerender(
+      <FocusEditor
+        create={create}
+        parentId={mode === 'context' ? task(2).id : task(1).id}
+        inputId={mode === 'inputId' ? 'quick-subtask' : 'quick-task'}
+      />,
+    );
+    const chain = screen.getByRole('button', { name: /^Связи новой задачи:/ });
+    if (mode === 'stay') expect(chain).toHaveFocus();
+    else expect(chain).not.toHaveFocus();
+    expect(screen.getByLabelText('Новая задача')).not.toHaveFocus();
+  },
+);
+
+it.each(['context', 'refresh'] as const)(
+  'keeps removable invalid successor IDs on %s changes and recovers after removal',
+  async (mode) => {
+    const user = userEvent.setup(),
+      create = vi.fn(async () => false);
+    const view = render(<Editor create={create} />);
+    await user.type(screen.getByLabelText('Новая задача'), 'T');
+    await user.keyboard('{Alt>}l{/Alt}');
+    await user.click(screen.getByRole('button', { name: 'Перед' }));
+    await user.type(screen.getByRole('searchbox'), 'A2');
+    await user.keyboard('{ArrowDown}{Enter}{Escape}');
+    const snapshot = {
+      ...optionalTreeFixture(),
+      tasks: [
+        task(1, { title: 'A' }),
+        task(2, { title: 'A2' }),
+        task(3, { title: 'B', parentId: task(2).id }),
+      ],
+    };
+    view.rerender(
+      <Editor
+        create={create}
+        {...(mode === 'context' ? { parentId: task(2).id } : { snapshot })}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
+    fireEvent.submit(screen.getByLabelText('Новая задача').closest('form')!);
+    expect(create).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Связи новой задачи: 1, не сохранено',
+      }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Убрать последователя: A2' }),
+    );
+    await user.keyboard('{Escape}');
+    expect(
+      screen.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeEnabled();
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('T');
+  },
+);
+
+it('a missing chain falls back only to the originating QuickAdd input', async () => {
+  const create = vi.fn(async () => false),
+    user = userEvent.setup();
+  function Pair({ busy = false }) {
+    return (
+      <>
+        <FocusEditor create={create} busy={busy} inputId="quick-task" />
+        <FocusEditor create={create} inputId="quick-subtask" />
+      </>
+    );
+  }
+  const view = render(<Pair />);
+  await user.click(
+    screen.getAllByRole('button', { name: /^Связи новой задачи:/ })[0]!,
+  );
+  view.rerender(<Pair busy />);
+  await user.keyboard('{Escape}');
+  screen.getAllByRole('button', { name: /^Связи новой задачи:/ })[0]!.remove();
+  view.rerender(<Pair />);
+  expect(document.getElementById('quick-task')).toHaveFocus();
+  expect(document.getElementById('quick-subtask')).not.toHaveFocus();
 });

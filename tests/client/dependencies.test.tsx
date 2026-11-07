@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
+import userEvent from '@testing-library/user-event';
 import {
   cleanup,
   render,
@@ -721,4 +722,73 @@ it('does not mark unchanged incoming when only dates are dirty', () => {
   expect(
     view.container.querySelector('.dependency-section-header'),
   ).not.toHaveTextContent('Не сохранено');
+});
+
+it('keeps keyboard removal search focus through outgoing busy/ack and Escape closes locally', async () => {
+  const current = task(40),
+    selected = task(41);
+  const edge = {
+    id: 'outgoing-remove-edge',
+    projectId: project.id,
+    predecessorId: current.id,
+    successorId: selected.id,
+  };
+  const tree = {
+    contractVersion: 2 as const,
+    project,
+    tasks: [current, selected],
+    dependencies: [edge],
+    schedule: emptySchedule,
+    canUndo: false,
+  };
+  let resolve!: (value: boolean) => void;
+  const onCommand = vi.fn(
+    () =>
+      new Promise<boolean>((done) => {
+        resolve = done;
+      }),
+  );
+  const props = {
+    task: current,
+    tree,
+    incomingIds: [],
+    onIncomingChange: vi.fn(),
+    taskDirty: false,
+    scheduleDirty: false,
+    disabled: false,
+    onCommand,
+    onSelect: vi.fn(),
+    onShow: vi.fn(),
+  };
+  const view = render(<Dependencies {...props} />),
+    user = userEvent.setup();
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить последователя' }),
+  );
+  const search = screen.getByRole('searchbox');
+  screen
+    .getByRole('button', { name: 'Убрать последователя: Работа 41' })
+    .focus();
+  await user.keyboard('{Enter}');
+  expect(search).toHaveFocus();
+  view.rerender(<Dependencies {...props} disabled />);
+  expect(search).toHaveFocus();
+  await act(async () => resolve(true));
+  view.rerender(
+    <Dependencies {...props} tree={{ ...tree, dependencies: [] }} />,
+  );
+  expect(screen.getByRole('searchbox')).toBe(search);
+  expect(search).toHaveFocus();
+  expect(
+    screen.getByRole('dialog', { name: 'Добавить последователя' }),
+  ).toBeVisible();
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: 'Добавить последователя' }),
+  ).toHaveFocus();
+  expect(onCommand).toHaveBeenCalledExactlyOnceWith({
+    type: 'dependency.delete',
+    dependencyId: edge.id,
+  });
 });
