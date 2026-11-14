@@ -1,6 +1,6 @@
 # Форматированные записи журнала и медиа — C34 / D29
 
-Дата: 2026-11-14. Статус: C34 реализован 2026-11-15 по утверждённому плану; фактические JM01–JM22 и ограничения — в [ACCEPTANCE](../../ACCEPTANCE.md) и [STATUS](../../STATUS.md). Технические правила D29 ниже — рабочие defaults, а не дополнительные решения владельца. Исходное состояние §2 описывает базу до реализации; migration006 уточнена в ADR016. Task5 и whole-branch reviews на `9852564` завершены: Standards PASS, Spec Approved with nits; два P3 исправлены отдельной API/shared волной, scoped re-review которой остаётся следующим шагом. Полный browser baseline452/452 и отдельные проверки исправлений различаются в STATUS. Production-container runtime и физическая IME остаются непроверенными.
+Дата: 2026-11-14. Статус: C34 реализован 2026-11-15 по утверждённому плану; фактические JM01–JM22 и ограничения — в [ACCEPTANCE](../../ACCEPTANCE.md) и [STATUS](../../STATUS.md). Технические правила D29 ниже — рабочие defaults, а не дополнительные решения владельца. Исходное состояние §2 описывает базу до реализации; migration006 уточнена в ADR016. Task5 и whole-branch reviews на `9852564` завершены: Standards PASS, Spec PARTIAL / Quality Approved with nits; два P3 исправлены отдельной API/shared волной на `053e001`, scoped re-review подтвердил оба ADDRESSED: итоговые Spec PASS / Quality Approved, без новых Critical/Important. Полный browser baseline452/452 и отдельные проверки исправлений различаются в STATUS. Production-container runtime и физическая IME остаются непроверенными.
 
 ## 1. Цель и согласованный объём
 
@@ -285,7 +285,7 @@ Tests-first на contracts/projection/legacy conversion, repository/media/lifecy
 4. Подключить готовый редактор через adapter к RAM controller: форматирование, upload states, focus/selection/keyboard, task/project create/edit и safe renderer/preview.
 5. Пройти JM01–JM22, полные локальные gates, native/container/clipboard/zoom проверки и обновить фактический STATUS/ACCEPTANCE.
 
-Этот порядок реализован по [подробному плану](../plans/2026-11-14-journal-media.md); checkboxes и ACCEPTANCE отражают выполненные проверки, открытые ограничения, завершённые reviews `9852564` и следующий scoped re-review исправлений двух P3. Работа последовательная в ветке; worktree, параллельная реализация и remote changes не требуются.
+Этот порядок реализован по [подробному плану](../plans/2026-11-14-journal-media.md); checkboxes и ACCEPTANCE отражают выполненные проверки, открытые ограничения, завершённые reviews `9852564` и scoped re-review исправлений двух P3 на `053e001`. Работа последовательная в ветке; worktree, параллельная реализация и remote changes не требуются.
 
 ## 11. Проверенные первичные источники
 

@@ -169,8 +169,8 @@ Task5: новые media browser cases18/18 PASS; actual OS CtrlV и browser zoom
 
 - [ ] Production-container build/runtime: native sharp, migration005/006 и backup. NOT RUN: Docker в WSL недоступен; оба явно проверенных Windows engine named pipes отсутствуют. Локальные build/decoder/backup не заменяют этот gate.
 - [ ] Physical OS IME. NOT RUN: аппаратная IME недоступна; synthetic isComposing проверяет только guard.
-- [x] Independent Task5 and whole-branch exact-SHA review at `9852564`: Task5 Spec/Quality Approved; whole-branch Standards PASS, Spec Approved with nits, два P3 без новых P1/P2.
-- [ ] Scoped re-review двух исправлений final findings и factual acceptance handoff после этой волны; координатор выполнит по её точному commit.
+- [x] Independent Task5 and whole-branch exact-SHA review at `9852564`: Task5 Spec/Quality Approved; whole-branch Standards PASS, Spec PARTIAL / Quality Approved with nits, два P3 без новых P1/P2.
+- [x] Scoped re-review точного `053e001`: оба final P3 ADDRESSED, итоговые Spec PASS / Quality Approved, без новых Critical/Important; factual acceptance handoff фиксирует исходный PARTIAL и новый PASS отдельно.
 
 ## Coverage and Execution
 
