@@ -39,6 +39,7 @@ function headers(token: string) {
     origin,
     cookie: `leaf_session=${token}`,
     'x-leaf-contract-version': '2',
+    'x-leaf-journal-contract-version': '2',
   };
 }
 function count(table: string) {
@@ -520,7 +521,10 @@ it.each(['create', 'rename', 'command', 'undo', 'legacy'])(
   },
 );
 
-import { createInput, rawTables } from './helpers/journal-fixture.js';
+import {
+  createInputV2 as createInput,
+  rawTables,
+} from './helpers/journal-fixture.js';
 it('all journal CRUD and exact retries consume demo admission attempts before repository', async () => {
   const session = await enter();
   const token = session.cookies[0]!.value;
@@ -538,14 +542,14 @@ it('all journal CRUD and exact retries consume demo admission attempts before re
   expect(created.statusCode).toBe(201);
   const id = created.json().entry.id;
   const update = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 1,
-    body: 'Synthetic updated',
+    content: { format: 'plain-text', text: 'Synthetic updated' },
     workDate: '2024-02-29',
   };
   const remove = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 2,
   };

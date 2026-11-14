@@ -414,7 +414,12 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
     (
       await page.request.get(
         `${runtime.origin}/api/projects/${tree.project.id}/tasks/${doneId}/journal`,
-        { headers: { 'X-Leaf-Contract-Version': '2' } },
+        {
+          headers: {
+            'X-Leaf-Contract-Version': '2',
+            'X-Leaf-Journal-Contract-Version': '2',
+          },
+        },
       )
     ).status(),
   ).toBe(401);
@@ -534,7 +539,12 @@ test('expired real session clears private RAM and denies journal URL before reau
     (
       await page.request.get(
         `${runtime.origin}/api/projects/${tree.project.id}/journal`,
-        { headers: { 'X-Leaf-Contract-Version': '2' } },
+        {
+          headers: {
+            'X-Leaf-Contract-Version': '2',
+            'X-Leaf-Journal-Contract-Version': '2',
+          },
+        },
       )
     ).status(),
   ).toBe(401);

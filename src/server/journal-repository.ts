@@ -113,6 +113,7 @@ export class JournalRepository implements JournalRepositoryContract {
   constructor(
     private readonly db: Database.Database,
     private readonly now: () => number = Date.now,
+    private readonly allowNewEffects = true,
   ) {
     db.function(
       'leaf_journal_contains',
@@ -421,6 +422,12 @@ export class JournalRepository implements JournalRepositoryContract {
           }
           return result;
         }
+        if (!this.allowNewEffects)
+          throw new DomainError(
+            'CONTRACT_VERSION_CONFLICT',
+            'Версия приложения устарела. Обновите страницу для продолжения. Этот запрос не изменил данные.',
+            426,
+          );
         const revisions = this.revisions(projectId);
         let previous: JournalEntry | undefined;
         if (method === 'POST') {

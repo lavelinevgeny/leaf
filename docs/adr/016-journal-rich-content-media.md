@@ -43,3 +43,8 @@
 ## Уточнение хранения при реализации Task 2
 
 Migration005 сохраняется неизменной. Отдельная additive006 добавляет `sourceFileName`: immutable безопасное исходное имя участвует в upload retry identity, а `fileName` картинки получает нормализованное `.webp`. Одного поля недостаточно для различения одинаковых source bytes с разными исходными extensions. Schema5 rows получают backfill из существующего `fileName`; реконструкция отсутствующей source metadata не обещается. Это техническое уточнение D29 в прежнем SQLite store, без изменения продукта или frozen журналов/Undo.
+
+
+## Runtime seam Task 3
+
+Шесть live journal routes используют contract2/cursor2, прежний keyset/filter engine переиспользуется через строгий version adapter. V1 validators/canonical payloads остаются frozen compatibility; `allowNewEffects=false` разрешает только проверенный historical retry без current rows. New lifecycle2 manifest сохраняет старый entriesSha256 и добавляет payloadSha256 exact contentJson/media metadata/stored hashes; actual BLOB проверяется до restore. Sidecar media IDs удерживают одну исходную строку bytes, restore сбрасывает unreferencedAt. Historical0/1 формулы/NULL fields и migration bytes сохранены. Это реализация прежнего D29, без изменения scheduler, схемы6 или product decisions; клиентская интеграция остаётся Task4.

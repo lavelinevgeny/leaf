@@ -160,3 +160,101 @@ it('backs up active journal, replay and private deletion sidecar then reopens sc
     f.close();
   }
 });
+
+import { richFixture, mediaContent } from './helpers/journal-rich-fixture.js';
+import { JournalRepositoryV2 } from '../src/server/journal-repository-v2.js';
+import { JournalMediaRepository } from '../src/server/journal-media-repository.js';
+import { Repository } from '../src/server/repository.js';
+import { randomUUID } from 'node:crypto';
+it('reopens one independent backup with live/staged/Undo BLOBs and restores exact rich content', async () => {
+  const f = await richFixture();
+  try {
+    f.command({ type: 'task.create', title: 'survivor', parentId: null });
+    const task = f.plan
+      .getTree(f.project.id, 'synthetic-session')
+      .tasks.find((t) => t.title === 'survivor')!;
+    const undoMedia = await f.stage('undo.txt');
+    const original = f.journal.create(
+      f.project.id,
+      f.input(mediaContent(undoMedia.id)),
+      'synthetic-session',
+    );
+    if (original.kind !== 'saved') throw Error('fixture');
+    const stage = (name: string) =>
+      f.media.stage({
+        projectId: f.project.id,
+        taskId: task.id,
+        sessionId: 'synthetic-session',
+        uploadId: randomUUID(),
+        kind: 'file',
+        fileName: name,
+        bytes: Buffer.from(name),
+      });
+    const active = await stage('active.txt');
+    const staged = await stage('staged.txt');
+    f.journal.create(
+      f.project.id,
+      { ...f.input(mediaContent(active.id), 1), taskId: task.id },
+      'synthetic-session',
+    );
+    f.command({ type: 'task.delete', taskId: f.taskId });
+    const names = [
+      'journal_entries',
+      'journal_state',
+      'journal_operations',
+      'journal_media',
+      'journal_entry_media',
+      'undo_snapshots',
+      'undo_journal_entries',
+      'undo_journal_media',
+      'undo_journal_manifest',
+      'scheduling_migration_archive',
+    ];
+    const expected = rawTables(f.db, names);
+    const dest = join(await fixture(), 'rich-snapshot.sqlite');
+    await backupDatabase(f.path, dest);
+    const copy = openDatabase(dest);
+    try {
+      expect(rawTables(copy, names)).toEqual(expected);
+      const media = new JournalMediaRepository(copy, f.now);
+      expect(
+        media.read(f.project.id, task.id, active.id, 'synthetic-session')!
+          .bytes,
+      ).toEqual(Buffer.from('active.txt'));
+      expect(
+        media.read(f.project.id, task.id, staged.id, 'synthetic-session')!
+          .bytes,
+      ).toEqual(Buffer.from('staged.txt'));
+      expect(
+        media.read(f.project.id, f.taskId, undoMedia.id, 'synthetic-session'),
+      ).toBeUndefined();
+      const plan = new Repository(copy, f.now);
+      plan.applyCommand(
+        f.project.id,
+        {
+          contractVersion: 2,
+          operationId: randomUUID(),
+          expectedRevision: plan.getTree(f.project.id, 'synthetic-session')
+            .project.revision,
+          command: { type: 'undo' },
+        },
+        'synthetic-session',
+      );
+      expect(
+        new JournalRepositoryV2(copy, f.now).getEntry(
+          f.project.id,
+          original.entry.id,
+        ).entry,
+      ).toEqual(original.entry);
+      expect(
+        media.read(f.project.id, f.taskId, undoMedia.id, 'synthetic-session')!
+          .bytes,
+      ).toEqual(Buffer.from('synthetic bytes'));
+      expect(copy.pragma('foreign_key_check')).toEqual([]);
+    } finally {
+      copy.close();
+    }
+  } finally {
+    f.close();
+  }
+});

@@ -5,8 +5,13 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { buildApp, type LeafApp } from '../src/server/app.js';
 import { openDatabase } from '../src/server/database.js';
-import { createInput, rawTables } from './helpers/journal-fixture.js';
-import type { JournalMutation } from '../src/shared/journal-contracts.js';
+import {
+  createInputV2 as createInput,
+  createInput as createLegacyInput,
+  rawTables,
+} from './helpers/journal-fixture.js';
+import type { JournalMutationV2 as JournalMutation } from '../src/shared/journal-contracts-v2.js';
+import { JournalRepository } from '../src/server/journal-repository.js';
 const origin = 'http://127.0.0.1:3000';
 let app: LeafApp;
 let dir: string;
@@ -23,7 +28,12 @@ const tables = [
   'journal_operations',
 ];
 function headers() {
-  return { origin, cookie, 'x-leaf-contract-version': '2' };
+  return {
+    origin,
+    cookie,
+    'x-leaf-contract-version': '2',
+    'x-leaf-journal-contract-version': '2',
+  };
 }
 function snapshot() {
   const db = openDatabase(join(dir, 'synthetic.sqlite'));
@@ -104,11 +114,11 @@ it('serves six authenticated no-store strict routes and frozen status-specific a
     expect(read.headers['cache-control']).toBe('no-store');
   }
   const update = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 1,
     workDate: '0001-01-01',
-    body: 'Synthetic changed',
+    content: { format: 'plain-text', text: 'Synthetic changed' },
   };
   expect(
     (
@@ -121,7 +131,7 @@ it('serves six authenticated no-store strict routes and frozen status-specific a
     ).statusCode,
   ).toBe(200);
   const remove = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 2,
   };
@@ -133,7 +143,7 @@ it('serves six authenticated no-store strict routes and frozen status-specific a
   });
   expect(deleted.statusCode).toBe(200);
   expect(deleted.json()).toEqual({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'deleted',
     projectId,
     journalRevision: 3,
@@ -204,7 +214,11 @@ it('rejects auth/origin/type/version/query/foreign/size errors without state or 
       payload: input,
       status: 400,
     },
-    { headers: headers(), payload: { ...input, body: ' \n ' }, status: 400 },
+    {
+      headers: headers(),
+      payload: { ...input, content: { format: 'plain-text', text: ' \n ' } },
+      status: 400,
+    },
     {
       headers: headers(),
       payload: { ...input, createdAt: '2026-10-10T00:00:00.000Z' },
@@ -213,7 +227,10 @@ it('rejects auth/origin/type/version/query/foreign/size errors without state or 
     { headers: headers(), payload: { ...input, taskId: missing }, status: 404 },
     {
       headers: headers(),
-      payload: { ...input, body: 'x'.repeat(70000) },
+      payload: {
+        ...input,
+        content: { format: 'plain-text', text: 'x'.repeat(70000) },
+      },
       status: 413,
     },
   ];
@@ -310,14 +327,14 @@ it('keeps foreign entries scoped404 and reports corrupt lifecycle as safe500 wit
         ? undefined
         : method === 'PATCH'
           ? {
-              journalContractVersion: 1,
+              journalContractVersion: 2,
               operationId: randomUUID(),
               expectedJournalRevision: 1,
               workDate: '2024-02-29',
-              body: 'Synthetic',
+              content: { format: 'plain-text', text: 'Synthetic' },
             }
           : {
-              journalContractVersion: 1,
+              journalContractVersion: 2,
               operationId: randomUUID(),
               expectedJournalRevision: 1,
             };
@@ -414,10 +431,10 @@ it('serves escaped-query pagination and exact NUL Unicode CRUD through authentic
   expect(read.statusCode).toBe(200);
   expect(read.json().entry.body).toBe(body);
   const update = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 3,
-    body: '\0Updated😀\n',
+    content: { format: 'plain-text', text: '\0Updated😀\n' },
     workDate: '2024-02-28',
   };
   const patched = await app.inject({
@@ -427,11 +444,11 @@ it('serves escaped-query pagination and exact NUL Unicode CRUD through authentic
     payload: update,
   });
   expect(patched.statusCode).toBe(200);
-  expect(patched.json().entry.body).toBe(update.body);
+  expect(patched.json().entry.body).toBe(update.content.text);
   expect(
     (await app.inject({ url: `${url}/${id}`, headers: headers() })).json().entry
       .body,
-  ).toBe(update.body);
+  ).toBe(update.content.text);
   expect(
     (
       await app.inject({
@@ -457,7 +474,7 @@ it('serves escaped-query pagination and exact NUL Unicode CRUD through authentic
     url: `${url}/${id}`,
     headers: headers(),
     payload: {
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       operationId: randomUUID(),
       expectedJournalRevision: 4,
     },
@@ -528,11 +545,11 @@ it('rejects malformed high/low surrogates with safe400 and no journal or plannin
         'PATCH',
         `${url}/${id}`,
         {
-          journalContractVersion: 1,
+          journalContractVersion: 2,
           operationId: randomUUID(),
           expectedJournalRevision: 1,
           workDate: '2024-02-29',
-          body: malformed,
+          content: { format: 'plain-text', text: malformed },
         },
       ],
     ] as const) {
@@ -554,4 +571,177 @@ it('rejects malformed high/low surrogates with safe400 and no journal or plannin
     (await app.inject({ url: `${url}/${id}`, headers: headers() })).json().entry
       .body,
   ).toBe('Synthetic valid😀');
+});
+
+it('rejects old live reads/new effects, but returns exact validated frozen v1 retries after deletion', async () => {
+  const url = `/api/projects/${projectId}/journal`;
+  const oldHeaders = { origin, cookie, 'x-leaf-contract-version': '2' };
+  const input = createLegacyInput(taskId);
+  const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+  const db = openDatabase(join(dir, 'synthetic.sqlite'));
+  let ack;
+  try {
+    const legacy = new JournalRepository(db);
+    ack = legacy.create(projectId, input, session);
+    if (ack.kind !== 'saved') throw Error('fixture');
+    legacy.delete(
+      projectId,
+      ack.entry.id,
+      {
+        journalContractVersion: 1,
+        operationId: randomUUID(),
+        expectedJournalRevision: 1,
+      },
+      session,
+    );
+  } finally {
+    db.close();
+  }
+  const before = snapshot();
+  for (const route of [
+    url,
+    `${url}/${randomUUID()}`,
+    `/api/projects/${projectId}/tasks/${taskId}/journal`,
+  ])
+    expect(
+      (await app.inject({ url: route, headers: oldHeaders })).statusCode,
+    ).toBe(426);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: oldHeaders,
+        payload: createLegacyInput(taskId, 2),
+      })
+    ).statusCode,
+  ).toBe(426);
+  const retried = await app.inject({
+    method: 'POST',
+    url,
+    headers: oldHeaders,
+    payload: input,
+  });
+  expect(retried.statusCode).toBe(201);
+  expect(retried.json()).toEqual(ack);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: oldHeaders,
+        payload: { ...input, body: 'changed' },
+      })
+    ).statusCode,
+  ).toBe(409);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: headers(),
+        payload: input,
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect(snapshot()).toEqual(before);
+  const damaged = openDatabase(join(dir, 'synthetic.sqlite'));
+  try {
+    damaged
+      .prepare(
+        'UPDATE journal_operations SET responseSha256=? WHERE operationId=?',
+      )
+      .run('bad', input.operationId);
+  } finally {
+    damaged.close();
+  }
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: oldHeaders,
+        payload: input,
+      })
+    ).statusCode,
+  ).toBe(500);
+});
+it('publishes media-only v2 over HTTP and fails closed on corrupt stored content and frozen metadata', async () => {
+  const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+  const media = await app.journalMediaRepository.stage({
+    projectId,
+    taskId,
+    sessionId: session,
+    uploadId: randomUUID(),
+    kind: 'file',
+    fileName: 'report.txt',
+    bytes: Buffer.from('synthetic bytes'),
+  });
+  const url = `/api/projects/${projectId}/journal`;
+  const input = {
+    journalContractVersion: 2,
+    operationId: randomUUID(),
+    expectedJournalRevision: 0,
+    taskId,
+    workDate: '2024-02-29',
+    content: {
+      format: 'rich-text',
+      documentVersion: 1,
+      doc: {
+        type: 'doc',
+        content: [{ type: 'journalFile', attrs: { mediaId: media.id } }],
+      },
+    },
+  };
+  const saved = await app.inject({
+    method: 'POST',
+    url,
+    headers: headers(),
+    payload: input,
+  });
+  expect(saved.statusCode).toBe(201);
+  expect(saved.json().entry.body).toBe('[Файл: report.txt]');
+  const id = saved.json().entry.id;
+  const db = openDatabase(join(dir, 'synthetic.sqlite'));
+  try {
+    db.prepare('UPDATE journal_entries SET contentJson=? WHERE id=?').run(
+      '{"format":"unsupported"}',
+      id,
+    );
+    expect(
+      (await app.inject({ url: `${url}/${id}`, headers: headers() }))
+        .statusCode,
+    ).toBe(500);
+    const { createHash } = await import('node:crypto');
+    const corrupted = saved.json();
+    corrupted.entry.media[0].byteLength = -1;
+    const response = JSON.stringify(corrupted);
+    db.prepare(
+      'UPDATE journal_operations SET response=?,responseSha256=? WHERE operationId=?',
+    ).run(
+      response,
+      createHash('sha256').update(response).digest('hex'),
+      input.operationId,
+    );
+    const before = rawTables(db, [
+      ...tables,
+      'journal_media',
+      'journal_entry_media',
+    ]);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url,
+          headers: headers(),
+          payload: input,
+        })
+      ).statusCode,
+    ).toBe(500);
+    expect(
+      rawTables(db, [...tables, 'journal_media', 'journal_entry_media']),
+    ).toEqual(before);
+  } finally {
+    db.close();
+  }
 });
