@@ -436,9 +436,17 @@ test('picker keeps order across reversed responses, drop uses the middle, and do
   });
   await expect(editor.locator('.journal-upload')).toHaveCount(3);
   await expect(form.getByText('Загрузка…')).toHaveCount(0);
+  const saveResponse = page.waitForResponse(
+    (response) =>
+      response.url() ===
+        `${runtime.origin}/api/projects/${tree.project.id}/journal` &&
+      response.request().method() === 'POST',
+  );
   await form
     .getByRole('button', { name: 'Сохранить запись', exact: true })
     .click();
+  expect((await saveResponse).status()).toBe(201);
+  await expect(panel.locator('[data-journal-entry-id]')).toHaveCount(1);
   const saved = (await readJournalPage(page, runtime.origin, tree.project.id))
     .entries[0]!;
   expect(saved.body).toBe(
@@ -743,9 +751,17 @@ test('upload429 and pending removal Undo retain File and independent task drafts
     await expect(editor.getByText('Загрузка…')).toHaveCount(0);
     expect(identities).toHaveLength(2);
     expect(identities[1]).toBe(identities[0]);
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url() ===
+          `${runtime.origin}/api/projects/${tree.project.id}/journal` &&
+        response.request().method() === 'POST',
+    );
     await panel
       .getByRole('button', { name: 'Сохранить запись', exact: true })
       .click();
+    expect((await saveResponse).status()).toBe(201);
+    await expect(panel.locator('[data-journal-entry-id]')).toHaveCount(1);
     const saved = await readJournalPage(page, runtime.origin, tree.project.id);
     expect(saved.entries).toHaveLength(1);
     expect(saved.entries[0]!.body).toBe(

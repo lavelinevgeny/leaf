@@ -19,6 +19,7 @@ import { openDatabase } from './database.js';
 import { Repository } from './repository.js';
 import { JournalRepository } from './journal-repository.js';
 import { JournalRepositoryV2 } from './journal-repository-v2.js';
+import { type JournalContentLimit } from '../shared/journal-content.js';
 import {
   journalCreateV2Schema,
   journalUpdateV2Schema,
@@ -36,6 +37,16 @@ import {
   journalProjectQuerySchema,
   journalTaskQuerySchema,
 } from '../shared/journal-contracts.js';
+
+const journalLimitMessages: Record<JournalContentLimit, string> = {
+  documentBytes: 'Размер документа превышает лимит 49152 байта.',
+  nodes: 'Число узлов документа превышает лимит 1000.',
+  depth: 'Глубина документа превышает лимит 12.',
+  listDepth: 'Вложенность списков превышает лимит 4.',
+  textUnits: 'Длина текста превышает лимит 10000 единиц UTF-16.',
+  textBytes: 'Размер текста превышает лимит 30000 байт UTF-8.',
+  entryFiles: 'Число вложений записи превышает лимит 10.',
+};
 
 export interface BuildAppOptions {
   databasePath: string;
@@ -177,16 +188,18 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
           .code(error.statusCode)
           .send({ code: error.code, message: error.message });
       if (error instanceof ZodError) {
-        if (
-          error.issues.some(
-            (issue) =>
-              issue.code === 'custom' &&
-              issue.params?.journalLimit === 'entryFiles',
-          )
-        )
+        const limit = error.issues
+          .filter((issue) => issue.code === 'custom')
+          .map((issue) => issue.params?.journalLimit)
+          .find(
+            (value): value is JournalContentLimit =>
+              typeof value === 'string' &&
+              Object.hasOwn(journalLimitMessages, value),
+          );
+        if (limit)
           return reply.code(413).send({
             code: 'JOURNAL_LIMIT',
-            message: 'Превышен лимит числа вложений записи.',
+            message: journalLimitMessages[limit],
           });
         return reply.code(400).send({
           code: 'INVALID_REQUEST',

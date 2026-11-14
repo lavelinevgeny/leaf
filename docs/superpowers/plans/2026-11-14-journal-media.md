@@ -158,18 +158,19 @@ await expect(page.locator('[data-journal-entry] img')).toHaveCount(1);
 ```
 
 - [x] Run profile in both configured viewports plus375×812/short viewport and keyboard/touch/focus. Native OS clipboard and genuine browser zoom200% use new isolated synthetic profile; report separately from simulated paste/deviceScaleFactor. Physical IME if unavailable remains explicitly unverified.
-- [ ] Run `npm run verify`, `npm run format:check`, full `npm run test:e2e`, `npm run check:kit`, `npm run check:package`, staged guard/Gitleaks. Production container build/runtime must exercise sharp/migration005 and backup; if Docker genuinely unavailable record exact limitation without claiming that gate passed.
+- [x] Run `npm run verify`, `npm run format:check`, full `npm run test:e2e`, `npm run check:kit`, `npm run check:package`, staged guard/Gitleaks. Task5 `9852564`: verify1689, full E2E452/452 PASS; production-container sharp/migration005+006/backup NOT RUN (Docker unavailable), explicitly recorded below. Subsequent final-review fix checks are separate in STATUS.
 - [ ] Reconcile JM01–JM22 with exact tests/results, resolve findings, update current docs factually and keep historical failures. One broad final exact-SHA review covers full implementation against spec after task gates. Commit final changes; no push/deploy/merge or branch deletion without owner action.
 
 ### Evidence and remaining gates, 2026-11-15
 
 Tasks1–4 выполнены и независимо reviewed PASS: contracts/migration `b14d56b`, media `5415881` + multipart fix `819c6a9`, journal2/lifecycle2 `6cca945` + error-classification fix `770adc2`, editor `bc6853d` + session/paste/Escape fixes `b750053`/`d0b722d`. Исторические RED/GREEN и scoped проверки сохранены в STATUS. Additive006/sourceFileName уточняет original005; SQL history не переписывался. Checkbox implementation не заменяет финальную runtime приёмку.
 
-Task5: новые media browser cases18/18 PASS; actual OS CtrlV и browser zoom200% в fresh headful Chromium/Xvfb PASS. Немедленный Remove→Undo найден RED и исправлен явной границей history; соседний текст и redo проверены. Матрица [JM01–JM22](../../ACCEPTANCE.md#журнал-с-медиа-c34d29--jm01jm22) разделяет слои, browser и ограничения.
+Task5: новые media browser cases18/18 PASS; actual OS CtrlV и browser zoom200% в fresh headful Chromium/Xvfb PASS. Немедленный Remove→Undo найден RED и исправлен явной границей history; соседний текст и redo проверены. Полный browser baseline на `9852564` —452/452 PASS11.7min, workers1/retries0/skips0; первая450/2FAIL попытка сохранена в STATUS. Final review P3 исправлены отдельной API/shared волной: quota413 и typed frozen1 client retry, без изменения UI; её verify1697/1697 и fresh media18/18 PASS считаются отдельно. Исторический media16/2 race синхронизации POST/GET и unchanged-app-source driver fix сохранены в STATUS. Матрица [JM01–JM22](../../ACCEPTANCE.md#журнал-с-медиа-c34d29--jm01jm22) разделяет слои, browser и ограничения.
 
 - [ ] Production-container build/runtime: native sharp, migration005/006 и backup. NOT RUN: Docker в WSL недоступен; оба явно проверенных Windows engine named pipes отсутствуют. Локальные build/decoder/backup не заменяют этот gate.
 - [ ] Physical OS IME. NOT RUN: аппаратная IME недоступна; synthetic isComposing проверяет только guard.
-- [ ] Independent Task5 and whole-branch exact-SHA review after final immutable candidate; координатор выполнит отдельно.
+- [x] Independent Task5 and whole-branch exact-SHA review at `9852564`: Task5 Spec/Quality Approved; whole-branch Standards PASS, Spec Approved with nits, два P3 без новых P1/P2.
+- [ ] Scoped re-review двух исправлений final findings и factual acceptance handoff после этой волны; координатор выполнит по её точному commit.
 
 ## Coverage and Execution
 

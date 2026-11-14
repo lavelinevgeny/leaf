@@ -426,3 +426,63 @@ it('distinguishes resolved publication semantics from missing or corrupt server 
     }),
   );
 });
+
+it('tags byte, node, depth, nesting and projection quotas separately from malformed schema', () => {
+  const exactBytes = rich([paragraph('\u0001'.repeat(8177) + 'xxxxx')]);
+  expect(
+    new TextEncoder().encode(JSON.stringify(exactBytes.doc)).byteLength,
+  ).toBe(49152);
+  expect(journalContentSchema.safeParse(exactBytes).success).toBe(true);
+  let nested: unknown = paragraph('item');
+  for (let i = 0; i < 5; i++)
+    nested = {
+      type: 'bulletList',
+      content: [{ type: 'listItem', content: [paragraph('item'), nested] }],
+    };
+  let deep: unknown = paragraph('item');
+  for (let i = 0; i < 12; i++) deep = { type: 'listItem', content: [deep] };
+  const cases = [
+    [rich([paragraph('\u0001'.repeat(9000))]), 'documentBytes'],
+    [
+      rich(Array.from({ length: 1000 }, () => ({ type: 'paragraph' }))),
+      'nodes',
+    ],
+    [rich([nested]), 'listDepth'],
+    [rich([deep]), 'depth'],
+    [rich([paragraph('x'.repeat(10001))]), 'textUnits'],
+    [{ format: 'plain-text', text: 'x'.repeat(10001) }, 'textUnits'],
+    [
+      rich([paragraph('x'.repeat(5000)), paragraph('y'.repeat(5000))]),
+      'textUnits',
+    ],
+    [{ format: 'plain-text', text: 'ࠀ'.repeat(10000) }, null],
+  ] as const;
+  for (const [content, limit] of cases) {
+    const result = journalContentSchema.safeParse(content);
+    if (limit === null) {
+      expect(result.success).toBe(true);
+      continue;
+    }
+    expect(result.success).toBe(false);
+    if (result.success) throw Error('fixture');
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({
+        code: 'custom',
+        params: { journalLimit: limit },
+      }),
+    );
+  }
+  for (const content of [
+    rich([{ type: 'paragraph', content: {} }]),
+    rich([{ type: 'iframe' }]),
+  ]) {
+    const result = journalContentSchema.safeParse(content);
+    expect(result.success).toBe(false);
+    if (result.success) throw Error('fixture');
+    expect(
+      result.error.issues.some(
+        (issue) => issue.code === 'custom' && issue.params?.journalLimit,
+      ),
+    ).toBe(false);
+  }
+});

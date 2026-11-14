@@ -6,9 +6,16 @@ import {
   type JournalUpdateV2,
   type JournalDeleteV2,
 } from '../shared/journal-contracts-v2.js';
-import type {
-  JournalProjectQuery,
-  JournalTaskQuery,
+import {
+  journalMutationSchema,
+  journalCreateSchema,
+  journalUpdateSchema,
+  journalDeleteSchema,
+  type JournalCreate,
+  type JournalUpdate,
+  type JournalDelete,
+  type JournalProjectQuery,
+  type JournalTaskQuery,
 } from '../shared/journal-contracts.js';
 import { journalUploadReadySchema } from '../shared/journal-media-contracts.js';
 import { journalMediaUrl, type JournalUpload } from './journal-upload-state.js';
@@ -19,6 +26,7 @@ import {
   sessionSchema,
   type CommandEnvelope,
   type RenameProject,
+  uuidSchema,
 } from '../shared/contracts.js';
 import { z } from 'zod';
 import { strings } from './strings.js';
@@ -40,6 +48,7 @@ async function request<T>(
   body?: unknown,
   replay = false,
   uploadSignal?: AbortSignal,
+  journalContract: 1 | 2 = 2,
 ): Promise<T> {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -55,7 +64,7 @@ async function request<T>(
         ...(path.startsWith('/projects')
           ? { 'X-Leaf-Contract-Version': '2' }
           : {}),
-        ...(path.includes('/journal')
+        ...(path.includes('/journal') && journalContract === 2
           ? { 'X-Leaf-Journal-Contract-Version': '2' }
           : {}),
         ...(body === undefined || body instanceof FormData
@@ -112,7 +121,56 @@ function journalQuery(query: JournalProjectQuery | JournalTaskQuery) {
     if (value !== undefined) fields.set(key, String(value));
   return fields.size ? `?${fields}` : '';
 }
+export type LegacyJournalRetry =
+  | { method: 'POST'; input: JournalCreate }
+  | { method: 'PATCH'; entryId: string; taskId: string; input: JournalUpdate }
+  | { method: 'DELETE'; entryId: string; input: JournalDelete };
+
+// Only an original v1 operation can use this compatibility path. Its frozen
+// acknowledgement is separate from live2 pending writes and current GET state.
+async function journalReplayLegacy(id: string, original: LegacyJournalRetry) {
+  uuidSchema.parse(id);
+  const retry = {
+    ...original,
+    input: { ...original.input },
+  } as LegacyJournalRetry;
+  if (retry.method !== 'POST') uuidSchema.parse(retry.entryId);
+  if (retry.method === 'PATCH') uuidSchema.parse(retry.taskId);
+  const schema =
+    retry.method === 'POST'
+      ? journalCreateSchema
+      : retry.method === 'PATCH'
+        ? journalUpdateSchema
+        : journalDeleteSchema;
+  // Validate without normalizing or rebuilding the original wire payload.
+  schema.parse(retry.input);
+  const result = await request(
+    `/projects/${id}/journal${retry.method === 'POST' ? '' : `/${retry.entryId}`}`,
+    journalMutationSchema,
+    retry.method,
+    retry.input,
+    false,
+    undefined,
+    1,
+  );
+  const matches =
+    result.projectId === id &&
+    result.journalRevision === retry.input.expectedJournalRevision + 1 &&
+    (retry.method === 'DELETE'
+      ? result.kind === 'deleted' && result.deletedEntryId === retry.entryId
+      : result.kind === 'saved' &&
+        result.entry.projectId === id &&
+        result.entry.taskId ===
+          (retry.method === 'POST' ? retry.input.taskId : retry.taskId) &&
+        (retry.method === 'POST' || result.entry.id === retry.entryId) &&
+        result.entry.workDate === retry.input.workDate &&
+        result.entry.body === retry.input.body);
+  if (!matches)
+    throw new ApiError('INVALID_RESPONSE', strings.genericError, 200, true);
+  return result;
+}
 export const api = {
+  journalReplayLegacy,
   journalMediaRead: async (
     projectId: string,
     taskId: string,

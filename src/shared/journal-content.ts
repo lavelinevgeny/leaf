@@ -47,15 +47,38 @@ export type JournalContent =
   | { format: 'rich-text'; documentVersion: 1; doc: JournalDocument };
 const utf8Length = (value: string) =>
   new TextEncoder().encode(value).byteLength;
+export const JOURNAL_CONTENT_LIMITS = {
+  documentBytes: 48 * 1024,
+  nodes: 1000,
+  depth: 12,
+  listDepth: 4,
+  textUnits: 10000,
+  textBytes: 30000,
+  entryFiles: JOURNAL_MEDIA_LIMITS.entryFiles,
+} as const;
+export type JournalContentLimit = keyof typeof JOURNAL_CONTENT_LIMITS;
+const quotaIssue = (limit: JournalContentLimit) => ({
+  code: 'custom' as const,
+  message: 'Journal content limit exceeded',
+  continue: false,
+  params: { journalLimit: limit },
+});
 const projectionFits = (value: string) =>
-  value.length <= 10000 && utf8Length(value) <= 30000;
+  value.length <= JOURNAL_CONTENT_LIMITS.textUnits &&
+  utf8Length(value) <= JOURNAL_CONTENT_LIMITS.textBytes;
+const projectionQuota = (value: string) =>
+  value.length > JOURNAL_CONTENT_LIMITS.textUnits
+    ? 'textUnits'
+    : utf8Length(value) > JOURNAL_CONTENT_LIMITS.textBytes
+      ? 'textBytes'
+      : null;
 const plainText = journalUnicodeStringSchema
   .min(1)
-  .max(10000)
-  .refine(
-    (value) => value.trim().length > 0 && projectionFits(value),
-    'Empty or excessive text',
-  );
+  .refine((value) => value.trim().length > 0, 'Empty text')
+  .superRefine((value, ctx) => {
+    const limit = projectionQuota(value);
+    if (limit) ctx.addIssue(quotaIssue(limit));
+  });
 export const journalHrefSchema = journalUnicodeStringSchema
   .min(1)
   .max(2048)
@@ -127,6 +150,8 @@ const mediaNode = z.discriminatedUnion('type', [
 ]);
 // Bound the untrusted tree before Zod enters its recursive list schema or JSON.stringify.
 const boundedDocument = z.unknown().superRefine((value, ctx) => {
+  const reject = (message: string) =>
+    ctx.addIssue({ code: 'custom', message, continue: false });
   const stack = [{ value, depth: 1, lists: 0 }];
   let nodes = 0;
   let stringUnits = 0;
@@ -137,27 +162,36 @@ const boundedDocument = z.unknown().superRefine((value, ctx) => {
       typeof current.value !== 'object' ||
       Array.isArray(current.value)
     ) {
-      ctx.addIssue({ code: 'custom', message: 'Invalid document node' });
+      reject('Invalid document node');
       return;
     }
     const node = current.value as Record<string, unknown>;
     const lists =
       current.lists +
       (node.type === 'bulletList' || node.type === 'orderedList' ? 1 : 0);
-    if (++nodes > 1000 || current.depth > 12 || lists > 4) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Document exceeds structural limits',
-      });
+    const limit =
+      ++nodes > JOURNAL_CONTENT_LIMITS.nodes
+        ? 'nodes'
+        : current.depth > JOURNAL_CONTENT_LIMITS.depth
+          ? 'depth'
+          : lists > JOURNAL_CONTENT_LIMITS.listDepth
+            ? 'listDepth'
+            : null;
+    if (limit) {
+      ctx.addIssue(quotaIssue(limit));
       return;
     }
     // Reject wide arrays before copying them into a traversal stack.
     if (node.content !== undefined) {
+      if (!Array.isArray(node.content)) {
+        reject('Invalid node content');
+        return;
+      }
       if (
-        !Array.isArray(node.content) ||
-        nodes + stack.length + node.content.length > 1000
+        nodes + stack.length + node.content.length >
+        JOURNAL_CONTENT_LIMITS.nodes
       ) {
-        ctx.addIssue({ code: 'custom', message: 'Invalid node content' });
+        ctx.addIssue(quotaIssue('nodes'));
         return;
       }
       for (const child of node.content)
@@ -169,7 +203,7 @@ const boundedDocument = z.unknown().superRefine((value, ctx) => {
         (key) => !['type', 'content', 'text', 'marks', 'attrs'].includes(key),
       )
     ) {
-      ctx.addIssue({ code: 'custom', message: 'Unknown node field' });
+      reject('Unknown node field');
       return;
     }
     // Attrs and marks are flat scalar records. Bound those too before recursive
@@ -191,12 +225,18 @@ const boundedDocument = z.unknown().superRefine((value, ctx) => {
     if (
       typeof node.type !== 'string' ||
       node.type.length > 32 ||
-      (node.text !== undefined &&
-        (typeof node.text !== 'string' || node.text.length > 10000)) ||
+      (node.text !== undefined && typeof node.text !== 'string') ||
       (node.attrs !== undefined &&
         !scalarRecord(node.attrs, ['mediaId', 'alt']))
     ) {
-      ctx.addIssue({ code: 'custom', message: 'Invalid node fields' });
+      reject('Invalid node fields');
+      return;
+    }
+    if (
+      typeof node.text === 'string' &&
+      node.text.length > JOURNAL_CONTENT_LIMITS.textUnits
+    ) {
+      ctx.addIssue(quotaIssue('textUnits'));
       return;
     }
     if (node.marks !== undefined) {
@@ -218,18 +258,18 @@ const boundedDocument = z.unknown().superRefine((value, ctx) => {
           );
         })
       ) {
-        ctx.addIssue({ code: 'custom', message: 'Invalid marks' });
+        reject('Invalid marks');
         return;
       }
     }
     if (typeof node.text === 'string') stringUnits += node.text.length;
-    if (stringUnits > 48 * 1024) {
-      ctx.addIssue({ code: 'custom', message: 'Document too large' });
+    if (stringUnits > JOURNAL_CONTENT_LIMITS.documentBytes) {
+      ctx.addIssue(quotaIssue('documentBytes'));
       return;
     }
   }
-  if (utf8Length(JSON.stringify(value)) > 48 * 1024)
-    ctx.addIssue({ code: 'custom', message: 'Document too large' });
+  if (utf8Length(JSON.stringify(value)) > JOURNAL_CONTENT_LIMITS.documentBytes)
+    ctx.addIssue(quotaIssue('documentBytes'));
 });
 const structure: z.ZodType<JournalDocument> = z.strictObject({
   type: z.literal('doc'),
@@ -316,14 +356,14 @@ export const journalContentSchema: z.ZodType<JournalContent> =
           params: { journalLimit: 'entryFiles' },
         },
       )
-      .refine((content) => {
+      .superRefine((content, ctx) => {
         const ids = collectJournalMediaIds(content);
         const text = renderDocument(content.doc, new Map(), true);
-        return (
-          projectionFits(text) &&
-          (ids.length > 0 || hasNonemptyText(content.doc))
-        );
-      }, 'Empty or excessive rich content'),
+        const limit = projectionQuota(text);
+        if (limit) ctx.addIssue(quotaIssue(limit));
+        if (!ids.length && !hasNonemptyText(content.doc))
+          ctx.addIssue({ code: 'custom', message: 'Empty rich content' });
+      }),
   ]);
 export function projectJournalContent(
   content: JournalContent,

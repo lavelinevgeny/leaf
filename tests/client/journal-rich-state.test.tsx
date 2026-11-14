@@ -57,6 +57,64 @@ it('date-only edit retains exact legacy content; rich formatting is authoritativ
   });
   expect(write.mock.calls[1]).toEqual(write.mock.calls[0]);
 });
+it('keeps the exact rich2 pending operation and draft when transport receives a matching plain frozen1 acknowledgement', async () => {
+  const { view, key } = await setup();
+  const content: JournalContent = {
+    format: 'rich-text',
+    documentVersion: 1,
+    doc: {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'live rich pending',
+              marks: [{ type: 'bold' }],
+            },
+          ],
+        },
+      ],
+    },
+  };
+  act(() => view.result.current.changeDraft(key, { content }));
+  const legacyAck = {
+    journalContractVersion: 1,
+    kind: 'saved',
+    projectId: journal5.projectId,
+    journalRevision: 6,
+    entry: {
+      id: journal5.id,
+      projectId: journal5.projectId,
+      taskId: journal5.taskId,
+      workDate: '2026-11-15',
+      body: 'live rich pending',
+      createdAt: journal5.createdAt,
+      updatedAt: journal5.updatedAt,
+    },
+  };
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async () => new Response(JSON.stringify(legacyAck)));
+  const legacy = vi.spyOn(api, 'journalReplayLegacy');
+  await act(async () =>
+    expect(await view.result.current.submit(key)).toBe(false),
+  );
+  const pending = view.result.current.pending;
+  expect(pending?.input.journalContractVersion).toBe(2);
+  expect(view.result.current.uncertain).toBe(true);
+  expect(view.result.current.getDraft(key)?.content).toEqual(content);
+  await act(async () => expect(await view.result.current.retry()).toBe(false));
+  expect(view.result.current.pending).toBe(pending);
+  expect(view.result.current.getDraft(key)?.content).toEqual(content);
+  expect(fetch.mock.calls).toHaveLength(2);
+  expect(fetch.mock.calls[1]![1]!.body).toBe(fetch.mock.calls[0]![1]!.body);
+  expect(fetch.mock.calls[1]![1]!.headers).toMatchObject({
+    'X-Leaf-Journal-Contract-Version': '2',
+  });
+  expect(legacy).not.toHaveBeenCalled();
+});
 it('retains source File and upload identity on uncertainty; removal/Undo restores ready block without reinsertion', async () => {
   const { view, key } = await setup();
   const pending = deferred<JournalUploadReady>();
