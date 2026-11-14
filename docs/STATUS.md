@@ -1,5 +1,9 @@
 # Статус разработки
 
+## C34/D29 — начало реализации, 2026-11-14
+
+После независимых PASS спецификации владелец поручил продолжить реализацию. Подготовлен [план из пяти последовательных задач](superpowers/plans/2026-11-14-journal-media.md): bounded content/contracts и005, upload/download/GC, journal2/lifecycle2/backup, компактный editor/controller/renderer, JM01–JM22 и полная приёмка. Exact OSS versions и peer/license metadata проверены в официальном registry; lifecycle scripts и native compatibility проверяются до установки. Работа продолжается в `feat/journal-media` с одним writer и независимым task review; дополнительных worktree/remote действий нет. Это начало выполнения, не готовая функция; текущие application/SQL/lockfile ещё не менялись на момент подготовки плана.
+
 ## C34/D29 — независимое ревью спецификации, 2026-11-14
 
 Завершён независимый review-cycle документационного кандидата `615bbe73a0d712bf6e79c7589deeb5369d47c3d6` относительно `861f37cf4dfe653f711440428716f21f8a78453e`. Три отдельных read-only reviewer проверили точный commit через Git без смены checkout, правок файлов и дополнительных worktree: Standards — PASS, Spec — PASS, Technical/security/data lifecycle — PASS. По каждой оси actionable P1/P2 замечаний нет; исправления [спецификации](superpowers/specs/2026-11-14-journal-media-design.md) и [ADR 016](adr/016-journal-rich-content-media.md) не потребовались. Полные отчёты/переписка в репозиторий не копировались.
