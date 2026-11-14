@@ -1,6 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Task } from '../shared/contracts.js';
-import type { JournalController, JournalDraftKey } from './journal-state.js';
+import type {
+  JournalController,
+  JournalDraftKey,
+  JournalEditorHandle,
+} from './journal-state.js';
 import { createDraftKey } from './journal-state.js';
 import { JournalEditor } from './JournalEditor.js';
 import { JournalFeed } from './JournalFeed.js';
@@ -19,7 +23,7 @@ export function TaskJournal({
   today: string;
   scrollContainer?: HTMLElement | null | undefined;
   visible?: boolean;
-  onEditorReady?: ((editor: HTMLTextAreaElement) => void) | undefined;
+  onEditorReady?: ((editor: JournalEditorHandle) => void) | undefined;
 }) {
   const [key, setKey] = useState<JournalDraftKey | null>(null);
   useEffect(() => {
@@ -38,21 +42,24 @@ export function TaskJournal({
   const [, requestFocus] = useState(0);
   useLayoutEffect(() => {
     const node = root.current;
-    const editor = node?.querySelector<HTMLTextAreaElement>(
-      '[data-journal-editor] textarea',
-    );
+    const editor = node?.querySelector<HTMLElement>('[data-journal-body]');
     if (!editor) return;
-    if (editor.disabled) {
+    if (editor.getAttribute('contenteditable') !== 'true') {
       // Blocked by the panel rather than by this save: drop the request so a
       // stale flag cannot move focus when the composer is enabled later.
       if (!controller.writing) focusPending.current = false;
       return;
     }
-    if (visible && !node?.closest('[hidden]')) onEditorReady?.(editor);
+    if (visible && !node?.closest('[hidden]'))
+      onEditorReady?.({
+        root: editor,
+        focus: () => editor.focus({ preventScroll: true }),
+      });
     if (!focusPending.current || !node) return;
     const active = document.activeElement;
     focusPending.current = false;
     if (
+      visible &&
       !node.closest('[hidden]') &&
       (!active || active === document.body || node.contains(active))
     )

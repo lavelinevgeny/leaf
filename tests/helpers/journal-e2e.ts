@@ -225,3 +225,17 @@ export function planContent(tree: ProjectTree) {
     canUndo: tree.canUndo,
   };
 }
+/** Contenteditable has no input value; read its literal plain-text document projection. */
+export async function expectJournalText(locator: Locator, text: string) {
+  await expect
+    .poll(() =>
+      locator.evaluate((node) =>
+        (
+          node as HTMLElement & {
+            editor: { getText(options: { blockSeparator: string }): string };
+          }
+        ).editor?.getText({ blockSeparator: '\n' }),
+      ),
+    )
+    .toBe(text);
+}

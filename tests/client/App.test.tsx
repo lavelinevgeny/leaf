@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import '@testing-library/jest-dom/vitest';
 // jsdom has no native modal implementation; browsers exercise showModal in E2E.
 HTMLDialogElement.prototype.showModal = function () {
@@ -117,7 +121,7 @@ beforeEach(() => {
     }
     if (/\/journal(?:\?|$)/.test(url) && init?.method === 'GET')
       return json({
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         projectId: tree.project.id,
         taskId: url.includes('/tasks/')
           ? url.split('/tasks/')[1]!.split('/')[0]
@@ -3294,10 +3298,9 @@ it('keeps task dirty status and all write locks while a Journal POST is pending'
   await user.click(screen.getByRole('button', { name: 'Изменить название' }));
   await user.type(screen.getByLabelText('Название задачи'), ' черновик{Enter}');
   await user.click(document.getElementById('tab-journal')!);
-  await user.type(
-    screen.getByLabelText('Текст записи'),
-    'Синтетическая запись',
-  );
+  changeJournalField(screen.getByLabelText('Текст записи'), {
+    target: { value: 'Синтетическая запись' },
+  });
   const original = fetchMock.getMockImplementation()! as (
     url: string,
     init?: RequestInit,
@@ -3344,7 +3347,8 @@ it('keeps task dirty status and all write locks while a Journal POST is pending'
   expect(
     screen.getByText('Несохранённое название: Задача журнала черновик'),
   ).toBeVisible();
-  expect(screen.getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
     'Синтетическая запись',
   );
   expect(commands).toHaveLength(0);
@@ -4199,10 +4203,9 @@ it.each(['writing', 'uncertain'] as const)(
     const trigger = screen.getByRole('button', { name: 'Зависимости: T' });
     await user.click(trigger);
     await user.click(screen.getByRole('tab', { name: 'Ход работы' }));
-    await user.type(
-      screen.getByLabelText('Текст записи'),
-      'Синтетическая запись',
-    );
+    changeJournalField(screen.getByLabelText('Текст записи'), {
+      target: { value: 'Синтетическая запись' },
+    });
     const original = fetchMock.getMockImplementation()! as (
       url: string,
       init?: RequestInit,

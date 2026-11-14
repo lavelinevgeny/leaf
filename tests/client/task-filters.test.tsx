@@ -51,7 +51,7 @@ beforeEach(() => {
     if (url === '/api/projects') return json([project, other]);
     if (/\/journal(?:\?|$)/.test(url))
       return json({
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         projectId: url.includes(other.id) ? other.id : tree.project.id,
         taskId: url.includes('/tasks/')
           ? url.split('/tasks/')[1]!.split('/')[0]

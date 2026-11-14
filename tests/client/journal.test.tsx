@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import '@testing-library/jest-dom/vitest';
 import {
   act,
@@ -55,7 +59,7 @@ it('performs project create, task read, edit and single-entry delete through the
     within(dialog).getByRole('button', { name: 'Выбрать задачу' }),
   );
   fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'Enter' });
-  fireEvent.change(within(dialog).getByLabelText('Текст записи'), {
+  changeJournalField(within(dialog).getByLabelText('Текст записи'), {
     target: { value: '  <script>synthetic</script>\nЯ 🌿  ' },
   });
   await userEvent.click(
@@ -67,9 +71,21 @@ it('performs project create, task read, edit and single-entry delete through the
     ).not.toBeInTheDocument(),
   );
   expect(api.journalCreate).toHaveBeenCalledOnce();
-  expect(vi.mocked(api.journalCreate).mock.calls[0]?.[1].body).toBe(
-    '  <script>synthetic</script>\nЯ 🌿  ',
-  );
+  expect(vi.mocked(api.journalCreate).mock.calls[0]?.[1].content).toEqual({
+    format: 'rich-text',
+    documentVersion: 1,
+    doc: {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: '  <script>synthetic</script>\nЯ 🌿  ' },
+          ],
+        },
+      ],
+    },
+  });
   expect(document.querySelector('script')).toBeNull();
   await userEvent.click(
     screen.getAllByRole('button', { name: 'Работа 1' })[0]!,
@@ -95,7 +111,7 @@ it('performs project create, task read, edit and single-entry delete through the
   await userEvent.click(
     screen.getByRole('menuitem', { name: 'Редактировать запись' }),
   );
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Edited synthetic body' },
   });
   fireEvent.keyDown(screen.getByLabelText('Текст записи'), {
@@ -126,7 +142,7 @@ it('composer Escape preserves its draft, restores trigger and leaves inline body
   await openProjectJournal();
   const add = screen.getByRole('button', { name: 'Добавить запись' });
   await userEvent.click(add);
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Modal draft' },
   });
   expect(document.body.style.overflow).toBe('auto');
@@ -135,15 +151,15 @@ it('composer Escape preserves its draft, restores trigger and leaves inline body
   expect(document.body.style.overflow).toBe('auto');
   expect(document.body.style.paddingRight).toBe('3px');
   await userEvent.click(add);
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('Modal draft');
+  expectJournalFieldValue(screen.getByLabelText('Текст записи'), 'Modal draft');
   fireEvent.keyDown(screen.getByLabelText('Текст записи'), { key: 'Escape' });
   await userEvent.click(
     screen.getByRole('button', { name: 'Период: Все даты' }),
   );
-  fireEvent.change(screen.getByLabelText('С даты'), {
+  changeJournalField(screen.getByLabelText('С даты'), {
     target: { value: '2024-03-10' },
   });
-  fireEvent.change(screen.getByLabelText('По дату'), {
+  changeJournalField(screen.getByLabelText('По дату'), {
     target: { value: '2024-03-01' },
   });
   const calls = vi.mocked(api.journalProject).mock.calls.length;
@@ -158,7 +174,7 @@ it('J02 defaults task/modal dates in project Moscow, updates only untouched draf
   vi.setSystemTime(new Date('2026-10-08T22:30:00Z'));
   vi.spyOn(api, 'journalProject').mockResolvedValue(page5);
   vi.spyOn(api, 'journalCreate').mockResolvedValue({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'saved',
     projectId: journal5.projectId,
     journalRevision: 5,
@@ -263,7 +279,7 @@ it('filtered success preserves search and announces exclusion without plan write
   mockJournalApp();
   render(<App />);
   await openProjectJournal();
-  fireEvent.change(screen.getByLabelText('Поиск записей'), {
+  changeJournalField(screen.getByLabelText('Поиск записей'), {
     target: { value: 'Original' },
   });
   await waitFor(() =>
@@ -276,14 +292,14 @@ it('filtered success preserves search and announces exclusion without plan write
   );
   await userEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Different synthetic text' },
   });
   await userEvent.click(
     screen.getByRole('button', { name: 'Сохранить запись' }),
   );
   await screen.findByText('Запись сохранена; она не подходит под фильтр');
-  expect(screen.getByLabelText('Поиск записей')).toHaveValue('Original');
+  expectJournalFieldValue(screen.getByLabelText('Поиск записей'), 'Original');
   expect(api.command).not.toHaveBeenCalled();
 });
 import { JournalFeed } from '../../src/client/JournalFeed.js';
@@ -359,7 +375,7 @@ it('picker includes summary/done/undated with unique full paths and keyboard Esc
     screen.getByRole('option', { name: 'Root / Same' }),
   ).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Same' })).toBeInTheDocument();
-  fireEvent.change(screen.getByRole('combobox'), {
+  changeJournalField(screen.getByRole('combobox'), {
     target: { value: 'Root /' },
   });
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
@@ -392,14 +408,14 @@ it('project composer clear confirmation preserves draft on Cancel and requires n
     screen.getByRole('button', { name: 'Добавить запись' }),
   );
   const dialog = screen.getByRole('region', { name: 'Новая запись журнала' });
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Keep text' },
   });
   await userEvent.click(
     within(dialog).getByRole('button', { name: 'Очистить черновик' }),
   );
   expect(window.confirm).toHaveBeenCalledWith('Очистить черновик записи?');
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('Keep text');
+  expectJournalFieldValue(screen.getByLabelText('Текст записи'), 'Keep text');
   const unload = new Event('beforeunload', { cancelable: true });
   window.dispatchEvent(unload);
   expect(unload.defaultPrevented).toBe(true);
@@ -418,7 +434,7 @@ it('exact retry of a project composer save leaves body styles untouched and retu
   await userEvent.click(add);
   await userEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Exact modal retry' },
   });
   await userEvent.click(
@@ -438,7 +454,7 @@ it('exact retry of a project composer save leaves body styles untouched and retu
     vi.mocked(api.journalCreate).mock.calls[0],
   );
 });
-import type { JournalMutation } from '../../src/shared/journal-contracts.js';
+import type { JournalMutationV2 as JournalMutation } from '../../src/shared/journal-contracts-v2.js';
 import { deferred } from './journal-fixtures.js';
 it.each(['composer', 'inline', 'orphan'] as const)(
   'round1 pending %s editor cannot close and hide its only retry control',
@@ -467,7 +483,7 @@ it.each(['composer', 'inline', 'orphan'] as const)(
         screen.getByRole('menuitem', { name: 'Редактировать запись' }),
       );
     }
-    fireEvent.change(screen.getByLabelText('Текст записи'), {
+    changeJournalField(screen.getByLabelText('Текст записи'), {
       target: { value: 'Retain pending editor' },
     });
     await userEvent.click(
@@ -516,14 +532,14 @@ it('round1 rendered task editor retains recovery when header search changes befo
   render(<App />);
   await openProjectJournal();
   await userEvent.click(screen.getByRole('button', { name: 'Работа 1' }));
-  fireEvent.change(await screen.findByLabelText('Текст записи'), {
+  changeJournalField(await screen.findByLabelText('Текст записи'), {
     target: { value: 'Lost task editor write' },
   });
   await userEvent.click(
     screen.getByRole('button', { name: 'Сохранить запись' }),
   );
   const sent = vi.mocked(api.journalCreate).mock.calls[0];
-  fireEvent.change(screen.getByLabelText('Поиск записей'), {
+  changeJournalField(screen.getByLabelText('Поиск записей'), {
     target: { value: 'changed-search' },
   });
   await act(async () =>
@@ -599,7 +615,7 @@ it.each(['composer', 'inline', 'task'] as const)(
         screen.getByRole('menuitem', { name: 'Редактировать запись' }),
       );
     }
-    fireEvent.change(screen.getByLabelText('Текст записи'), {
+    changeJournalField(screen.getByLabelText('Текст записи'), {
       target: { value: 'Recovery after reentry' },
     });
     await userEvent.click(
@@ -662,7 +678,7 @@ it('round1 filter superseded successful composer save leaves body styles untouch
   );
   await userEvent.click(screen.getByRole('button', { name: 'Выбрать задачу' }));
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Late modal success' },
   });
   await userEvent.click(
@@ -680,7 +696,7 @@ it('round1 filter superseded successful composer save leaves body styles untouch
   currentFocus.focus();
   await act(async () =>
     late.resolve({
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       kind: 'saved',
       projectId: journal5.projectId,
       journalRevision: 6,
@@ -721,7 +737,7 @@ it.each([false, true])(
       within(dialog).getByRole('button', { name: 'Выбрать задачу' }),
     );
     fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'Enter' });
-    fireEvent.change(within(dialog).getByLabelText('Текст записи'), {
+    changeJournalField(within(dialog).getByLabelText('Текст записи'), {
       target: { value: 'Delayed refresh note' },
     });
     let resolve!: (value: typeof page5) => void;

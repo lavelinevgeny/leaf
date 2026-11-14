@@ -20,7 +20,7 @@ import {
   deferred,
 } from './journal-fixtures.js';
 import type { JournalDraftKey } from '../../src/client/journal-state.js';
-import type { JournalMutation } from '../../src/shared/journal-contracts.js';
+import type { JournalMutationV2 as JournalMutation } from '../../src/shared/journal-contracts-v2.js';
 beforeEach(() => {
   vi.spyOn(api, 'journalProject').mockResolvedValue(page5);
   vi.spyOn(api, 'journalTask').mockResolvedValue({
@@ -84,7 +84,7 @@ it('pins editor and delete baselines through focus refresh and reopening, adopts
   );
   expect(update.mock.calls[0]?.[2]).toMatchObject({
     expectedJournalRevision: 5,
-    body: 'Own draft',
+    content: { format: 'plain-text', text: 'Own draft' },
   });
   await act(async () => view.result.current.showCurrent());
   expect(view.result.current.getDraft(editKey)?.baselineJournalRevision).toBe(
@@ -97,11 +97,15 @@ it('pins editor and delete baselines through focus refresh and reopening, adopts
     baselineJournalRevision: 6,
   });
   update.mockResolvedValue({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'saved',
     projectId: journal5.projectId,
     journalRevision: 7,
-    entry: { ...journal5, body: 'Own draft' },
+    entry: {
+      ...journal5,
+      body: 'Own draft',
+      content: { format: 'plain-text' as const, text: 'Own draft' },
+    },
   });
   vi.mocked(api.journalProject).mockResolvedValue({
     ...page5,
@@ -166,7 +170,7 @@ it('locks exact uncertain envelope and clears only its matching draft after froz
     .spyOn(api, 'journalCreate')
     .mockRejectedValueOnce(new ApiError('NETWORK_ERROR', 'offline', null, true))
     .mockResolvedValueOnce({
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       projectId: journal5.projectId,
       journalRevision: 6,
       kind: 'saved',
@@ -257,7 +261,7 @@ it('does not resurrect any state after a late mutation following private reset',
   act(() => view.result.current.clearPrivateState());
   await act(async () => {
     late.resolve({
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       kind: 'saved',
       projectId: journal5.projectId,
       journalRevision: 6,
@@ -297,7 +301,7 @@ it('planning busy or uncertainty blocks competing writes while a dirty plan alon
     view.result.current.changeDraft(key!, { body: 'independent note' }),
   );
   const write = vi.spyOn(api, 'journalCreate').mockResolvedValue({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'saved',
     projectId: journal5.projectId,
     journalRevision: 5,
@@ -358,7 +362,7 @@ it('an A conflict never blocks or appears in an independent project B delete', a
   expect(view.result.current.activeConflictKey).toBeNull();
   expect(view.result.current.mutationError).toBeNull();
   const remove = vi.spyOn(api, 'journalDelete').mockResolvedValue({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'deleted',
     projectId: otherId,
     journalRevision: 5,
@@ -396,7 +400,7 @@ it.each(['filter', 'inactive'] as const)(
       .spyOn(api, 'journalUpdate')
       .mockReturnValueOnce(late.promise)
       .mockResolvedValueOnce({
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         kind: 'saved',
         projectId: journal5.projectId,
         journalRevision: 5,
@@ -479,11 +483,15 @@ it('round1 filter change plus late success clears only the sent draft, refreshes
   let result: boolean | undefined;
   await act(async () => {
     late.resolve({
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       kind: 'saved',
       projectId: journal5.projectId,
       journalRevision: 6,
-      entry: { ...journal5, body: 'Sent text' },
+      entry: {
+        ...journal5,
+        body: 'Sent text',
+        content: { format: 'plain-text' as const, text: 'Sent text' },
+      },
     });
     result = await completion;
   });
@@ -551,14 +559,14 @@ it.each(['POST', 'PATCH', 'DELETE'] as const)(
     write.mockResolvedValueOnce(
       method === 'DELETE'
         ? {
-            journalContractVersion: 1,
+            journalContractVersion: 2,
             kind: 'deleted',
             projectId: journal5.projectId,
             journalRevision: 6,
             deletedEntryId: journal5.id,
           }
         : {
-            journalContractVersion: 1,
+            journalContractVersion: 2,
             kind: 'saved',
             projectId: journal5.projectId,
             journalRevision: 6,
@@ -606,11 +614,15 @@ it('unknown update followed by definite409 unlocks explicit comparison and rebas
     baselineJournalRevision: 6,
   });
   write.mockResolvedValueOnce({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'saved',
     projectId: journal5.projectId,
     journalRevision: 7,
-    entry: { ...journal5, body: 'Own unresolved text' },
+    entry: {
+      ...journal5,
+      body: 'Own unresolved text',
+      content: { format: 'plain-text' as const, text: 'Own unresolved text' },
+    },
   });
   await act(async () =>
     expect(await view.result.current.submit(key!)).toBe(true),
@@ -703,11 +715,15 @@ it('rendered conflict replacement confirms before discarding own body/date or ad
     view.result.current.changeDraft(key!, { body: 'Explicit follow-up' }),
   );
   write.mockResolvedValue({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'saved',
     projectId: journal5.projectId,
     journalRevision: 7,
-    entry: { ...read6.entry, body: 'Explicit follow-up' },
+    entry: {
+      ...read6.entry,
+      body: 'Explicit follow-up',
+      content: { format: 'plain-text' as const, text: 'Explicit follow-up' },
+    },
   });
   await act(async () => view.result.current.submit(key!));
   expect(write.mock.calls[1]?.[2].expectedJournalRevision).toBe(6);
@@ -742,14 +758,14 @@ it.each(['POST', 'PATCH', 'DELETE'] as const)(
     const ack: JournalMutation =
       method === 'DELETE'
         ? {
-            journalContractVersion: 1,
+            journalContractVersion: 2,
             projectId: journal5.projectId,
             journalRevision: 6,
             kind: 'deleted',
             deletedEntryId: journal5.id,
           }
         : {
-            journalContractVersion: 1,
+            journalContractVersion: 2,
             projectId: journal5.projectId,
             journalRevision: 6,
             kind: 'saved',
@@ -812,7 +828,7 @@ it('an acknowledged operation cannot erase a newer draft created while its read 
   });
   act(() => view.result.current.changeDraft(key!, { body: 'Sent snapshot' }));
   vi.spyOn(api, 'journalCreate').mockResolvedValue({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     projectId: journal5.projectId,
     journalRevision: 6,
     kind: 'saved',
@@ -851,7 +867,7 @@ it('401 after an acknowledged write clears the outcome and all private drafts', 
     key = view.result.current.openEdit(journal5, 5);
   });
   vi.spyOn(api, 'journalUpdate').mockResolvedValue({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     projectId: journal5.projectId,
     journalRevision: 6,
     kind: 'saved',
@@ -897,14 +913,14 @@ it.each(['POST', 'PATCH', 'DELETE'] as const)(
     const ack: JournalMutation =
       method === 'DELETE'
         ? {
-            journalContractVersion: 1,
+            journalContractVersion: 2,
             kind: 'deleted',
             projectId: journal5.projectId,
             journalRevision: 6,
             deletedEntryId: journal5.id,
           }
         : {
-            journalContractVersion: 1,
+            journalContractVersion: 2,
             kind: 'saved',
             projectId: journal5.projectId,
             journalRevision: 6,

@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+import type { Editor } from '@tiptap/core';
+import { projectJournalContent } from '../../src/shared/journal-content.js';
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import '@testing-library/jest-dom/vitest';
 import {
   act,
@@ -33,7 +39,7 @@ async function openComposer() {
   const panel = screen.getByRole('complementary', { name: 'Задача' });
   await userEvent.click(within(panel).getByRole('tab', { name: 'Ход работы' }));
   const body = await within(panel).findByLabelText('Текст записи');
-  await waitFor(() => expect(body).toBeEnabled());
+  await waitFor(() => expect(body).toHaveAttribute('contenteditable', 'true'));
   return {
     panel,
     body,
@@ -44,7 +50,9 @@ async function openComposer() {
 it('names the task tab Ход работы, retains project Журнал and starts with two rows', async () => {
   const { panel, body } = await openComposer();
   expect(within(panel).getByRole('tab', { name: 'Ход работы' })).toBeVisible();
-  expect(body).toHaveAttribute('rows', '2');
+  expect(body).toHaveAttribute('contenteditable', 'true');
+  expect(body).toHaveAttribute('aria-multiline', 'true');
+  expect(body).toHaveTextContent('');
   expect(screen.getByRole('tab', { name: 'Журнал' })).toBeVisible();
   expect(
     within(panel).queryByRole('button', { name: 'Сохранить запись' }),
@@ -55,10 +63,15 @@ it('collapses project journal previews independently and preserves the original 
   const server = mockJournalApp();
   const original = '\n\nСинтетический абзац A\n  \n\t\nАбзац B\n\n';
   server.entries[0]!.body = original;
+  server.entries[0]!.content = { format: 'plain-text', text: original };
   server.entries.push({
     ...server.entries[0]!,
     id: '66666666-6666-4666-8666-666666666666',
     body: '\nДругая синтетическая запись\n\n',
+    content: {
+      format: 'plain-text',
+      text: '\nДругая синтетическая запись\n\n',
+    },
   });
   render(<App />);
   await screen.findByRole('heading', { name: 'Демо-проект' });
@@ -98,47 +111,31 @@ it('collapses project journal previews independently and preserves the original 
   expect(api.command).not.toHaveBeenCalled();
 });
 
-it('preserves composer height while hidden and synchronously remeasures its changed metrics on reveal', async () => {
-  let measuredHeight = 200;
-  const observers = new Map<Element, () => void>();
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      constructor(private callback: () => void) {}
-      observe(node: Element) {
-        observers.set(node, this.callback);
-      }
-      disconnect() {}
-    },
-  );
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
-  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(
-    function (this: HTMLElement) {
-      return this.closest('[hidden]') ? 0 : measuredHeight;
-    },
-  );
+it('keeps the same intrinsic contenteditable and content across hidden panel tabs', async () => {
   const { panel, body } = await openComposer();
-  const journal = body.closest<HTMLElement>('.task-journal')!;
-  const initial = body.style.height;
-  expect(parseFloat(initial)).toBeGreaterThanOrEqual(200);
-  journal.hidden = true;
-  act(() => observers.get(body.parentElement!)!());
-  expect(body.style.height).toBe(initial);
-  journal.hidden = false;
+  changeJournalField(body, {
+    target: { value: 'Синтетический текст\n'.repeat(12) },
+  });
+  expect(body.style.height).toBe('');
   await userEvent.click(within(panel).getByRole('tab', { name: 'Задача' }));
-  measuredHeight = 300;
+  expect(body.closest('[hidden]')).not.toBeNull();
   await userEvent.click(within(panel).getByRole('tab', { name: 'Ход работы' }));
-  expect(parseFloat(body.style.height)).toBe(parseFloat(initial) + 100);
+  expect(within(panel).getByLabelText('Текст записи')).toBe(body);
+  expectJournalFieldValue(body, 'Синтетический текст\n'.repeat(12));
+  expect(body.style.height).toBe('');
 });
 
 it('Enter adds a newline and Ctrl+Enter sends the exact original body and date once', async () => {
   const { panel, body, date } = await openComposer();
-  fireEvent.change(date, { target: { value: '29.02.2024' } });
+  changeJournalField(date, { target: { value: '29.02.2024' } });
   const original = '  Первая строка\n\n  Вторая строка\n';
-  fireEvent.change(body, { target: { value: original.slice(0, -1) } });
-  await userEvent.click(body);
-  await userEvent.keyboard('{End}{Enter}');
-  expect(body).toHaveValue(original);
+  changeJournalField(body, { target: { value: original.slice(0, -1) } });
+  const rich = (body as HTMLElement & { editor: Editor }).editor;
+  act(() => {
+    rich.commands.setTextSelection(rich.state.doc.content.size - 1);
+  });
+  fireEvent.keyDown(body, { key: 'Enter', code: 'Enter' });
+  expectJournalFieldValue(body, original);
   expect(api.journalCreate).not.toHaveBeenCalled();
   const save = within(panel).getByRole('button', { name: 'Сохранить запись' });
   expect(save).toHaveAttribute('title', 'Сохранить запись');
@@ -147,14 +144,19 @@ it('Enter adds a newline and Ctrl+Enter sends the exact original body and date o
   await waitFor(() => expect(api.journalCreate).toHaveBeenCalledTimes(1));
   expect(api.journalCreate).toHaveBeenCalledWith(
     project.id,
-    expect.objectContaining({ body: original, workDate: '2024-02-29' }),
+    expect.objectContaining({
+      content: expect.objectContaining({ format: 'rich-text' }),
+      workDate: '2024-02-29',
+    }),
   );
+  const content = vi.mocked(api.journalCreate).mock.calls[0]![1].content;
+  expect(projectJournalContent(content, [])).toBe(original);
 });
 
 it('does not submit during IME composition and supports Cmd+Enter afterwards', async () => {
   const { body, date } = await openComposer();
-  fireEvent.change(date, { target: { value: '29.02.2024' } });
-  fireEvent.change(body, { target: { value: 'Составляемая запись' } });
+  changeJournalField(date, { target: { value: '29.02.2024' } });
+  changeJournalField(body, { target: { value: 'Составляемая запись' } });
   fireEvent.keyDown(body, { key: 'Enter', ctrlKey: true, isComposing: true });
   expect(api.journalCreate).not.toHaveBeenCalled();
   fireEvent.keyDown(body, { key: 'Enter', metaKey: true });
@@ -164,23 +166,23 @@ it('does not submit during IME composition and supports Cmd+Enter afterwards', a
 it('keeps invalid dates and over-limit text visible without losing or sending the draft', async () => {
   const { panel, body, date } = await openComposer();
   const original = '  Не потерять\n\n  исходный текст  ';
-  fireEvent.change(body, { target: { value: original } });
-  fireEvent.change(date, { target: { value: '31.02.2024' } });
+  changeJournalField(body, { target: { value: original } });
+  changeJournalField(date, { target: { value: '31.02.2024' } });
   fireEvent.keyDown(body, { key: 'Enter', ctrlKey: true });
   expect(api.journalCreate).not.toHaveBeenCalled();
-  expect(body).toHaveValue(original);
-  expect(date).toHaveValue('31.02.2024');
+  expectJournalFieldValue(body, original);
+  expectJournalFieldValue(date, '31.02.2024');
   expect(date).toHaveAttribute('aria-invalid', 'true');
   expect(
     within(panel).getByText(/Нужны дата и непустой текст/),
   ).not.toHaveClass('sr-only');
-  fireEvent.change(date, { target: { value: '29.02.2024' } });
-  fireEvent.change(body, { target: { value: 'я'.repeat(10001) } });
+  changeJournalField(date, { target: { value: '29.02.2024' } });
+  changeJournalField(body, { target: { value: 'я'.repeat(10001) } });
   expect(within(panel).getByText(/10001\/10000/)).not.toHaveClass('sr-only');
   expect(
     within(panel).getByRole('button', { name: 'Сохранить запись' }),
   ).toBeDisabled();
   fireEvent.keyDown(body, { key: 'Enter', ctrlKey: true });
   expect(api.journalCreate).not.toHaveBeenCalled();
-  expect(body).toHaveValue('я'.repeat(10001));
+  expectJournalFieldValue(body, 'я'.repeat(10001));
 });

@@ -41,10 +41,10 @@ it('network failure preserves exact write input and reports uncertainty', async 
   const fetch = vi.fn().mockRejectedValue(new TypeError());
   vi.stubGlobal('fetch', fetch);
   const input = {
-    journalContractVersion: 1 as const,
+    journalContractVersion: 2 as const,
     operationId: journal5.id,
     expectedJournalRevision: 5,
-    body: '  synthetic\n\0 ',
+    content: { format: 'plain-text' as const, text: '  synthetic\n\0 ' },
     workDate: '2024-02-29',
     taskId: journal5.taskId,
   };
@@ -52,4 +52,85 @@ it('network failure preserves exact write input and reports uncertainty', async 
     { uncertain: true },
   );
   expect(fetch.mock.calls[0]?.[1].body).toBe(JSON.stringify(input));
+});
+it('keeps frozen1 validation separate and rejects its acknowledgement for a live rich2 write', async () => {
+  const { journalMutationSchema } =
+    await import('../../src/shared/journal-contracts.js');
+  const {
+    content: ignoredContent,
+    media: ignoredMedia,
+    ...legacyEntry
+  } = journal5;
+  void ignoredContent;
+  void ignoredMedia;
+  const legacy = {
+    journalContractVersion: 1,
+    kind: 'saved',
+    projectId: journal5.projectId,
+    journalRevision: 6,
+    entry: legacyEntry,
+  };
+  expect(journalMutationSchema.safeParse(legacy).success).toBe(true);
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(legacy)));
+  vi.stubGlobal('fetch', fetch);
+  await expect(
+    api.journalCreate(journal5.projectId, {
+      journalContractVersion: 2,
+      operationId: journal5.id,
+      expectedJournalRevision: 5,
+      taskId: journal5.taskId,
+      workDate: journal5.workDate,
+      content: {
+        format: 'rich-text',
+        documentVersion: 1,
+        doc: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                { type: 'text', text: 'rich', marks: [{ type: 'bold' }] },
+              ],
+            },
+          ],
+        },
+      },
+    }),
+  ).rejects.toMatchObject({ code: 'INVALID_RESPONSE', uncertain: true });
+  expect(fetch.mock.calls[0]![1].headers).toMatchObject({
+    'X-Leaf-Contract-Version': '2',
+    'X-Leaf-Journal-Contract-Version': '2',
+  });
+});
+it('uploads exact multipart source with same-origin credentials and no JSON content type', async () => {
+  const media = {
+    id: journal5.id,
+    kind: 'file',
+    fileName: 'sample.txt',
+    byteLength: 1,
+    mediaType: 'application/octet-stream',
+  };
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        mediaContractVersion: 1,
+        uploadId: journal5.id,
+        media,
+      }),
+    ),
+  );
+  vi.stubGlobal('fetch', fetch);
+  const file = new File(['x'], 'sample.txt', { type: 'text/plain' });
+  await api.journalUpload(journal5.projectId, journal5.taskId, {
+    uploadId: journal5.id,
+    kind: 'file',
+    file,
+  });
+  const options = fetch.mock.calls[0]![1];
+  expect(options.credentials).toBe('same-origin');
+  expect(options.headers).not.toHaveProperty('Content-Type');
+  expect(options.body).toBeInstanceOf(FormData);
+  expect(options.body.get('uploadId')).toBe(journal5.id);
+  expect(options.body.get('kind')).toBe('file');
+  expect(options.body.get('file')).toBe(file);
 });

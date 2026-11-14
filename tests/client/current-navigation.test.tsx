@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import '@testing-library/jest-dom/vitest';
 import {
   act,
@@ -69,11 +73,11 @@ it('preserves mounted details drafts and collapse across three tabs without a le
     screen.getByRole('button', { name: 'Изменить название' }),
   );
   const input = screen.getByLabelText('Название задачи');
-  fireEvent.change(input, { target: { value: 'Мой черновик' } });
+  changeJournalField(input, { target: { value: 'Мой черновик' } });
   for (const id of ['journal', 'tasks', 'current'])
     await userEvent.click(document.getElementById(`project-tab-${id}`)!);
   expect(screen.getByLabelText('Название задачи')).toBe(input);
-  expect(input).toHaveValue('Мой черновик');
+  expectJournalFieldValue(input, 'Мой черновик');
   expect(
     screen.queryByRole('dialog', { name: /Несохранённые/ }),
   ).not.toBeInTheDocument();
@@ -89,7 +93,7 @@ it('keeps current rows on the acknowledged snapshot while a panel save is pendin
   await userEvent.click(
     screen.getByRole('button', { name: 'Изменить название' }),
   );
-  fireEvent.change(screen.getByLabelText('Название задачи'), {
+  changeJournalField(screen.getByLabelText('Название задачи'), {
     target: { value: 'После ack' },
   });
   const result = deferred<typeof server.tree>();
@@ -128,7 +132,7 @@ async function editTitle(value = 'Мой черновик') {
   await userEvent.click(
     screen.getByRole('button', { name: 'Изменить название' }),
   );
-  fireEvent.change(screen.getByLabelText('Название задачи'), {
+  changeJournalField(screen.getByLabelText('Название задачи'), {
     target: { value },
   });
 }
@@ -158,7 +162,7 @@ it('searches current titles independently, reveals collapsed results and restore
   ).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Очистить поиск' }));
   expect(search).toHaveFocus();
-  expect(search).toHaveValue('');
+  expectJournalFieldValue(search, '');
   expect(current().getByRole('button', { name: 'Позже 1' })).toHaveAttribute(
     'aria-expanded',
     'false',
@@ -167,7 +171,7 @@ it('searches current titles independently, reveals collapsed results and restore
   await userEvent.type(search, 'Ничего такого');
   expect(current().getByRole('status')).toHaveTextContent('Нет совпадений');
   await userEvent.keyboard('{Escape}');
-  expect(search).toHaveValue('');
+  expectJournalFieldValue(search, '');
   expect(search).toHaveFocus();
   expect(api.command).not.toHaveBeenCalled();
 });
@@ -179,7 +183,8 @@ it('preserves separate current and Gantt queries across tabs and browser history
     'Работа 2',
   );
   await userEvent.click(document.getElementById('project-tab-tasks')!);
-  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
     '',
   );
   await userEvent.type(
@@ -187,20 +192,24 @@ it('preserves separate current and Gantt queries across tabs and browser history
     'Работа 1',
   );
   await userEvent.click(document.getElementById('project-tab-current')!);
-  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
     'Работа 2',
   );
   await userEvent.click(current().getByRole('button', { name: /Работа 2/ }));
   await travel('back');
-  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
     'Работа 2',
   );
   await travel('back');
-  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
     'Работа 1',
   );
   await travel('forward');
-  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
     'Работа 2',
   );
   expect(current().getByRole('button', { name: /Работа 2/ })).toBeVisible();
@@ -300,18 +309,21 @@ it('cycles all three tabs, accepts clicks and keeps complete tree/filter/Gantt c
     await userEvent.keyboard(key!);
     expect(document.getElementById(`project-tab-${id}`)).toHaveFocus();
   }
-  fireEvent.change(screen.getByLabelText('Поиск задач'), {
+  changeJournalField(screen.getByLabelText('Поиск задач'), {
     target: { value: 'Нет совпадений' },
   });
-  fireEvent.change(screen.getByLabelText('Масштаб Ганта'), {
+  changeJournalField(screen.getByLabelText('Масштаб Ганта'), {
     target: { value: 'weeks' },
   });
   await userEvent.click(tab);
   expect(tab).toHaveFocus();
   expect(current().getByRole('button', { name: /Работа 1/ })).toBeVisible();
   await userEvent.click(document.getElementById('project-tab-tasks')!);
-  expect(screen.getByLabelText('Поиск задач')).toHaveValue('Нет совпадений');
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  expectJournalFieldValue(
+    screen.getByLabelText('Поиск задач'),
+    'Нет совпадений',
+  );
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'weeks');
 });
 it.each(['Продолжить редактирование', 'Не сохранять', 'Сохранить'])(
   'protects current task context: %s',
@@ -333,7 +345,8 @@ it.each(['Продолжить редактирование', 'Не сохран
       within(dialog).getByRole('button', { name: decision }),
     );
     if (decision === 'Продолжить редактирование') {
-      expect(screen.getByLabelText('Название задачи')).toHaveValue(
+      expectJournalFieldValue(
+        screen.getByLabelText('Название задачи'),
         'Мой черновик',
       );
       expect(window.location.href).toBe(url);
@@ -413,7 +426,8 @@ it.each([
     await screen.findByText(
       error.status === 409 ? /Проект изменён в другой сессии/ : error.message,
     );
-    expect(screen.getByLabelText('Название задачи')).toHaveValue(
+    expectJournalFieldValue(
+      screen.getByLabelText('Название задачи'),
       'Мой черновик',
     );
     expect(current().getByRole('button', { name: /Работа 1/ })).toBeVisible();
@@ -452,7 +466,8 @@ it.each([
         await userEvent.click(
           screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
         );
-        expect(screen.getByLabelText('Название задачи')).toHaveValue(
+        expectJournalFieldValue(
+          screen.getByLabelText('Название задачи'),
           'Мой черновик',
         );
       }
@@ -466,7 +481,7 @@ it.each(['pending', 'uncertain'])(
     await userEvent.click(current().getByRole('button', { name: /Работа 1/ }));
     await userEvent.click(document.getElementById('tab-journal')!);
     const input = await screen.findByLabelText('Текст записи');
-    fireEvent.change(input, { target: { value: 'Синтетический журнал' } });
+    changeJournalField(input, { target: { value: 'Синтетический журнал' } });
     const result = deferred<Awaited<ReturnType<typeof api.journalCreate>>>();
     if (mode === 'pending')
       vi.mocked(api.journalCreate).mockReturnValue(result.promise);
@@ -615,7 +630,7 @@ it('accepted calendar/timezone updates recompute immediately and retain disclosu
   );
   await userEvent.click(current().getByRole('button', { name: /Работа 2/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
-  fireEvent.change(await screen.findByLabelText('Текст записи'), {
+  changeJournalField(await screen.findByLabelText('Текст записи'), {
     target: { value: 'Независимый черновик' },
   });
   vi.mocked(api.command).mockResolvedValue({
@@ -637,7 +652,8 @@ it('accepted calendar/timezone updates recompute immediately and retain disclosu
   expect(
     current().getByRole('button', { name: 'Без окончания 0' }),
   ).toHaveAttribute('aria-expanded', 'true');
-  expect(screen.getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
     'Независимый черновик',
   );
   expect(api.command).toHaveBeenCalledTimes(1);
@@ -731,13 +747,15 @@ it('new project uses defaults, pending load shows no old rows, Back restores RAM
   expect(
     current().getByRole('button', { name: 'Без окончания 0' }),
   ).toHaveAttribute('aria-expanded', 'false');
-  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
     '',
   );
   await travel('back');
   await travel('back');
   await screen.findByRole('heading', { name: 'Демо-проект' });
-  expect(screen.getByRole('searchbox', { name: 'Поиск задач' })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('searchbox', { name: 'Поиск задач' }),
     'Работа',
   );
   await waitFor(() =>
@@ -796,7 +814,7 @@ it('late Undo acknowledgement does not steal manual group focus', async () => {
 it('only Show on Gantt changes to tasks and clears the preserved tree filter', async () => {
   await start();
   await userEvent.click(document.getElementById('project-tab-tasks')!);
-  fireEvent.change(screen.getByLabelText('Поиск задач'), {
+  changeJournalField(screen.getByLabelText('Поиск задач'), {
     target: { value: 'Чужой фильтр' },
   });
   await userEvent.click(document.getElementById('project-tab-current')!);
@@ -817,7 +835,7 @@ it('only Show on Gantt changes to tasks and clears the preserved tree filter', a
     'aria-selected',
     'true',
   );
-  expect(screen.getByLabelText('Поиск задач')).toHaveValue('');
+  expectJournalFieldValue(screen.getByLabelText('Поиск задач'), '');
 });
 
 it('current panel sibling action opens the visible main composer and expands its exact insertion ancestry', async () => {
@@ -836,7 +854,7 @@ it('current panel sibling action opens the visible main composer and expands its
   await userEvent.click(
     screen.getByRole('button', { name: 'Свернуть Верхний этап' }),
   );
-  fireEvent.change(screen.getByLabelText('Поиск задач'), {
+  changeJournalField(screen.getByLabelText('Поиск задач'), {
     target: { value: 'Нет совпадений' },
   });
   await userEvent.click(document.getElementById('project-tab-current')!);
@@ -860,7 +878,7 @@ it('current panel sibling action opens the visible main composer and expands its
   expect(
     screen.getByRole('button', { name: 'Свернуть Нижний этап' }),
   ).toBeVisible();
-  expect(screen.getByLabelText('Поиск задач')).toHaveValue('');
+  expectJournalFieldValue(screen.getByLabelText('Поиск задач'), '');
   expect(screen.getByText('Родитель: Нижний этап')).toBeVisible();
   vi.mocked(api.command).mockResolvedValue({
     ...server.tree,
@@ -870,7 +888,7 @@ it('current panel sibling action opens the visible main composer and expands its
       task(5, { title: 'Новый сосед', parentId: task(2).id }),
     ],
   });
-  fireEvent.change(input, { target: { value: 'Новый сосед' } });
+  changeJournalField(input, { target: { value: 'Новый сосед' } });
   await userEvent.click(
     screen.getByRole('button', { name: 'Добавить задачу' }),
   );

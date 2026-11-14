@@ -1,8 +1,9 @@
+import { projectJournalContent } from '../../src/shared/journal-content.js';
 import type {
-  JournalEntry,
-  JournalPage,
-  JournalEntryRead,
-} from '../../src/shared/journal-contracts.js';
+  JournalEntryV2 as JournalEntry,
+  JournalPageV2 as JournalPage,
+  JournalEntryReadV2 as JournalEntryRead,
+} from '../../src/shared/journal-contracts-v2.js';
 import { project, task, emptySchedule } from './fixtures.js';
 import type { ProjectTree } from '../../src/shared/contracts.js';
 export const journal5: JournalEntry = {
@@ -11,6 +12,8 @@ export const journal5: JournalEntry = {
   taskId: task(1).id,
   workDate: '2024-02-29',
   body: 'Original synthetic text',
+  content: { format: 'plain-text', text: 'Original synthetic text' },
+  media: [],
   createdAt: '2026-10-10T10:00:00.000Z',
   updatedAt: '2026-10-10T10:00:00.000Z',
 };
@@ -23,7 +26,7 @@ export const tree0: ProjectTree = {
   canUndo: false,
 };
 export const page5: JournalPage = {
-  journalContractVersion: 1,
+  journalContractVersion: 2,
   projectId: project.id,
   taskId: null,
   projectRevision: 0,
@@ -32,11 +35,15 @@ export const page5: JournalPage = {
   nextCursor: null,
 };
 export const read6: JournalEntryRead = {
-  journalContractVersion: 1,
+  journalContractVersion: 2,
   projectId: project.id,
   projectRevision: 0,
   journalRevision: 6,
-  entry: { ...journal5, body: 'Remote text' },
+  entry: {
+    ...journal5,
+    body: 'Remote text',
+    content: { format: 'plain-text', text: 'Remote text' },
+  },
 };
 export const renamedTree: ProjectTree = {
   ...tree0,
@@ -136,12 +143,14 @@ export function mockJournalApp() {
       id: '55555555-5555-4555-8555-555555555555',
       projectId: id,
       taskId: input.taskId,
-      body: input.body,
+      body: projectJournalContent(input.content, []),
+      content: input.content,
+      media: [],
       workDate: input.workDate,
     };
     server.entries.unshift(entry);
     return {
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       kind: 'saved',
       projectId: id,
       journalRevision: ++server.revision,
@@ -153,14 +162,16 @@ export function mockJournalApp() {
       const entry = {
         ...journal5,
         id: entryId,
-        body: input.body,
+        body: projectJournalContent(input.content, []),
+        content: input.content,
+        media: [],
         workDate: input.workDate,
       };
       server.entries = server.entries.map((old) =>
         old.id === entryId ? entry : old,
       );
       return {
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         kind: 'saved',
         projectId: id,
         journalRevision: ++server.revision,
@@ -171,7 +182,7 @@ export function mockJournalApp() {
   vi.spyOn(api, 'journalDelete').mockImplementation(async (id, entryId) => {
     server.entries = server.entries.filter((entry) => entry.id !== entryId);
     return {
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       kind: 'deleted',
       projectId: id,
       journalRevision: ++server.revision,

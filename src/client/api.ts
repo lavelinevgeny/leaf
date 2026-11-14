@@ -1,13 +1,17 @@
 import {
-  journalPageSchema,
-  journalEntryReadSchema,
-  journalMutationSchema,
-  type JournalProjectQuery,
-  type JournalTaskQuery,
-  type JournalCreate,
-  type JournalUpdate,
-  type JournalDelete,
+  journalPageV2Schema,
+  journalEntryReadV2Schema,
+  journalMutationV2Schema,
+  type JournalCreateV2,
+  type JournalUpdateV2,
+  type JournalDeleteV2,
+} from '../shared/journal-contracts-v2.js';
+import type {
+  JournalProjectQuery,
+  JournalTaskQuery,
 } from '../shared/journal-contracts.js';
+import { journalUploadReadySchema } from '../shared/journal-media-contracts.js';
+import type { JournalUpload } from './journal-upload-state.js';
 import {
   errorSchema,
   projectSchema,
@@ -35,8 +39,12 @@ async function request<T>(
   method = 'GET',
   body?: unknown,
   replay = false,
+  uploadSignal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  uploadSignal?.addEventListener('abort', cancel, { once: true });
+  if (uploadSignal?.aborted) cancel();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
     const response = await fetch(`/api${path}`, {
@@ -47,13 +55,18 @@ async function request<T>(
         ...(path.startsWith('/projects')
           ? { 'X-Leaf-Contract-Version': '2' }
           : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(path.includes('/journal')
+          ? { 'X-Leaf-Journal-Contract-Version': '2' }
+          : {}),
+        ...(body === undefined || body instanceof FormData
+          ? {}
+          : { 'Content-Type': 'application/json' }),
         ...(replay ? { 'X-Leaf-Legacy-Replay': '1' } : {}),
       },
       ...(body === undefined
         ? {}
         : {
-            body: JSON.stringify(body),
+            body: body instanceof FormData ? body : JSON.stringify(body),
           }),
     });
     let value: unknown;
@@ -73,6 +86,7 @@ async function request<T>(
         error.success ? error.data.code : 'REQUEST_FAILED',
         error.success ? error.data.message : strings.genericError,
         response.status,
+        method !== 'GET' && response.status >= 500,
       );
     }
     const result = schema.safeParse(value);
@@ -89,6 +103,7 @@ async function request<T>(
     throw new ApiError('NETWORK_ERROR', strings.network, null, true);
   } finally {
     clearTimeout(timer);
+    uploadSignal?.removeEventListener('abort', cancel);
   }
 }
 function journalQuery(query: JournalProjectQuery | JournalTaskQuery) {
@@ -98,28 +113,56 @@ function journalQuery(query: JournalProjectQuery | JournalTaskQuery) {
   return fields.size ? `?${fields}` : '';
 }
 export const api = {
+  journalUpload: async (
+    id: string,
+    taskId: string,
+    upload: Pick<JournalUpload, 'uploadId' | 'kind' | 'file'>,
+    signal?: AbortSignal,
+  ) => {
+    const form = new FormData();
+    form.set('uploadId', upload.uploadId);
+    form.set('kind', upload.kind);
+    form.set('file', upload.file);
+    const result = await request(
+      `/projects/${id}/tasks/${taskId}/journal-media`,
+      journalUploadReadySchema,
+      'POST',
+      form,
+      false,
+      signal,
+    );
+    if (
+      result.uploadId !== upload.uploadId ||
+      result.media.kind !== upload.kind
+    )
+      throw new ApiError('INVALID_RESPONSE', strings.genericError, 201, true);
+    return result;
+  },
   journalProject: (id: string, query: JournalProjectQuery) =>
-    request(`/projects/${id}/journal${journalQuery(query)}`, journalPageSchema),
+    request(
+      `/projects/${id}/journal${journalQuery(query)}`,
+      journalPageV2Schema,
+    ),
   journalTask: (id: string, taskId: string, query: JournalTaskQuery) =>
     request(
       `/projects/${id}/tasks/${taskId}/journal${journalQuery(query)}`,
-      journalPageSchema,
+      journalPageV2Schema,
     ),
   journalEntry: (id: string, entryId: string) =>
-    request(`/projects/${id}/journal/${entryId}`, journalEntryReadSchema),
-  journalCreate: (id: string, input: JournalCreate) =>
-    request(`/projects/${id}/journal`, journalMutationSchema, 'POST', input),
-  journalUpdate: (id: string, entryId: string, input: JournalUpdate) =>
+    request(`/projects/${id}/journal/${entryId}`, journalEntryReadV2Schema),
+  journalCreate: (id: string, input: JournalCreateV2) =>
+    request(`/projects/${id}/journal`, journalMutationV2Schema, 'POST', input),
+  journalUpdate: (id: string, entryId: string, input: JournalUpdateV2) =>
     request(
       `/projects/${id}/journal/${entryId}`,
-      journalMutationSchema,
+      journalMutationV2Schema,
       'PATCH',
       input,
     ),
-  journalDelete: (id: string, entryId: string, input: JournalDelete) =>
+  journalDelete: (id: string, entryId: string, input: JournalDeleteV2) =>
     request(
       `/projects/${id}/journal/${entryId}`,
-      journalMutationSchema,
+      journalMutationV2Schema,
       'DELETE',
       input,
     ),

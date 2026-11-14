@@ -447,6 +447,7 @@ export function App() {
           taskId: selected?.id ?? null,
           today: projectToday,
           projectQuery: journalQuery,
+          uploadsDisabled: !!session?.demoMode,
           planningTree: tree,
           planningDirty: dirty || projectDirty,
           planningUncertain: uncertain,
@@ -2727,9 +2728,9 @@ export function App() {
                 requestAnimationFrame(() => {
                   if (
                     request.token === journalFocus.current &&
-                    editor.isConnected &&
-                    !editor.disabled &&
-                    !editor.closest('[hidden]')
+                    editor.root.isConnected &&
+                    editor.root.getAttribute('contenteditable') === 'true' &&
+                    !editor.root.closest('[hidden]')
                   )
                     editor.focus();
                 });

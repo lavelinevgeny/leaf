@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import '@testing-library/jest-dom/vitest';
 import {
   act,
@@ -25,7 +29,7 @@ import {
   page5,
   journalContext,
 } from './journal-fixtures.js';
-import type { JournalPage } from '../../src/shared/journal-contracts.js';
+import type { JournalPageV2 as JournalPage } from '../../src/shared/journal-contracts-v2.js';
 
 HTMLDialogElement.prototype.showModal = function () {
   this.setAttribute('open', '');
@@ -52,7 +56,7 @@ it('Q01 refused row quick actions keep focus on the action button', async () => 
   await userEvent.click(
     within(panel).getByRole('button', { name: 'Изменить название' }),
   );
-  fireEvent.change(within(panel).getByLabelText('Название задачи'), {
+  changeJournalField(within(panel).getByLabelText('Название задачи'), {
     target: { value: 'Несохранённое название' },
   });
   expect(button('Добавить подзадачу: Работа 2')).toBeDisabled();
@@ -64,7 +68,8 @@ it('Q01 refused row quick actions keep focus on the action button', async () => 
     screen.getByRole('button', { name: 'Продолжить редактирование' }),
   );
   expect(button('Добавить запись: Работа 2')).toHaveFocus();
-  expect(within(panel).getByLabelText('Название задачи')).toHaveValue(
+  expectJournalFieldValue(
+    within(panel).getByLabelText('Название задачи'),
     'Несохранённое название',
   );
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -141,6 +146,7 @@ it('J14 a refresh that dismisses an entry menu still restores the prepend anchor
     ...journal5,
     id: `33333333-3333-4333-8333-${String(10 - index).padStart(12, '0')}`,
     body: `Synthetic note ${index}`,
+    content: { format: 'plain-text' as const, text: `Synthetic note ${index}` },
   }));
   server.entries = entries;
   // jsdom has no layout: entries are 100px rows stacked in DOM order.
@@ -198,6 +204,7 @@ it('J14 a refresh that dismisses an entry menu still restores the prepend anchor
       ...journal5,
       id: '33333333-3333-4333-8333-000000000099',
       body: 'Prepended note',
+      content: { format: 'plain-text' as const, text: 'Prepended note' },
     },
     ...entries,
   ];
@@ -232,7 +239,7 @@ it('U06 shows reset only for an applied period, labels the applied range and res
   await userEvent.click(
     screen.getByRole('button', { name: 'Период: Все даты' }),
   );
-  fireEvent.change(screen.getByLabelText('С даты'), {
+  changeJournalField(screen.getByLabelText('С даты'), {
     target: { value: '2026-10-01' },
   });
   expect(
@@ -252,7 +259,7 @@ it('U06 shows reset for an applied search query', async () => {
   mockJournalApp();
   render(<App />);
   await openProjectJournal();
-  fireEvent.change(screen.getByLabelText('Поиск записей'), {
+  changeJournalField(screen.getByLabelText('Поиск записей'), {
     target: { value: 'Original' },
   });
   await screen.findByRole('button', { name: 'Сбросить' });
@@ -260,7 +267,7 @@ it('U06 shows reset for an applied search query', async () => {
   await waitFor(() =>
     expect(screen.queryByRole('button', { name: 'Сбросить' })).toBeNull(),
   );
-  expect(screen.getByLabelText('Поиск записей')).toHaveValue('');
+  expectJournalFieldValue(screen.getByLabelText('Поиск записей'), '');
   expect(
     screen.getByRole('button', { name: 'Период: Все даты' }),
   ).toHaveFocus();
@@ -270,10 +277,10 @@ it('U06 does not show reset for a whitespace-only search', async () => {
   mockJournalApp();
   render(<App />);
   await openProjectJournal();
-  fireEvent.change(screen.getByLabelText('Поиск записей'), {
+  changeJournalField(screen.getByLabelText('Поиск записей'), {
     target: { value: '   ' },
   });
-  expect(screen.getByLabelText('Поиск записей')).toHaveValue('   ');
+  expectJournalFieldValue(screen.getByLabelText('Поиск записей'), '   ');
   expect(screen.queryByRole('button', { name: 'Сбросить' })).toBeNull();
 });
 
@@ -284,10 +291,10 @@ it('U06 closing the period popover without applying clears the period error', as
   const period = screen.getByRole('button', { name: 'Период: Все даты' });
   for (const dismiss of ['escape', 'toggle'] as const) {
     await userEvent.click(period);
-    fireEvent.change(screen.getByLabelText('С даты'), {
+    changeJournalField(screen.getByLabelText('С даты'), {
       target: { value: '2026-10-10' },
     });
-    fireEvent.change(screen.getByLabelText('По дату'), {
+    changeJournalField(screen.getByLabelText('По дату'), {
       target: { value: '2026-10-01' },
     });
     await userEvent.click(screen.getByRole('button', { name: 'Применить' }));
@@ -312,7 +319,7 @@ it('U06 reset closes an open period popover and keeps focus on the period button
   await userEvent.click(
     screen.getByRole('button', { name: 'Период: Все даты' }),
   );
-  fireEvent.change(screen.getByLabelText('С даты'), {
+  changeJournalField(screen.getByLabelText('С даты'), {
     target: { value: '2026-10-01' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Применить' }));
@@ -354,7 +361,7 @@ it('U08 untouched task composer has no actions; erased text keeps only clear', a
   const clear = () =>
     within(panel).queryByRole('button', { name: 'Очистить черновик' });
   expect(body).toHaveAttribute(
-    'placeholder',
+    'data-placeholder',
     'Что сделали или узнали по задаче?',
   );
   expect(save()).toBeNull();
@@ -362,11 +369,11 @@ it('U08 untouched task composer has no actions; erased text keeps only clear', a
   const hint = document.getElementById(body.getAttribute('aria-describedby')!)!;
   expect(hint).toHaveClass('sr-only');
   expect(hint).toHaveTextContent('Нужны дата и непустой текст');
-  fireEvent.change(body, { target: { value: 'Проверил сборку' } });
+  changeJournalField(body, { target: { value: 'Проверил сборку' } });
   expect(save()).toBeEnabled();
   expect(clear()).toBeInTheDocument();
   expect(hint).toHaveClass('sr-only');
-  fireEvent.change(body, { target: { value: '' } });
+  changeJournalField(body, { target: { value: '' } });
   expect(save()).toBeNull();
   expect(clear()).toBeInTheDocument();
 });
@@ -376,7 +383,7 @@ it('U08 a changed date with empty text shows clear; empty or invalid date shows 
   const date = within(panel).getByLabelText('Дата записи');
   const body = within(panel).getByLabelText('Текст записи');
   const hint = document.getElementById(body.getAttribute('aria-describedby')!)!;
-  fireEvent.change(date, { target: { value: '01.10.2026' } });
+  changeJournalField(date, { target: { value: '01.10.2026' } });
   expect(
     within(panel).getByRole('button', { name: 'Очистить черновик' }),
   ).toBeInTheDocument();
@@ -384,9 +391,9 @@ it('U08 a changed date with empty text shows clear; empty or invalid date shows 
     within(panel).queryByRole('button', { name: 'Сохранить запись' }),
   ).toBeNull();
   expect(hint).toHaveClass('sr-only');
-  fireEvent.change(date, { target: { value: '31.02.2026' } });
+  changeJournalField(date, { target: { value: '31.02.2026' } });
   expect(hint).not.toHaveClass('sr-only');
-  fireEvent.change(date, { target: { value: '' } });
+  changeJournalField(date, { target: { value: '' } });
   expect(hint).not.toHaveClass('sr-only');
 });
 
@@ -394,30 +401,30 @@ it('U08 save and clear return focus to the text field', async () => {
   const panel = await openTaskJournal();
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   const body = () => within(panel).getByLabelText('Текст записи');
-  fireEvent.change(body(), { target: { value: 'Проверил сборку' } });
+  changeJournalField(body(), { target: { value: 'Проверил сборку' } });
   await userEvent.click(
     within(panel).getByRole('button', { name: 'Сохранить запись' }),
   );
   await waitFor(() => expect(api.journalCreate).toHaveBeenCalledOnce());
   await waitFor(() => expect(body()).toHaveFocus());
-  expect(body()).toHaveValue('');
-  fireEvent.change(body(), { target: { value: 'Черновик' } });
+  expectJournalFieldValue(body(), '');
+  changeJournalField(body(), { target: { value: 'Черновик' } });
   await userEvent.click(
     within(panel).getByRole('button', { name: 'Очистить черновик' }),
   );
   await waitFor(() => expect(body()).toHaveFocus());
-  expect(body()).toHaveValue('');
+  expectJournalFieldValue(body(), '');
 });
 
 it('U08 Ctrl+Enter saves and a failed save keeps the text', async () => {
   const panel = await openTaskJournal();
   const body = within(panel).getByLabelText('Текст записи');
   vi.mocked(api.journalCreate).mockRejectedValueOnce(new Error('synthetic'));
-  fireEvent.change(body, { target: { value: 'Проверил сборку' } });
+  changeJournalField(body, { target: { value: 'Проверил сборку' } });
   fireEvent.keyDown(body, { key: 'Enter', ctrlKey: true });
   await waitFor(() => expect(api.journalCreate).toHaveBeenCalledOnce());
   await within(panel).findByRole('alert');
-  expect(body).toHaveValue('Проверил сборку');
+  expectJournalFieldValue(body, 'Проверил сборку');
   expect(
     within(panel).getByRole('button', { name: 'Сохранить запись' }),
   ).toBeInTheDocument();
@@ -447,12 +454,14 @@ it('U08 Ctrl/Cmd+Enter successful save keeps focus in the empty text field', asy
       return saved;
     });
     body().focus();
-    fireEvent.change(body(), { target: { value: `Запись ${modifier}` } });
+    changeJournalField(body(), { target: { value: `Запись ${modifier}` } });
     // A browser drops focus to <body> once the field is disabled during the
     // save; jsdom keeps it there, so leave the field before submitting.
     body().blur();
     fireEvent.keyDown(body(), { key: 'Enter', [modifier]: true });
-    await waitFor(() => expect(body()).toBeDisabled());
+    await waitFor(() =>
+      expect(body()).toHaveAttribute('contenteditable', 'false'),
+    );
     expect(document.body).toHaveFocus();
     // Worst-case ordering: the next animation frame runs before React commits
     // the saved state, while the text field is still disabled.
@@ -466,8 +475,8 @@ it('U08 Ctrl/Cmd+Enter successful save keeps focus in the empty text field', asy
     await within(panel).findByText(`Запись ${modifier}`);
     frame.mockRestore();
     await waitFor(() => expect(body()).toHaveFocus());
-    expect(body()).toHaveValue('');
-    expect(body()).toBeEnabled();
+    expectJournalFieldValue(body(), '');
+    expect(body()).toHaveAttribute('contenteditable', 'true');
     expect(
       within(panel).queryByRole('button', { name: 'Сохранить запись' }),
     ).toBeNull();
@@ -488,7 +497,7 @@ it('U08 the edit editor always shows save and close', async () => {
   await userEvent.click(
     screen.getByRole('menuitem', { name: 'Редактировать запись' }),
   );
-  fireEvent.change(within(feed).getByLabelText('Текст записи'), {
+  changeJournalField(within(feed).getByLabelText('Текст записи'), {
     target: { value: '' },
   });
   expect(
@@ -514,7 +523,7 @@ it('U09 inline project composer requires a task and text, keeps its draft and re
   });
   expect(picker).toHaveFocus();
   const body = within(composer).getByLabelText('Текст записи');
-  expect(body).toHaveAttribute('placeholder', 'Что сделали или узнали?');
+  expect(body).toHaveAttribute('data-placeholder', 'Что сделали или узнали?');
   // A repeated press without a chosen task focuses the picker again.
   body.focus();
   await userEvent.click(add);
@@ -522,11 +531,11 @@ it('U09 inline project composer requires a task and text, keeps its draft and re
   expect(
     within(composer).queryByRole('button', { name: 'Сохранить запись' }),
   ).toBeNull();
-  fireEvent.change(body, { target: { value: '   ' } });
+  changeJournalField(body, { target: { value: '   ' } });
   expect(
     within(composer).getByRole('button', { name: 'Сохранить запись' }),
   ).toBeDisabled();
-  fireEvent.change(body, { target: { value: 'Черновик проекта' } });
+  changeJournalField(body, { target: { value: 'Черновик проекта' } });
   expect(
     within(composer).getByRole('button', { name: 'Сохранить запись' }),
   ).toBeDisabled();
@@ -536,7 +545,10 @@ it('U09 inline project composer requires a task and text, keeps its draft and re
     screen.queryByRole('region', { name: 'Новая запись журнала' }),
   ).toBeNull();
   await userEvent.click(add);
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('Черновик проекта');
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
+    'Черновик проекта',
+  );
 });
 
 it('U09 composer keys do not reach window shortcuts: Escape keeps the task panel, Ctrl+Z does not undo', async () => {
@@ -585,7 +597,7 @@ it('U09 switching projects closes the inline composer; each project keeps its ow
   await userEvent.click(
     screen.getByRole('button', { name: 'Добавить запись' }),
   );
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Черновик проекта A' },
   });
   await userEvent.click(screen.getByRole('button', { name: /Synthetic B/ }));
@@ -597,14 +609,15 @@ it('U09 switching projects closes the inline composer; each project keeps its ow
   const add = screen.getByRole('button', { name: 'Добавить запись' });
   await waitFor(() => expect(add).toBeEnabled());
   await userEvent.click(add);
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('');
+  expectJournalFieldValue(screen.getByLabelText('Текст записи'), '');
   await userEvent.click(screen.getByRole('button', { name: /Демо-проект/ }));
   await screen.findByRole('heading', { name: 'Демо-проект' });
   await userEvent.click(screen.getByRole('tab', { name: 'Журнал' }));
   const addA = screen.getByRole('button', { name: 'Добавить запись' });
   await waitFor(() => expect(addA).toBeEnabled());
   await userEvent.click(addA);
-  expect(screen.getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
     'Черновик проекта A',
   );
 });
@@ -642,7 +655,7 @@ it('U09 the composer and its text survive switching to «Задачи» and back
   await userEvent.click(
     screen.getByRole('button', { name: 'Добавить запись' }),
   );
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Черновик между вкладками' },
   });
   await userEvent.click(screen.getByRole('tab', { name: 'Задачи' }));
@@ -650,7 +663,8 @@ it('U09 the composer and its text survive switching to «Задачи» and back
   const composer = screen.getByRole('region', {
     name: 'Новая запись журнала',
   });
-  expect(within(composer).getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    within(composer).getByLabelText('Текст записи'),
     'Черновик между вкладками',
   );
 });
@@ -662,7 +676,7 @@ it('U09 applying a period while the composer is open keeps the composer, its tex
   await userEvent.click(
     screen.getByRole('button', { name: 'Добавить запись' }),
   );
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Черновик при смене периода' },
   });
   const held = deferred<JournalPage>();
@@ -671,7 +685,7 @@ it('U09 applying a period while the composer is open keeps the composer, its tex
   await userEvent.click(
     screen.getByRole('button', { name: 'Период: Все даты' }),
   );
-  fireEvent.change(screen.getByLabelText('С даты'), {
+  changeJournalField(screen.getByLabelText('С даты'), {
     target: { value: '2024-03-01' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Применить' }));
@@ -687,7 +701,8 @@ it('U09 applying a period while the composer is open keeps the composer, its tex
   const loading = screen.getByRole('region', {
     name: 'Новая запись журнала',
   });
-  expect(within(loading).getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    within(loading).getByLabelText('Текст записи'),
     'Черновик при смене периода',
   );
   expect(
@@ -706,7 +721,8 @@ it('U09 applying a period while the composer is open keeps the composer, its tex
   const composer = screen.getByRole('region', {
     name: 'Новая запись журнала',
   });
-  expect(within(composer).getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    within(composer).getByLabelText('Текст записи'),
     'Черновик при смене периода',
   );
 });
@@ -716,7 +732,7 @@ it('task feed explains acknowledged write and failed read, retries only reads an
   const taskRead = vi.mocked(api.journalTask);
   const original = taskRead.getMockImplementation()!;
   taskRead.mockRejectedValue(new Error('Synthetic GET failure'));
-  fireEvent.change(within(panel).getByLabelText('Текст записи'), {
+  changeJournalField(within(panel).getByLabelText('Текст записи'), {
     target: { value: 'Saved before GET failure' },
   });
   await userEvent.click(
@@ -725,7 +741,7 @@ it('task feed explains acknowledged write and failed read, retries only reads an
   await within(panel).findByText(
     'Запись сохранена. Не удалось обновить историю',
   );
-  expect(within(panel).getByLabelText('Текст записи')).toHaveValue('');
+  expectJournalFieldValue(within(panel).getByLabelText('Текст записи'), '');
   taskRead.mockImplementation(original);
   await userEvent.click(
     within(panel).getByRole('button', { name: 'Повторить загрузку' }),
@@ -747,7 +763,7 @@ it('journal primary title and ancestor path come from coherent metadata while un
   await userEvent.click(
     within(panel).getByRole('button', { name: 'Изменить название' }),
   );
-  fireEvent.change(within(panel).getByLabelText('Название задачи'), {
+  changeJournalField(within(panel).getByLabelText('Название задачи'), {
     target: { value: 'Own unsaved title' },
   });
   fireEvent.keyDown(within(panel).getByLabelText('Название задачи'), {
@@ -815,7 +831,7 @@ it('initial task GET failure has no saved outcome; another task cannot inherit a
     'Не удалось загрузить журнал. Повторите попытку.',
   );
   expect(within(panel).queryByText(/Запись сохранена/)).toBeNull();
-  fireEvent.change(within(panel).getByLabelText('Текст записи'), {
+  changeJournalField(within(panel).getByLabelText('Текст записи'), {
     target: { value: 'Saved for first task' },
   });
   await userEvent.click(
@@ -851,7 +867,7 @@ it('normal saved ancestor buttons use the task tab and the common dirty guard', 
   await userEvent.click(
     within(panel).getByRole('button', { name: 'Изменить название' }),
   );
-  fireEvent.change(within(panel).getByLabelText('Название задачи'), {
+  changeJournalField(within(panel).getByLabelText('Название задачи'), {
     target: { value: 'Dirty normal title' },
   });
   await userEvent.click(
@@ -861,7 +877,8 @@ it('normal saved ancestor buttons use the task tab and the common dirty guard', 
   await userEvent.click(
     screen.getByRole('button', { name: 'Продолжить редактирование' }),
   );
-  expect(within(panel).getByLabelText('Название задачи')).toHaveValue(
+  expectJournalFieldValue(
+    within(panel).getByLabelText('Название задачи'),
     'Dirty normal title',
   );
   await userEvent.click(
@@ -914,7 +931,7 @@ it('ack A completes its composer before deferred GET A; late read cannot hide pe
   create.mockImplementation((...args) =>
     create.mock.calls.length === 2 ? writeB.promise : originalCreate(...args),
   );
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Operation A' },
   });
   await userEvent.click(
@@ -928,7 +945,7 @@ it('ack A completes its composer before deferred GET A; late read cannot hide pe
   // already completed A and opened its next empty composer at the ack.
   const add = screen.queryByRole('button', { name: 'Добавить запись' });
   if (add) await userEvent.click(add);
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Operation B' },
   });
   await userEvent.click(
@@ -944,8 +961,11 @@ it('ack A completes its composer before deferred GET A; late read cannot hide pe
       journalRevision: 6,
     }),
   );
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('Operation B');
-  expect(screen.getByLabelText('Текст записи')).toBeDisabled();
+  expectJournalFieldValue(screen.getByLabelText('Текст записи'), 'Operation B');
+  expect(screen.getByLabelText('Текст записи')).toHaveAttribute(
+    'contenteditable',
+    'false',
+  );
   expect(controller?.pending?.input.operationId).toBe(operationB);
   expect(controller?.writing).toBe(true);
   await act(async () =>
@@ -954,7 +974,7 @@ it('ack A completes its composer before deferred GET A; late read cannot hide pe
     ),
   );
   expect(controller?.uncertain).toBe(true);
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('Operation B');
+  expectJournalFieldValue(screen.getByLabelText('Текст записи'), 'Operation B');
   expect(
     screen.queryByText('Запись сохранена. Не удалось обновить историю'),
   ).toBeNull();
@@ -968,7 +988,10 @@ it('ack A completes its composer before deferred GET A; late read cannot hide pe
   expect(
     server.entries.filter((entry) => entry.body === 'Operation B'),
   ).toHaveLength(1);
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('');
-  expect(screen.getByLabelText('Текст записи')).toBeEnabled();
+  expectJournalFieldValue(screen.getByLabelText('Текст записи'), '');
+  expect(screen.getByLabelText('Текст записи')).toHaveAttribute(
+    'contenteditable',
+    'true',
+  );
   await screen.findByText('Operation B');
 });

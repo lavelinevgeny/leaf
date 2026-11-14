@@ -9,7 +9,7 @@ import type {
 import { journalFeedCoherent } from './journal-state.js';
 import { JournalEditor, JournalConflict } from './JournalEditor.js';
 import { ActionMenu } from './ActionMenu.js';
-import { JournalEntryBody } from './JournalEntryBody.js';
+import { JournalRichBody } from './JournalRichBody.js';
 export function JournalFeed({
   state,
   controller,
@@ -394,10 +394,7 @@ export function JournalFeed({
                         );
                         if (!key) return false;
                         setEditing(key);
-                        focusInEntry(
-                          entry.id,
-                          '[data-journal-editor] textarea',
-                        );
+                        focusInEntry(entry.id, '[data-journal-body]');
                       },
                     },
                     {
@@ -428,8 +425,8 @@ export function JournalFeed({
                   onCancel={() => restoreMenu(entry.id)}
                 />
               ) : collapseBodies ? (
-                <JournalEntryBody
-                  body={entry.body}
+                <JournalRichBody
+                  entry={entry}
                   visible={visible}
                   expanded={expandedEntries.has(entry.id)}
                   onExpandedChange={(expanded) =>
@@ -442,7 +439,7 @@ export function JournalFeed({
                   }
                 />
               ) : (
-                <p className="journal-body">{entry.body}</p>
+                <JournalRichBody entry={entry} visible={visible} expanded />
               )}
               {confirmation?.entry.id === entry.id &&
                 confirmation.projectId === state.scope.projectId && (

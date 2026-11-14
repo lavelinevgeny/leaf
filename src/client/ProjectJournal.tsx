@@ -1,3 +1,4 @@
+import { collectJournalMediaIds } from '../shared/journal-content.js';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { Task } from '../shared/contracts.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
@@ -289,6 +290,7 @@ export function ProjectJournal({
             disabled={disabled || !coherent}
             placeholder="Что сделали или узнали?"
             compactIdle
+            visible={visible}
             onSaved={closeAfterSave}
             onCancel={() => close()}
             taskPicker={
@@ -302,7 +304,8 @@ export function ProjectJournal({
                   disabled ||
                   !coherent ||
                   controller.writing ||
-                  !!controller.pending
+                  !!controller.pending ||
+                  collectJournalMediaIds(draft.content).length > 0
                 }
               />
             }

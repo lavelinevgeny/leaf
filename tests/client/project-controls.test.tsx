@@ -41,7 +41,7 @@ beforeEach(() => {
         JSON.stringify(
           /\/journal(?:\?|$)/.test(url)
             ? {
-                journalContractVersion: 1,
+                journalContractVersion: 2,
                 projectId: url.includes(other.id) ? other.id : project.id,
                 taskId: url.includes('/tasks/')
                   ? url.split('/tasks/')[1]!.split('/')[0]

@@ -9,7 +9,17 @@ import { task } from './fixtures.js';
 it('reopening pins the first baseline and preserves own text', () => {
   const first = openEditDraft(undefined, journal5, 5);
   const own = { ...first, body: 'Own draft', dirty: true };
-  expect(openEditDraft(own, { ...journal5, body: 'Remote' }, 6)).toBe(own);
+  expect(
+    openEditDraft(
+      own,
+      {
+        ...journal5,
+        body: 'Remote',
+        content: { format: 'plain-text' as const, text: 'Remote' },
+      },
+      6,
+    ),
+  ).toBe(own);
   expect(own.baselineEntry).toEqual(journal5);
   expect(own.baselineJournalRevision).toBe(5);
   expect(first.baselineEntry).not.toBe(journal5);

@@ -1,13 +1,18 @@
 import type { Task } from '../shared/contracts.js';
 import type {
-  JournalEntry,
-  JournalPage,
-  JournalEntryRead,
-  JournalCreate,
-  JournalUpdate,
-  JournalDelete,
-  JournalProjectQuery,
-} from '../shared/journal-contracts.js';
+  JournalEntryV2 as JournalEntry,
+  JournalPageV2 as JournalPage,
+  JournalEntryReadV2 as JournalEntryRead,
+  JournalCreateV2 as JournalCreate,
+  JournalUpdateV2 as JournalUpdate,
+  JournalDeleteV2 as JournalDelete,
+} from '../shared/journal-contracts-v2.js';
+import type { JournalProjectQuery } from '../shared/journal-contracts.js';
+import type { JournalContent } from '../shared/journal-content.js';
+import type { JournalMedia } from '../shared/journal-media-contracts.js';
+import type { JournalUpload } from './journal-upload-state.js';
+let draftGeneration = 0;
+export const newJournalDraftGeneration = () => String(++draftGeneration);
 export type JournalDraftKey =
   | `project:${string}:task:${string}:create`
   | `project:${string}:modal:create`
@@ -17,7 +22,11 @@ export type JournalDraft = {
   projectId: string;
   taskId: string | null;
   entryId: string | null;
-  body: string;
+  body: string; // derived display convenience
+  content: JournalContent;
+  media: readonly JournalMedia[];
+  uploads: ReadonlyMap<string, JournalUpload>;
+  generation: string;
   workDate: string;
   dateTouched: boolean;
   dirty: boolean;
@@ -114,8 +123,13 @@ export type JournalController = {
   ): JournalDraftKey | null;
   changeDraft(
     key: JournalDraftKey,
-    fields: Partial<Pick<JournalDraft, 'body' | 'workDate' | 'taskId'>>,
+    fields: Partial<
+      Pick<JournalDraft, 'body' | 'content' | 'workDate' | 'taskId'>
+    >,
   ): void;
+  addFiles(key: JournalDraftKey, files: readonly File[]): JournalContent | null;
+  retryUpload(key: JournalDraftKey, id: string): Promise<void>;
+  uploadsDisabled: boolean;
   clearDraft(key: JournalDraftKey): void; // caller confirms nonempty loss
   submit(key: JournalDraftKey): Promise<boolean>;
   retry(): Promise<boolean>;
@@ -149,6 +163,10 @@ export function openEditDraft(
     taskId: entry.taskId,
     entryId: entry.id,
     body: entry.body,
+    content: structuredClone(entry.content),
+    media: structuredClone(entry.media),
+    uploads: new Map(),
+    generation: newJournalDraftGeneration(),
     workDate: entry.workDate,
     dateTouched: false,
     dirty: false,
@@ -195,7 +213,9 @@ export function mergeJournalPages(a: JournalPage, b: JournalPage): JournalPage {
 }
 export function sameJournalDraft(a: JournalDraft, b: JournalDraft): boolean {
   return (
-    a.body === b.body &&
+    JSON.stringify(a.content) === JSON.stringify(b.content) &&
+    a.generation === b.generation &&
+    JSON.stringify(a.media) === JSON.stringify(b.media) &&
     a.workDate === b.workDate &&
     a.taskId === b.taskId &&
     a.baselineJournalRevision === b.baselineJournalRevision
@@ -220,3 +240,5 @@ export function journalFeedCoherent(
     !['stale', 'metadata-error', 'error', 'loading'].includes(state.phase)
   );
 }
+
+export type JournalEditorHandle = { root: HTMLElement; focus(): void };

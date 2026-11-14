@@ -1,3 +1,4 @@
+import { expectJournalText } from '../helpers/journal-e2e.js';
 import {
   test,
   expect,
@@ -44,7 +45,7 @@ test('composer autogrow follows inherited font changes without editing the draft
   expect(await body.evaluate((node) => node.clientHeight)).toBeGreaterThan(
     before,
   );
-  await expect(body).toHaveValue(original);
+  await expectJournalText(body, original);
   await body.evaluate((node) => {
     node.parentElement!.style.fontSize = '';
   });
@@ -86,15 +87,19 @@ test('work progress keeps Enter local, saves the exact backdated body once and p
   await date.fill('29.02.2024');
   const original = '  Синтетический отчёт\n\n  Работа и сведения  \n';
   await body.fill(original.slice(0, -1));
-  await body.press('End');
+  // Contenteditable End stops at the visual edge before hanging spaces.
+  // Move beyond the two hanging spaces before appending a newline.
+  await body.press('Control+End');
+  await body.press('ArrowRight');
+  await body.press('ArrowRight');
   await body.press('Enter');
-  await expect(body).toHaveValue(original);
+  await expectJournalText(body, original);
   expect(
     (await readJournalPage(page, runtime.origin, tree.project.id)).entries,
   ).toHaveLength(1);
   await date.fill('31.02.2024');
   await body.press('Control+Enter');
-  await expect(body).toHaveValue(original);
+  await expectJournalText(body, original);
   await expect(date).toHaveAttribute('aria-invalid', 'true');
   await expect(editor.getByText(/Нужны дата и непустой текст/)).toBeVisible();
   expect(
@@ -102,7 +107,7 @@ test('work progress keeps Enter local, saves the exact backdated body once and p
   ).toHaveLength(1);
   await date.fill('29.02.2024');
   await body.press('Control+Enter');
-  await expect(body).toHaveValue('');
+  await expectJournalText(body, '');
   await expect(body).toBeFocused();
   await expect(
     panel.getByRole('heading', { name: '29.02.2024', exact: true }),
@@ -151,7 +156,7 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
     name: 'Очистить черновик',
     exact: true,
   });
-  await expect(body).toHaveAttribute('rows', '2');
+  await expect(body).toHaveAttribute('contenteditable', 'true');
   await expect(date).toBeVisible();
   await expect(save).toHaveCount(0);
   const measure = () =>
@@ -177,7 +182,9 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
   const wide = await measure();
   // The standard panel preserves useful text width and places controls below.
   const standardLayout = await editor.evaluate((form) => {
-    const text = form.querySelector('textarea')!.getBoundingClientRect();
+    const text = form
+      .querySelector('[data-journal-body]')!
+      .getBoundingClientRect();
     const date = form.querySelector('.calendar-field')!.getBoundingClientRect();
     return {
       textWidth: text.width,
@@ -198,7 +205,9 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
   await expect
     .poll(() =>
       editor.evaluate((form) => {
-        const text = form.querySelector('textarea')!.getBoundingClientRect();
+        const text = form
+          .querySelector('[data-journal-body]')!
+          .getBoundingClientRect();
         const date = form
           .querySelector('.calendar-field')!
           .getBoundingClientRect();
@@ -241,8 +250,9 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
           path: test.info().outputPath('synthetic-composer-mobile.png'),
         });
       const narrowLayout = await editor.evaluate((form) => ({
-        textBottom: form.querySelector('textarea')!.getBoundingClientRect()
-          .bottom,
+        textBottom: form
+          .querySelector('[data-journal-body]')!
+          .getBoundingClientRect().bottom,
         dateTop: form.querySelector('.calendar-field')!.getBoundingClientRect()
           .top,
       }));
@@ -253,7 +263,7 @@ test('two-row task composer grows for pasted text, reflows at narrow width and k
   await expect.poll(async () => (await measure()).height).toBe(wide.height);
   page.once('dialog', (dialog) => dialog.accept());
   await clear.click();
-  await expect(body).toHaveValue('');
+  await expectJournalText(body, '');
   await expect(body).toBeFocused();
   await expect(save).toHaveCount(0);
   expect((await measure()).height).toBe(idle.height);
@@ -356,9 +366,7 @@ test('task and project previews disclose independently and retain the original t
   await menu.press('Enter');
   await page.getByRole('menuitem', { name: 'Редактировать запись' }).click();
   // Textarea values use browser LF line endings; the stored text keeps CRLF.
-  await expect(card(3).getByLabel('Текст записи')).toHaveValue(
-    originals[3]!.replaceAll('\r\n', '\n'),
-  );
+  await expectJournalText(card(3).getByLabel('Текст записи'), originals[3]!);
   await card(3)
     .getByRole('button', { name: 'Закрыть редактор', exact: true })
     .click();
@@ -451,8 +459,9 @@ test('task and project previews disclose independently and retain the original t
   const projectEntry = feed.locator(`[data-journal-entry-id="${ids[3]}"]`);
   await projectEntry.getByRole('button', { name: /Действия записи/ }).click();
   await page.getByRole('menuitem', { name: 'Редактировать запись' }).click();
-  await expect(projectEntry.getByLabel('Текст записи')).toHaveValue(
-    originals[3]!.replaceAll('\r\n', '\n'),
+  await expectJournalText(
+    projectEntry.getByLabel('Текст записи'),
+    originals[3]!,
   );
   await projectEntry.getByRole('button', { name: 'Закрыть редактор' }).click();
   expect(await projectEntry.locator('.journal-body').textContent()).toBe(

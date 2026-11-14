@@ -119,7 +119,7 @@ beforeEach(() => {
     }
     if (/\/journal(?:\?|$)/.test(url) && init?.method === 'GET')
       return json({
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         projectId: tree.project.id,
         taskId: url.includes('/tasks/')
           ? url.split('/tasks/')[1]!.split('/')[0]

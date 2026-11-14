@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ProjectTree } from '../shared/contracts.js';
 import type {
-  JournalProjectQuery,
-  JournalPage,
-  JournalEntry,
-  JournalEntryRead,
-} from '../shared/journal-contracts.js';
+  JournalPageV2 as JournalPage,
+  JournalEntryV2 as JournalEntry,
+  JournalEntryReadV2 as JournalEntryRead,
+} from '../shared/journal-contracts-v2.js';
 import type {
   JournalController,
   JournalDraft,
@@ -16,8 +15,23 @@ import type {
   JournalDeleteConfirmation,
   JournalLastWrite,
 } from './journal-state.js';
+import type { JournalProjectQuery } from '../shared/journal-contracts.js';
+import {
+  collectJournalMediaIds,
+  type JournalContent,
+} from '../shared/journal-content.js';
+import { JOURNAL_MEDIA_LIMITS } from '../shared/journal-media-contracts.js';
+import {
+  makeJournalUpload,
+  journalDocument,
+  richContent,
+  journalDraftBody,
+  resolveUploadContent,
+  uploadsReady,
+} from './journal-upload-state.js';
 export type { JournalController, JournalDraftKey } from './journal-state.js';
 export type JournalActiveContext = {
+  uploadsDisabled?: boolean;
   status: 'active'; // App session authenticated, matching project tree loaded
   projectId: string;
   taskId: string | null;
@@ -44,12 +58,13 @@ export type JournalContext = JournalActiveContext | JournalInactiveContext;
 // export function useJournal(context: JournalContext): JournalController;
 import { api, ApiError } from './api.js';
 import {
-  journalCreateSchema,
-  journalUpdateSchema,
-  journalDeleteSchema,
-} from '../shared/journal-contracts.js';
+  journalCreateV2Schema,
+  journalUpdateV2Schema,
+  journalDeleteV2Schema,
+} from '../shared/journal-contracts-v2.js';
 import {
   createDraftKey,
+  newJournalDraftGeneration,
   openEditDraft,
   mergeJournalPages,
   sameJournalDraft,
@@ -99,7 +114,18 @@ export function useJournal(context: JournalContext): JournalController {
   }
   const active = () =>
     current.current.status === 'active' ? current.current : null;
+  const uploadRequests = useRef(new Map<AbortController, JournalDraftKey>());
+  function releaseDraft(key: JournalDraftKey) {
+    for (const [request, ownedKey] of uploadRequests.current)
+      if (ownedKey === key) {
+        request.abort();
+        uploadRequests.current.delete(request);
+      }
+    state.current.drafts.delete(key);
+  }
   function clearPrivateState() {
+    for (const request of uploadRequests.current.keys()) request.abort();
+    uploadRequests.current.clear();
     privateGeneration.current++;
     generation.current++;
     requests.current.project++;
@@ -372,6 +398,8 @@ export function useJournal(context: JournalContext): JournalController {
     return () => {
       generation.current++;
       privateGeneration.current++;
+      for (const request of uploadRequests.current.keys()) request.abort();
+      uploadRequests.current.clear();
       window.removeEventListener('focus', refreshVisible);
       document.removeEventListener('visibilitychange', refreshVisible);
     };
@@ -409,6 +437,10 @@ export function useJournal(context: JournalContext): JournalController {
         taskId,
         entryId: null,
         body: '',
+        content: { format: 'plain-text', text: '' },
+        media: [],
+        uploads: new Map(),
+        generation: newJournalDraftGeneration(),
         workDate: today,
         dateTouched: false,
         dirty: false,
@@ -432,20 +464,40 @@ export function useJournal(context: JournalContext): JournalController {
   }
   function changeDraft(
     key: JournalDraftKey,
-    fields: Partial<Pick<JournalDraft, 'body' | 'workDate' | 'taskId'>>,
+    fields: Partial<
+      Pick<JournalDraft, 'body' | 'content' | 'workDate' | 'taskId'>
+    >,
   ) {
     if (!editable()) return;
     const old = state.current.drafts.get(key);
     if (!old || old.projectId !== active()?.projectId) return;
     const { taskId, ...rest } = fields;
+    const content =
+      fields.content ??
+      (fields.body !== undefined
+        ? { format: 'plain-text' as const, text: fields.body }
+        : old.content);
+    const mediaScope = collectJournalMediaIds(content)
+      .map((id) => old.uploads.get(id)?.taskId)
+      .find(Boolean);
     state.current.drafts.set(key, {
       ...old,
       ...rest,
-      ...(!old.entryId && taskId !== undefined ? { taskId } : {}),
+      content,
+      body: journalDraftBody(content, old.media, old.uploads),
+      ...(!old.entryId &&
+      taskId !== undefined &&
+      !journalDocument(old.content).content.some(
+        (n) => n.type === 'journalImage' || n.type === 'journalFile',
+      )
+        ? { taskId }
+        : {}),
+      ...(mediaScope ? { taskId: mediaScope } : {}),
       dateTouched: old.dateTouched || fields.workDate !== undefined,
       dirty: true,
     });
     publish();
+    queueMicrotask(pumpUploads);
   }
   async function send(job: JournalPending): Promise<boolean> {
     const ctx = active();
@@ -461,7 +513,13 @@ export function useJournal(context: JournalContext): JournalController {
       privacy = privateGeneration.current;
     const unresolvedBeforeRetry =
       state.current.uncertain && state.current.pending === job;
-    Object.freeze(job.input);
+    const freezeJSON = (value: unknown): void => {
+      if (value && typeof value === 'object') {
+        Object.freeze(value);
+        for (const child of Object.values(value)) freezeJSON(child);
+      }
+    };
+    freezeJSON(job.input);
     if (job.method !== 'DELETE') Object.freeze(job.sentDraft);
     Object.freeze(job);
     state.current.pending = job;
@@ -488,7 +546,7 @@ export function useJournal(context: JournalContext): JournalController {
       if (job.method !== 'DELETE') {
         const draft = state.current.drafts.get(job.key);
         if (draft && sameJournalDraft(draft, job.sentDraft))
-          state.current.drafts.delete(job.key);
+          releaseDraft(job.key);
       } else state.current.confirmation = null;
       state.current.lastWrite = {
         projectId: job.projectId,
@@ -519,7 +577,7 @@ export function useJournal(context: JournalContext): JournalController {
           query &&
           ((query.q &&
             ![
-              input.body,
+              ack.kind === 'saved' ? ack.entry.body : job.sentDraft.body,
               state.current.metadata
                 .get(job.projectId)
                 ?.tasks.find((task) => task.id === job.sentDraft.taskId)
@@ -607,18 +665,24 @@ export function useJournal(context: JournalContext): JournalController {
       publish();
       return false;
     }
+    if (!uploadsReady(draft.content, draft.uploads)) {
+      state.current.error =
+        'Дождитесь загрузки вложений или повторите загрузку.';
+      publish();
+      return false;
+    }
     const base = {
-      journalContractVersion: 1 as const,
+      journalContractVersion: 2 as const,
       operationId: '00000000-0000-4000-8000-000000000000',
       expectedJournalRevision: draft.entryId
         ? draft.baselineJournalRevision
         : (state.current.known.get(ctx.projectId)?.journal ?? 0),
-      body: draft.body,
+      content: resolveUploadContent(draft.content, draft.uploads),
       workDate: draft.workDate,
     };
     const parsed = draft.entryId
-      ? journalUpdateSchema.safeParse(base)
-      : journalCreateSchema.safeParse({ ...base, taskId: draft.taskId });
+      ? journalUpdateV2Schema.safeParse(base)
+      : journalCreateV2Schema.safeParse({ ...base, taskId: draft.taskId });
     if (!parsed.success) {
       state.current.notice = null;
       state.current.error = 'Введите дату и текст от 1 до 10000 символов.';
@@ -669,8 +733,8 @@ export function useJournal(context: JournalContext): JournalController {
       state.current.conflict?.startsWith(`project:${ctx.projectId}:`)
     )
       return false;
-    const input = journalDeleteSchema.parse({
-      journalContractVersion: 1,
+    const input = journalDeleteV2Schema.parse({
+      journalContractVersion: 2,
       operationId: crypto.randomUUID(),
       expectedJournalRevision: confirmation.baselineJournalRevision,
     });
@@ -749,6 +813,7 @@ export function useJournal(context: JournalContext): JournalController {
     )
       return;
     if (old) {
+      if (mode === 'replace') releaseDraft(key);
       const next = openEditDraft(undefined, read.entry, read.journalRevision);
       state.current.drafts.set(
         key,
@@ -757,6 +822,10 @@ export function useJournal(context: JournalContext): JournalController {
           : {
               ...next,
               body: old.body,
+              content: old.content,
+              media: old.media,
+              uploads: old.uploads,
+              generation: old.generation,
               workDate: old.workDate,
               dirty: old.dirty,
               dateTouched: old.dateTouched,
@@ -773,6 +842,186 @@ export function useJournal(context: JournalContext): JournalController {
     state.current.conflictCurrent = null;
     state.current.error = null;
     publish();
+  }
+  const activeUploads = useRef(0);
+  function pumpUploads() {
+    const privacy = privateGeneration.current;
+    for (const [key, draft] of state.current.drafts) {
+      for (const [id, upload] of draft.uploads) {
+        if (activeUploads.current >= JOURNAL_MEDIA_LIMITS.concurrentUploads)
+          return;
+        if (
+          upload.status !== 'queued' ||
+          !draft.taskId ||
+          !collectJournalMediaIds(draft.content).includes(id)
+        )
+          continue;
+        const draftGeneration = draft.generation;
+        const running = { ...upload, status: 'uploading' as const };
+        const uploads = new Map(state.current.drafts.get(key)!.uploads);
+        uploads.set(id, running);
+        state.current.drafts.set(key, {
+          ...state.current.drafts.get(key)!,
+          uploads,
+        });
+        activeUploads.current++;
+        publish();
+        const request = new AbortController();
+        uploadRequests.current.set(request, key);
+        void api
+          .journalUpload(
+            draft.projectId,
+            upload.taskId,
+            running,
+            request.signal,
+          )
+          .then((result) => {
+            if (privacy !== privateGeneration.current) return;
+            const currentDraft = state.current.drafts.get(key);
+            if (
+              currentDraft?.generation !== draftGeneration ||
+              currentDraft.uploads.get(id) !== running
+            )
+              return;
+            const next = new Map(currentDraft.uploads);
+            next.set(id, {
+              ...running,
+              status: 'ready',
+              media: result.media,
+              error: null,
+            });
+            state.current.drafts.set(key, { ...currentDraft, uploads: next });
+            publish();
+          })
+          .catch((error) => {
+            if (auth(error, privacy) || privacy !== privateGeneration.current)
+              return;
+            const currentDraft = state.current.drafts.get(key);
+            if (
+              currentDraft?.generation !== draftGeneration ||
+              currentDraft.uploads.get(id) !== running
+            )
+              return;
+            const next = new Map(currentDraft.uploads);
+            next.set(id, {
+              ...running,
+              status:
+                error instanceof ApiError && error.uncertain
+                  ? 'uncertain'
+                  : 'error',
+              expired: error instanceof ApiError && error.status === 410,
+              error:
+                error instanceof ApiError && error.uncertain
+                  ? 'Результат загрузки неизвестен. Файл сохранён; повторите загрузку.'
+                  : 'Не удалось загрузить вложение. Файл сохранён в черновике; повторите загрузку.',
+            });
+            state.current.drafts.set(key, { ...currentDraft, uploads: next });
+            publish();
+          })
+          .finally(() => {
+            uploadRequests.current.delete(request);
+            activeUploads.current--;
+            pumpUploads();
+          });
+      }
+    }
+  }
+  function addFiles(
+    key: JournalDraftKey,
+    files: readonly File[],
+  ): JournalContent | null {
+    const draft = state.current.drafts.get(key);
+    if (
+      !editable() ||
+      !draft?.taskId ||
+      draft.projectId !== active()?.projectId ||
+      active()?.uploadsDisabled
+    )
+      return null;
+    try {
+      const added = files.map((file) => makeJournalUpload(file, draft.taskId!));
+      const doc = journalDocument(draft.content);
+      const existing = new Set(
+        doc.content.flatMap((node) =>
+          node.type === 'journalImage' || node.type === 'journalFile'
+            ? [node.attrs.mediaId]
+            : [],
+        ),
+      );
+      if (existing.size + added.length > 10)
+        throw Error('Не более 10 вложений на запись.');
+      const total =
+        [...existing].reduce(
+          (sum, id) =>
+            sum +
+            (draft.uploads.get(id)?.file.size ??
+              draft.media.find((m) => m.id === id)?.byteLength ??
+              0),
+          0,
+        ) + added.reduce((sum, u) => sum + u.file.size, 0);
+      if (total > JOURNAL_MEDIA_LIMITS.entryBytes)
+        throw Error('Вложения записи превышают 50 MiB.');
+      const uploads = new Map(draft.uploads);
+      for (const upload of added) uploads.set(upload.id, upload);
+      const content = richContent({
+        ...doc,
+        content: [
+          ...doc.content,
+          ...added.map((upload) =>
+            upload.kind === 'image'
+              ? {
+                  type: 'journalImage' as const,
+                  attrs: { mediaId: upload.id, alt: '' },
+                }
+              : { type: 'journalFile' as const, attrs: { mediaId: upload.id } },
+          ),
+        ],
+      });
+      state.current.drafts.set(key, {
+        ...draft,
+        content,
+        uploads,
+        body: journalDraftBody(content, draft.media, uploads),
+        dirty: true,
+      });
+      state.current.error = null;
+      publish();
+      queueMicrotask(pumpUploads);
+      return content;
+    } catch (error) {
+      state.current.error =
+        error instanceof Error ? error.message : 'Не удалось прикрепить файл.';
+      publish();
+      return null;
+    }
+  }
+  async function retryUpload(key: JournalDraftKey, id: string) {
+    const draft = state.current.drafts.get(key),
+      upload = draft?.uploads.get(id);
+    if (
+      !editable() ||
+      !draft ||
+      draft.projectId !== active()?.projectId ||
+      !upload ||
+      ![
+        'error',
+        'uncertain',
+        ...(state.current.error ? ['ready'] : []),
+      ].includes(upload.status)
+    )
+      return;
+    const uploads = new Map(draft.uploads);
+    uploads.set(id, {
+      ...upload,
+      status: 'queued',
+      error: null,
+      ...(upload.expired
+        ? { uploadId: crypto.randomUUID(), expired: false }
+        : {}),
+    });
+    state.current.drafts.set(key, { ...draft, uploads });
+    publish();
+    pumpUploads();
   }
   const data = state.current;
   const scopedConflict =
@@ -810,9 +1059,12 @@ export function useJournal(context: JournalContext): JournalController {
     openCreate,
     openEdit,
     changeDraft,
+    addFiles,
+    retryUpload,
+    uploadsDisabled: !!active()?.uploadsDisabled,
     clearDraft: (key) => {
       if (!editable()) return;
-      data.drafts.delete(key);
+      releaseDraft(key);
       if (data.conflict === key) {
         data.conflict = null;
         data.conflictCurrent = null;
