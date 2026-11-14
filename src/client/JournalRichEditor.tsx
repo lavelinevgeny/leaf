@@ -201,12 +201,28 @@ export function JournalRichEditor({
     [message, setMessage] = useState('');
   const selection = useRef({ from: 1, to: 1 });
   const addFiles = (files: File[], text = '') => {
-    if (!editor || current.current.disabled) return;
-    const added = current.current.controller.addFiles(
-      current.current.draft.key,
-      files,
-    );
-    if (!added) return;
+    const { controller, draft, disabled } = current.current;
+    if (
+      !editor ||
+      !editor.isEditable ||
+      disabled ||
+      !controller.active ||
+      controller.writing ||
+      controller.pending
+    )
+      return;
+    const paragraphs: JSONContent[] = text
+      ? text.split(/\r?\n/).map((line) => ({
+          type: 'paragraph',
+          ...(line ? { content: [{ type: 'text', text: line }] } : {}),
+        }))
+      : [];
+    const added = controller.addFiles(draft.key, files);
+    if (!added) {
+      if (paragraphs.length)
+        editor.commands.insertContentAt(editor.state.selection, paragraphs);
+      return;
+    }
     const nodes = added.nodes;
     // Top-level media cannot enter a list item. Insert after the enclosing root block.
     const $pos = editor.state.doc.resolve(selection.current.from);
@@ -214,12 +230,6 @@ export function JournalRichEditor({
     const hasFollowingText =
       $pos.depth === 1 && end.parentOffset < end.parent.content.size;
     const position = $pos.depth > 1 ? $pos.after(1) : selection.current;
-    const paragraphs: JSONContent[] = text
-      ? text.split(/\r?\n/).map((line) => ({
-          type: 'paragraph',
-          ...(line ? { content: [{ type: 'text', text: line }] } : {}),
-        }))
-      : [];
     editor
       .chain()
       .insertContentAt(position, [

@@ -301,3 +301,62 @@ test('an actual binary download401 clears authenticated UI and RAM attachments',
   );
   await expect(page.locator('.journal-upload')).toHaveCount(0);
 });
+
+test('a rejected empty file preserves multiline clipboard text and its visible error before exact save', async ({
+  page,
+  runtime,
+}) => {
+  const { tree } = await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  const editor = panel.getByRole('textbox', { name: 'Текст записи' });
+  await editor.fill('Existing text');
+  await editor.press('Control+End');
+  const uploads: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/journal-media'))
+      uploads.push(request.url());
+  });
+  await editor.evaluate((element) => {
+    const clipboard = new DataTransfer();
+    clipboard.items.add(
+      new File([], 'empty-synthetic.txt', { type: 'text/plain' }),
+    );
+    clipboard.setData('text/plain', 'first pasted line\nsecond pasted line');
+    element.dispatchEvent(
+      new ClipboardEvent('paste', {
+        clipboardData: clipboard,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await expect(panel.getByRole('alert')).toContainText(
+    'Файл пуст или превышает предел',
+  );
+  await expect(editor.locator('.journal-upload')).toHaveCount(0);
+  await expectJournalText(
+    editor,
+    'Existing text\nfirst pasted line\nsecond pasted line',
+  );
+  await panel
+    .getByRole('button', { name: 'Сохранить запись', exact: true })
+    .click();
+  const saved = (await readJournalPage(page, runtime.origin, tree.project.id))
+    .entries;
+  expect(saved).toHaveLength(1);
+  expect(saved[0]!.body).toBe(
+    'Existing text\nfirst pasted line\nsecond pasted line',
+  );
+  expect(saved[0]!.media).toEqual([]);
+  expect(uploads).toEqual([]);
+  await page.reload();
+  expect(
+    (await readJournalPage(page, runtime.origin, tree.project.id)).entries[0],
+  ).toEqual(saved[0]);
+});

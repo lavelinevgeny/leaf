@@ -421,3 +421,163 @@ it('selection Escape suppresses floating tools until a new selection and layers 
   });
   expect(parent).toHaveBeenCalledOnce();
 });
+
+import { useEffect, useState } from 'react';
+import { JournalEditor } from '../../src/client/JournalEditor.js';
+import type { JournalDraftKey } from '../../src/client/journal-state.js';
+type AdmissionMode =
+  'empty' | 'file-size' | 'image-size' | 'count' | 'demo' | 'no-task';
+function AdmissionHarness({
+  mode,
+  locked = false,
+}: {
+  mode: AdmissionMode;
+  locked?: boolean;
+}) {
+  controller = useJournal(
+    journalContext({
+      taskId: mode === 'no-task' ? null : journal5.taskId,
+      uploadsDisabled: mode === 'demo',
+    }),
+  );
+  const [key, setKey] = useState<JournalDraftKey | null>(null);
+  useEffect(() => {
+    setKey(
+      controller.openCreate(
+        journal5.projectId,
+        mode === 'no-task' ? null : journal5.taskId,
+        '2026-11-15',
+      ),
+    );
+  }, []);
+  const draft = key ? controller.getDraft(key) : undefined;
+  return draft ? (
+    <JournalEditor
+      draft={draft}
+      controller={controller}
+      disabled={locked}
+      onSaved={() => {}}
+    />
+  ) : null;
+}
+const rejectedFile = (mode: AdmissionMode) =>
+  mode === 'file-size'
+    ? new File([new Uint8Array(25 * 1024 * 1024 + 1)], 'oversize.txt')
+    : mode === 'image-size'
+      ? new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'oversize.png', {
+          type: 'image/png',
+        })
+      : new File(mode === 'empty' ? [] : ['synthetic'], 'rejected.txt', {
+          type: 'text/plain',
+        });
+const admissionCases = (
+  ['empty', 'file-size', 'image-size', 'count', 'demo', 'no-task'] as const
+).flatMap((mode) => [1, 5].map((position) => ({ mode, position })));
+it.each(admissionCases)(
+  'preserves clipboard text once when $mode file admission fails at $position',
+  async ({ mode, position }) => {
+    const upload = vi
+      .spyOn(api, 'journalUpload')
+      .mockImplementation(() => new Promise(() => {}));
+    render(<AdmissionHarness mode={mode} />);
+    await screen.findByRole('textbox', { name: 'Текст записи' });
+    await waitFor(() => expect(controller.projectFeed?.phase).toBe('ready'));
+    act(() => editor().commands.insertContent('LEFT RIGHT'));
+    if (mode === 'count') {
+      const key = [...controller.drafts.keys()][0]!;
+      act(() => {
+        controller.addFiles(
+          key,
+          Array.from(
+            { length: 10 },
+            (_, index) => new File(['synthetic'], `existing-${index}.txt`),
+          ),
+        );
+      });
+      await waitFor(() =>
+        expect(controller.getDraft(key)?.uploads.size).toBe(10),
+      );
+    }
+    act(() => editor().commands.setTextSelection(position));
+    const before = journalEditorDocument(editor().getJSON()).content.filter(
+      (n) => n.type === 'journalImage' || n.type === 'journalFile',
+    );
+    const beforeCalls = upload.mock.calls.length;
+    fireEvent.paste(screen.getByRole('textbox', { name: 'Текст записи' }), {
+      clipboardData: {
+        files: [rejectedFile(mode)],
+        getData: (type: string) =>
+          type === 'text/plain'
+            ? 'first pasted line\nsecond pasted line'
+            : '<img src="https://example.invalid/not-read">',
+      },
+    });
+    const doc = journalEditorDocument(editor().getJSON());
+    expect(
+      doc.content.filter(
+        (n) => n.type === 'journalImage' || n.type === 'journalFile',
+      ),
+    ).toEqual(before);
+    expect(
+      doc.content.flatMap((n) =>
+        n.type === 'paragraph'
+          ? (n.content ?? []).flatMap((child) =>
+              child.type === 'text' ? [child.text] : [],
+            )
+          : [],
+      ),
+    ).toEqual(
+      position === 1
+        ? ['first pasted line', 'second pasted line', 'LEFT RIGHT']
+        : ['LEFT', 'first pasted line', 'second pasted line', ' RIGHT'],
+    );
+    expect(upload.mock.calls.length).toBe(beforeCalls);
+    if (mode === 'demo')
+      expect(
+        screen.getByText('В демо загрузка файлов отключена'),
+      ).toBeVisible();
+    else if (mode === 'no-task')
+      expect(screen.getByText('Сначала выберите задачу')).toBeVisible();
+    else
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        mode === 'count'
+          ? 'Не более 10 вложений'
+          : 'Файл пуст или превышает предел',
+      );
+  },
+);
+it.each(['readonly', 'pending'] as const)(
+  'rejected-file text fallback respects %s lock',
+  async (lock) => {
+    vi.spyOn(api, 'journalUpload');
+    vi.spyOn(api, 'journalCreate').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    const view = render(<AdmissionHarness mode="empty" />);
+    await screen.findByRole('textbox', { name: 'Текст записи' });
+    await waitFor(() => expect(controller.projectFeed?.phase).toBe('ready'));
+    act(() => editor().commands.insertContent('Keep original'));
+    if (lock === 'readonly')
+      view.rerender(<AdmissionHarness mode="empty" locked />);
+    else
+      act(() => {
+        void controller.submit([...controller.drafts.keys()][0]!);
+      });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('textbox', { name: 'Текст записи' }),
+      ).toHaveAttribute('contenteditable', 'false'),
+    );
+    const before = editor().getJSON();
+    const draft = [...controller.drafts.values()][0]!.content;
+    fireEvent.paste(screen.getByRole('textbox', { name: 'Текст записи' }), {
+      clipboardData: {
+        files: [new File([], 'empty.txt')],
+        getData: () => 'must not insert',
+      },
+    });
+    expect(editor().getJSON()).toEqual(before);
+    expect([...controller.drafts.values()][0]!.content).toEqual(draft);
+    expect(api.journalUpload).not.toHaveBeenCalled();
+  },
+);
