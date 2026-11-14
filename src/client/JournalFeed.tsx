@@ -426,6 +426,7 @@ export function JournalFeed({
                 />
               ) : collapseBodies ? (
                 <JournalRichBody
+                  readMedia={controller.readMedia}
                   entry={entry}
                   visible={visible}
                   expanded={expandedEntries.has(entry.id)}
@@ -439,7 +440,12 @@ export function JournalFeed({
                   }
                 />
               ) : (
-                <JournalRichBody entry={entry} visible={visible} expanded />
+                <JournalRichBody
+                  readMedia={controller.readMedia}
+                  entry={entry}
+                  visible={visible}
+                  expanded
+                />
               )}
               {confirmation?.entry.id === entry.id &&
                 confirmation.projectId === state.scope.projectId && (

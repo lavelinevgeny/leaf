@@ -18,6 +18,7 @@ import type {
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
 import {
   collectJournalMediaIds,
+  type JournalMediaNode,
   type JournalContent,
 } from '../shared/journal-content.js';
 import { JOURNAL_MEDIA_LIMITS } from '../shared/journal-media-contracts.js';
@@ -114,6 +115,7 @@ export function useJournal(context: JournalContext): JournalController {
   }
   const active = () =>
     current.current.status === 'active' ? current.current : null;
+  const mediaRequests = useRef(new Set<AbortController>());
   const uploadRequests = useRef(new Map<AbortController, JournalDraftKey>());
   function releaseDraft(key: JournalDraftKey) {
     for (const [request, ownedKey] of uploadRequests.current)
@@ -126,6 +128,8 @@ export function useJournal(context: JournalContext): JournalController {
   function clearPrivateState() {
     for (const request of uploadRequests.current.keys()) request.abort();
     uploadRequests.current.clear();
+    for (const request of mediaRequests.current) request.abort();
+    mediaRequests.current.clear();
     privateGeneration.current++;
     generation.current++;
     requests.current.project++;
@@ -161,6 +165,40 @@ export function useJournal(context: JournalContext): JournalController {
       return true;
     }
     return false;
+  }
+  async function readMedia(
+    projectId: string,
+    taskId: string,
+    mediaId: string,
+    download = false,
+    signal?: AbortSignal,
+  ): Promise<Blob | null> {
+    const privacy = privateGeneration.current;
+    const request = new AbortController();
+    mediaRequests.current.add(request);
+    const cancel = () => request.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    const timer = setTimeout(cancel, 20000);
+    try {
+      const blob = await api.journalMediaRead(
+        projectId,
+        taskId,
+        mediaId,
+        download,
+        request.signal,
+      );
+      return privacy === privateGeneration.current && !request.signal.aborted
+        ? blob
+        : null;
+    } catch (error) {
+      auth(error, privacy);
+      return null;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
+      mediaRequests.current.delete(request);
+    }
   }
   async function read(scope: 'project' | 'task', more = false): Promise<void> {
     const ctx = active();
@@ -400,6 +438,8 @@ export function useJournal(context: JournalContext): JournalController {
       privateGeneration.current++;
       for (const request of uploadRequests.current.keys()) request.abort();
       uploadRequests.current.clear();
+      for (const request of mediaRequests.current) request.abort();
+      mediaRequests.current.clear();
       window.removeEventListener('focus', refreshVisible);
       document.removeEventListener('visibilitychange', refreshVisible);
     };
@@ -929,7 +969,7 @@ export function useJournal(context: JournalContext): JournalController {
   function addFiles(
     key: JournalDraftKey,
     files: readonly File[],
-  ): JournalContent | null {
+  ): { content: JournalContent; nodes: JournalMediaNode[] } | null {
     const draft = state.current.drafts.get(key);
     if (
       !editable() ||
@@ -963,19 +1003,14 @@ export function useJournal(context: JournalContext): JournalController {
         throw Error('Вложения записи превышают 50 MiB.');
       const uploads = new Map(draft.uploads);
       for (const upload of added) uploads.set(upload.id, upload);
+      const nodes: JournalMediaNode[] = added.map((upload) =>
+        upload.kind === 'image'
+          ? { type: 'journalImage', attrs: { mediaId: upload.id, alt: '' } }
+          : { type: 'journalFile', attrs: { mediaId: upload.id } },
+      );
       const content = richContent({
         ...doc,
-        content: [
-          ...doc.content,
-          ...added.map((upload) =>
-            upload.kind === 'image'
-              ? {
-                  type: 'journalImage' as const,
-                  attrs: { mediaId: upload.id, alt: '' },
-                }
-              : { type: 'journalFile' as const, attrs: { mediaId: upload.id } },
-          ),
-        ],
+        content: [...doc.content, ...nodes],
       });
       state.current.drafts.set(key, {
         ...draft,
@@ -987,7 +1022,7 @@ export function useJournal(context: JournalContext): JournalController {
       state.current.error = null;
       publish();
       queueMicrotask(pumpUploads);
-      return content;
+      return { content, nodes };
     } catch (error) {
       state.current.error =
         error instanceof Error ? error.message : 'Не удалось прикрепить файл.';
@@ -1023,6 +1058,12 @@ export function useJournal(context: JournalContext): JournalController {
     publish();
     pumpUploads();
   }
+  const mediaReader = useRef({
+    epoch: privateGeneration.current,
+    read: readMedia,
+  });
+  if (mediaReader.current.epoch !== privateGeneration.current)
+    mediaReader.current = { epoch: privateGeneration.current, read: readMedia };
   const data = state.current;
   const scopedConflict =
     context.status === 'active' &&
@@ -1090,5 +1131,6 @@ export function useJournal(context: JournalContext): JournalController {
     refresh,
     loadMore: (scope) => read(scope, true),
     clearPrivateState,
+    readMedia: mediaReader.current.read,
   };
 }

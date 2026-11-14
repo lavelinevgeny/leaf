@@ -11,7 +11,8 @@ import type { JournalEntryV2 } from '../shared/journal-contracts-v2.js';
 import type { JournalNode } from '../shared/journal-content.js';
 import type { JournalMedia } from '../shared/journal-media-contracts.js';
 import { JournalEntryBody } from './JournalEntryBody.js';
-import { journalMediaUrl } from './journal-upload-state.js';
+import { useJournalImage } from './use-journal-image.js';
+import type { JournalController } from './journal-state.js';
 function ImageViewer({
   src,
   alt,
@@ -60,37 +61,57 @@ function Media({
   entry,
   alt = '',
   preview = false,
+  readMedia,
 }: {
   media: JournalMedia;
   entry: JournalEntryV2;
   alt?: string;
   preview?: boolean;
+  readMedia: JournalController['readMedia'];
 }) {
   const [error, setError] = useState(false),
-    [retry, setRetry] = useState(0),
     [viewer, setViewer] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   const downloadRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => downloadRequest.current?.abort(), []);
-  const src = journalMediaUrl(entry.projectId, entry.taskId, media.id);
+  const downloadUrls = useRef(new Set<string>());
+  useEffect(
+    () => () => {
+      downloadRequest.current?.abort();
+      for (const url of downloadUrls.current) URL.revokeObjectURL(url);
+      downloadUrls.current.clear();
+    },
+    [],
+  );
+  const image = useJournalImage(
+    readMedia,
+    entry.projectId,
+    entry.taskId,
+    media.kind === 'image' ? media.id : null,
+  );
+  const src = image.src;
   const download = async () => {
     try {
       downloadRequest.current?.abort();
       const request = new AbortController();
       downloadRequest.current = request;
-      const response = await fetch(
-        journalMediaUrl(entry.projectId, entry.taskId, media.id, true),
-        { credentials: 'same-origin', signal: request.signal },
+      const blob = await readMedia(
+        entry.projectId,
+        entry.taskId,
+        media.id,
+        true,
+        request.signal,
       );
-      if (!response.ok) throw Error('download');
-      const blob = await response.blob();
-      if (request.signal.aborted) return;
+      if (!blob || request.signal.aborted) throw Error('download');
       const url = URL.createObjectURL(blob);
+      downloadUrls.current.add(url);
       const a = document.createElement('a');
       a.href = url;
       a.download = media.fileName;
       a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        downloadUrls.current.delete(url);
+      }, 1000);
       setError(false);
     } catch {
       setError(true);
@@ -104,11 +125,23 @@ function Media({
           ref={opener}
           className="journal-image-open"
           aria-label="Открыть изображение"
-          onClick={() => setViewer(true)}
+          disabled={!src}
+          onClick={(event) => {
+            const button = event.currentTarget;
+            button.focus({ preventScroll: true });
+            void image.reload().then((ready) => {
+              if (
+                ready &&
+                button.isConnected &&
+                !button.closest('[hidden]') &&
+                document.activeElement === button
+              )
+                setViewer(true);
+            });
+          }}
         >
           <img
-            key={retry}
-            src={src}
+            src={src ?? undefined}
             alt={alt || media.fileName}
             width={media.width}
             height={media.height}
@@ -126,7 +159,7 @@ function Media({
           Скачать
         </button>
       )}
-      {error && (
+      {(error || image.error) && (
         <p role="alert">
           Вложение недоступно.{' '}
           <button
@@ -135,7 +168,7 @@ function Media({
               if (media.kind === 'file') void download();
               else {
                 setError(false);
-                setRetry((n) => n + 1);
+                void image.reload();
               }
             }}
           >
@@ -143,7 +176,7 @@ function Media({
           </button>
         </p>
       )}
-      {viewer && (
+      {viewer && src && (
         <ImageViewer
           src={src}
           alt={alt || media.fileName}
@@ -188,11 +221,13 @@ export function JournalRichBody({
   expanded: controlled,
   onExpandedChange,
   visible = true,
+  readMedia,
 }: {
   entry: JournalEntryV2;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   visible?: boolean;
+  readMedia: JournalController['readMedia'];
 }) {
   const [local, setLocal] = useState(false);
   const expanded = controlled ?? local;
@@ -316,6 +351,7 @@ export function JournalRichBody({
         entry={entry}
         alt={node.type === 'journalImage' ? node.attrs.alt : ''}
         preview={preview}
+        readMedia={readMedia}
       />
     ) : (
       textNode(node, index)

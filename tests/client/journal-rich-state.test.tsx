@@ -68,7 +68,7 @@ it('retains source File and upload identity on uncertainty; removal/Undo restore
   act(() => {
     content = view.result.current.addFiles(key, [
       new File(['synthetic'], 'sample.txt'),
-    ])!;
+    ])!.content;
     view.result.current.changeDraft(key, { content });
   });
   await waitFor(() =>
@@ -120,7 +120,7 @@ it('late upload401 clears same private session after project navigation; clear i
     const content = view.result.current.addFiles(key, [
       new File(['synthetic'], 'sample.txt'),
     ]);
-    view.result.current.changeDraft(key, { content: content! });
+    view.result.current.changeDraft(key, { content: content!.content });
   });
   await waitFor(() => expect(api.journalUpload).toHaveBeenCalled());
   view.rerender({

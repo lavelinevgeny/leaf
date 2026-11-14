@@ -8,7 +8,10 @@ import type {
   JournalDeleteV2 as JournalDelete,
 } from '../shared/journal-contracts-v2.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
-import type { JournalContent } from '../shared/journal-content.js';
+import type {
+  JournalMediaNode,
+  JournalContent,
+} from '../shared/journal-content.js';
 import type { JournalMedia } from '../shared/journal-media-contracts.js';
 import type { JournalUpload } from './journal-upload-state.js';
 let draftGeneration = 0;
@@ -127,7 +130,17 @@ export type JournalController = {
       Pick<JournalDraft, 'body' | 'content' | 'workDate' | 'taskId'>
     >,
   ): void;
-  addFiles(key: JournalDraftKey, files: readonly File[]): JournalContent | null;
+  addFiles(
+    key: JournalDraftKey,
+    files: readonly File[],
+  ): { content: JournalContent; nodes: JournalMediaNode[] } | null;
+  readMedia(
+    projectId: string,
+    taskId: string,
+    mediaId: string,
+    download?: boolean,
+    signal?: AbortSignal,
+  ): Promise<Blob | null>;
   retryUpload(key: JournalDraftKey, id: string): Promise<void>;
   uploadsDisabled: boolean;
   clearDraft(key: JournalDraftKey): void; // caller confirms nonempty loss

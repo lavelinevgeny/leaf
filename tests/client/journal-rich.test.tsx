@@ -269,6 +269,7 @@ it('image-only rich preview keeps first media, reserved dimensions and ordered e
   };
   render(
     <JournalRichBody
+      readMedia={async () => null}
       entry={{
         ...journal5,
         content,
@@ -313,4 +314,110 @@ it('Enter creates the next list item while Tab leaves native focus navigation av
     screen.getByRole('textbox', { name: 'Текст записи' }).dispatchEvent(event);
   });
   expect(event.defaultPrevented).toBe(false);
+});
+it.each([0, 5])(
+  'multiline text plus one file pastes once at position %s using the current document',
+  async (offset) => {
+    vi.spyOn(api, 'journalUpload').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    render(<Harness />);
+    await screen.findByRole('textbox', { name: 'Текст записи' });
+    await waitFor(() => expect(controller.projectFeed?.phase).toBe('ready'));
+    if (offset)
+      act(() => {
+        editor().commands.insertContent('LEFT RIGHT');
+        editor().commands.setTextSelection(offset);
+      });
+    fireEvent.paste(screen.getByRole('textbox', { name: 'Текст записи' }), {
+      clipboardData: {
+        files: [new File(['synthetic'], 'clip.txt', { type: 'text/plain' })],
+        getData: (type: string) =>
+          type === 'text/plain'
+            ? 'first line\nsecond line'
+            : '<img src="https://example.invalid/never">',
+      },
+    });
+    const doc = journalEditorDocument(editor().getJSON());
+    expect(doc.content?.filter((n) => n.type === 'journalFile')).toHaveLength(
+      1,
+    );
+    expect(
+      doc.content.flatMap((n) =>
+        n.type === 'paragraph'
+          ? (n.content ?? []).flatMap((child) =>
+              child.type === 'text' ? [child.text] : [],
+            )
+          : [],
+      ),
+    ).toEqual(
+      offset
+        ? ['LEFT', 'first line', 'second line', ' RIGHT']
+        : ['first line', 'second line'],
+    );
+    expect(doc.content.map((n) => n.type)).toEqual(
+      offset
+        ? ['paragraph', 'paragraph', 'paragraph', 'journalFile', 'paragraph']
+        : ['paragraph', 'paragraph', 'journalFile', 'paragraph'],
+    );
+  },
+);
+it('selection Escape suppresses floating tools until a new selection and layers popup then toolbar then parent', async () => {
+  const parent = vi.fn();
+  render(
+    <div onKeyDown={parent}>
+      <Harness />
+    </div>,
+  );
+  await screen.findByRole('textbox', { name: 'Текст записи' });
+  act(() => {
+    editor().commands.insertContent('keep selected text');
+    editor().commands.selectAll();
+  });
+  expect(
+    screen.getByRole('toolbar', { name: 'Форматирование записи' }),
+  ).toBeVisible();
+  parent.mockClear();
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Текст записи' }), {
+    key: 'Escape',
+  });
+  expect(
+    screen.queryByRole('toolbar', { name: 'Форматирование записи' }),
+  ).toBeNull();
+  expect(parent).not.toHaveBeenCalled();
+  expect(editor().getText()).toBe('keep selected text');
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Текст записи' }), {
+    key: 'Escape',
+  });
+  expect(parent).toHaveBeenCalledOnce();
+  parent.mockClear();
+  fireEvent.pointerDown(screen.getByRole('textbox', { name: 'Текст записи' }));
+  act(() => {
+    editor().commands.setTextSelection({ from: 1, to: 5 });
+  });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Текст записи' }), {
+    key: 'k',
+    ctrlKey: true,
+  });
+  expect(
+    screen.getByRole('dialog', { name: 'Редактировать ссылку' }),
+  ).toBeVisible();
+  parent.mockClear();
+  fireEvent.keyDown(screen.getByLabelText('Название ссылки'), {
+    key: 'Escape',
+  });
+  expect(
+    screen.queryByRole('dialog', { name: 'Редактировать ссылку' }),
+  ).toBeNull();
+  expect(screen.getByRole('toolbar')).toBeVisible();
+  expect(parent).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Текст записи' }), {
+    key: 'Escape',
+  });
+  expect(screen.queryByRole('toolbar')).toBeNull();
+  expect(parent).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Текст записи' }), {
+    key: 'Escape',
+  });
+  expect(parent).toHaveBeenCalledOnce();
 });

@@ -244,6 +244,7 @@ export function JournalConflict({
                 .join('.')}
             </p>
             <JournalRichBody
+              readMedia={controller.readMedia}
               entry={controller.conflictCurrent.entry}
               expanded
             />

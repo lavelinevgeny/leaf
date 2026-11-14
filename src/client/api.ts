@@ -11,7 +11,7 @@ import type {
   JournalTaskQuery,
 } from '../shared/journal-contracts.js';
 import { journalUploadReadySchema } from '../shared/journal-media-contracts.js';
-import type { JournalUpload } from './journal-upload-state.js';
+import { journalMediaUrl, type JournalUpload } from './journal-upload-state.js';
 import {
   errorSchema,
   projectSchema,
@@ -113,6 +113,25 @@ function journalQuery(query: JournalProjectQuery | JournalTaskQuery) {
   return fields.size ? `?${fields}` : '';
 }
 export const api = {
+  journalMediaRead: async (
+    projectId: string,
+    taskId: string,
+    mediaId: string,
+    download = false,
+    signal?: AbortSignal,
+  ): Promise<Blob> => {
+    const response = await fetch(
+      journalMediaUrl(projectId, taskId, mediaId, download),
+      { credentials: 'same-origin', ...(signal ? { signal } : {}) },
+    );
+    if (!response.ok)
+      throw new ApiError(
+        'MEDIA_READ_FAILED',
+        'Вложение недоступно.',
+        response.status,
+      );
+    return response.blob();
+  },
   journalUpload: async (
     id: string,
     taskId: string,

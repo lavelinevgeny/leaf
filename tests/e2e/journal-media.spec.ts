@@ -3,6 +3,9 @@ import {
   expect,
   seedJournal,
   readJournalPage,
+  openProjectJournal,
+  chooseTask,
+  expectJournalText,
 } from '../helpers/journal-e2e.js';
 import sharp from 'sharp';
 
@@ -48,6 +51,7 @@ test('actual editor pasted PNG persists rich interleaving and media after save a
     transfer.items.add(
       new File([new Uint8Array(bytes)], 'synthetic.png', { type: 'image/png' }),
     );
+    transfer.setData('text/plain', 'first line\nsecond line');
     transfer.setData(
       'text/html',
       '<img src="https://example.invalid/never-fetch.png">',
@@ -79,12 +83,24 @@ test('actual editor pasted PNG persists rich interleaving and media after save a
   if (entry.content.format !== 'rich-text') throw Error('rich entry expected');
   expect(entry.content.doc.content.map((node) => node.type)).toEqual([
     'paragraph',
+    'paragraph',
+    'paragraph',
     'journalImage',
     'paragraph',
   ]);
   expect(entry.body).toBe(
-    `До изображения\n[Изображение: ${entry.media[0]!.fileName}]\nПосле изображения`,
+    `До изображения\nfirst line\nsecond line\n[Изображение: ${entry.media[0]!.fileName}]\nПосле изображения`,
   );
+  const openImage = panel.getByRole('button', { name: 'Открыть изображение' });
+  await expect(openImage).toBeEnabled();
+  await openImage.click();
+  const viewer = page.getByRole('dialog', { name: 'Просмотр изображения' });
+  await expect(viewer).toBeVisible();
+  await viewer
+    .getByRole('button', { name: 'Закрыть изображение' })
+    .press('Escape');
+  await expect(viewer).toHaveCount(0);
+  await expect(openImage).toBeFocused();
   const clean = panel.getByRole('textbox', {
     name: 'Текст записи',
     exact: true,
@@ -192,4 +208,96 @@ test('rich editor keeps Enter, Tab, IME and local formatting inside the composer
   expect(containment.scrollWidth).toBeLessThanOrEqual(containment.width);
   expect(containment.editorRight).toBeLessThanOrEqual(containment.viewport);
   await expect(editor).toHaveAttribute('contenteditable', 'true');
+});
+
+test('Escape closes link popup then selected toolbar then composer without losing the draft', async ({
+  page,
+  runtime,
+}) => {
+  await seedJournal(page, runtime);
+  await openProjectJournal(page, runtime.origin);
+  await page
+    .getByRole('button', { name: 'Добавить запись', exact: true })
+    .click();
+  const composer = page.getByRole('region', { name: 'Новая запись журнала' });
+  await chooseTask(composer, 'Работа A');
+  const editor = composer.getByRole('textbox', { name: 'Текст записи' });
+  await editor.fill('Keep selected draft');
+  await editor.press('Control+a');
+  await editor.press('Control+k');
+  const popup = composer.getByRole('dialog', { name: 'Редактировать ссылку' });
+  await expect(popup).toBeVisible();
+  await popup.getByLabel('Название ссылки').press('Escape');
+  await expect(popup).toHaveCount(0);
+  await expect(composer.getByRole('toolbar')).toBeVisible();
+  await editor.press('Escape');
+  await expect(composer.getByRole('toolbar')).toHaveCount(0);
+  await expect(composer).toBeVisible();
+  await expectJournalText(editor, 'Keep selected draft');
+  await editor.press('Escape');
+  await expect(composer).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Добавить запись', exact: true })
+    .click();
+  await expectJournalText(
+    page
+      .getByRole('region', { name: 'Новая запись журнала' })
+      .getByRole('textbox', { name: 'Текст записи' }),
+    'Keep selected draft',
+  );
+});
+
+test('an actual binary download401 clears authenticated UI and RAM attachments', async ({
+  page,
+  runtime,
+}) => {
+  await seedJournal(page, runtime);
+  await page.goto(runtime.origin);
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  const panel = page.getByRole('complementary', {
+    name: 'Задача',
+    exact: true,
+  });
+  await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
+  const composer = panel.locator('form[data-journal-editor]').first();
+  await composer.getByLabel('Выбрать вложения').setInputFiles({
+    name: 'saved-synthetic.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('synthetic saved bytes'),
+  });
+  await expect(composer.getByText('Загрузка…')).toHaveCount(0);
+  await composer
+    .getByRole('button', { name: 'Сохранить запись', exact: true })
+    .click();
+  const download = panel.locator('[data-journal-entry-id] .journal-file');
+  await expect(download).toBeVisible();
+  await composer
+    .getByRole('textbox', { name: 'Текст записи' })
+    .fill('Private unsaved draft');
+  await composer.getByLabel('Выбрать вложения').setInputFiles({
+    name: 'draft-synthetic.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('synthetic private bytes'),
+  });
+  await expect(composer.getByText('Загрузка…')).toHaveCount(0);
+  await expect(
+    composer.getByRole('button', { name: 'Сохранить запись', exact: true }),
+  ).toBeEnabled();
+  await page.context().clearCookies();
+  await download.click();
+  await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible();
+  await expect(page.locator('.journal-upload')).toHaveCount(0);
+  await expect(page.locator('[data-journal-entry-id]')).toHaveCount(0);
+  await page.getByLabel('Пароль', { exact: true }).fill(runtime.password);
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+  await page
+    .getByRole('complementary', { name: 'Задача', exact: true })
+    .getByRole('tab', { name: 'Ход работы', exact: true })
+    .click();
+  await expectJournalText(
+    page.getByRole('textbox', { name: 'Текст записи' }),
+    '',
+  );
+  await expect(page.locator('.journal-upload')).toHaveCount(0);
 });

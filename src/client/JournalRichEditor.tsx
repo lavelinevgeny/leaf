@@ -1,7 +1,6 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -14,6 +13,7 @@ import {
   ReactNodeViewRenderer,
   type NodeViewProps,
 } from '@tiptap/react';
+import { useJournalImage } from './use-journal-image.js';
 import StarterKit from '@tiptap/starter-kit';
 import type {
   JournalDocument,
@@ -26,11 +26,7 @@ import type {
   JournalDraft,
   JournalEditorHandle,
 } from './journal-state.js';
-import {
-  journalDocument,
-  richContent,
-  journalMediaUrl,
-} from './journal-upload-state.js';
+import { journalDocument, richContent } from './journal-upload-state.js';
 const DraftContext = createContext<{
   draft: JournalDraft;
   controller: JournalController;
@@ -89,21 +85,19 @@ function UploadNode({ node, editor, getPos }: NodeViewProps) {
   const id = node.attrs.mediaId as string;
   const upload = context.draft.uploads.get(id);
   const media = upload?.media ?? context.draft.media.find((m) => m.id === id);
-  const [local, setLocal] = useState<string | null>(null);
-  useEffect(() => {
-    if (upload?.kind !== 'image' || !URL.createObjectURL) return;
-    const url = URL.createObjectURL(upload.file);
-    setLocal(url);
-    return () => URL.revokeObjectURL(url);
-  }, [upload?.file]);
-  const src = media
-    ? journalMediaUrl(context.draft.projectId, context.draft.taskId!, media.id)
-    : local;
+  const image = useJournalImage(
+    context.controller.readMedia,
+    context.draft.projectId,
+    context.draft.taskId!,
+    node.type.name === 'journalImage' ? (media?.id ?? id) : null,
+    upload?.kind === 'image' ? upload.file : undefined,
+  );
+  const src = image.src;
   return (
     <NodeViewWrapper className="journal-upload" contentEditable={false}>
       {node.type.name === 'journalImage' && src && (
         <img
-          src={src}
+          src={src ?? undefined}
           alt={(node.attrs.alt as string) || 'Вложенное изображение'}
           {...(media?.kind === 'image'
             ? { width: media.width, height: media.height }
@@ -200,27 +194,39 @@ export function JournalRichEditor({
   const picker = useRef<HTMLInputElement>(null);
   const [toolbar, setToolbar] = useState(false),
     [selected, setSelected] = useState(false),
+    [selectionToolsDismissed, setSelectionToolsDismissed] = useState(false),
     [link, setLink] = useState(false);
   const [title, setTitle] = useState(''),
     [href, setHref] = useState(''),
     [message, setMessage] = useState('');
   const selection = useRef({ from: 1, to: 1 });
-  const addFiles = (files: File[]) => {
+  const addFiles = (files: File[], text = '') => {
     if (!editor || current.current.disabled) return;
-    const before = journalDocument(current.current.draft.content).content
-      .length;
-    const content = current.current.controller.addFiles(
+    const added = current.current.controller.addFiles(
       current.current.draft.key,
       files,
     );
-    if (!content || content.format !== 'rich-text') return;
-    const nodes = content.doc.content.slice(before);
+    if (!added) return;
+    const nodes = added.nodes;
     // Top-level media cannot enter a list item. Insert after the enclosing root block.
     const $pos = editor.state.doc.resolve(selection.current.from);
-    const position = $pos.depth > 1 ? $pos.after(1) : selection.current.from;
+    const end = editor.state.doc.resolve(selection.current.to);
+    const hasFollowingText =
+      $pos.depth === 1 && end.parentOffset < end.parent.content.size;
+    const position = $pos.depth > 1 ? $pos.after(1) : selection.current;
+    const paragraphs: JSONContent[] = text
+      ? text.split(/\r?\n/).map((line) => ({
+          type: 'paragraph',
+          ...(line ? { content: [{ type: 'text', text: line }] } : {}),
+        }))
+      : [];
     editor
       .chain()
-      .insertContentAt(position, [...nodes, { type: 'paragraph' }])
+      .insertContentAt(position, [
+        ...paragraphs,
+        ...nodes,
+        ...(hasFollowingText ? [] : [{ type: 'paragraph' }]),
+      ])
       .run();
   };
   const editor = useEditor(
@@ -282,6 +288,7 @@ export function JournalRichEditor({
         setSelected(!editor.state.selection.empty);
       },
       editorProps: {
+        handleDOMEvents: { keydown: (_view, event) => event.key === 'Escape' },
         attributes: () => ({
           role: 'textbox',
           'aria-disabled': String(current.current.disabled),
@@ -309,20 +316,10 @@ export function JournalRichEditor({
           if (!transfer) return false;
           if (transfer.files.length) {
             event.preventDefault();
-            const text = transfer.getData('text/plain');
-            if (text) {
-              editor!.commands.insertContent(
-                text.split(/\r?\n/).map((line) => ({
-                  type: 'paragraph',
-                  ...(line ? { content: [{ type: 'text', text: line }] } : {}),
-                })),
-              );
-              selection.current = {
-                from: editor!.state.selection.from,
-                to: editor!.state.selection.to,
-              };
-            }
-            addFiles(Array.from(transfer.files));
+            addFiles(
+              Array.from(transfer.files),
+              transfer.getData('text/plain'),
+            );
             return true;
           }
           const text = transfer.getData('text/plain');
@@ -413,6 +410,7 @@ export function JournalRichEditor({
       ),
     );
     setHref((editor.getAttributes('link').href as string) ?? '');
+    setToolbar(true);
     setLink(true);
   }
   function applyLink() {
@@ -441,6 +439,17 @@ export function JournalRichEditor({
     <DraftContext value={{ draft, controller }}>
       <div
         className="journal-rich-editor"
+        onPointerDownCapture={(event) => {
+          if ((event.target as Element).closest('[contenteditable]'))
+            setSelectionToolsDismissed(false);
+        }}
+        onKeyDownCapture={(event) => {
+          if (
+            event.key !== 'Escape' &&
+            (event.target as Element).closest('[contenteditable]')
+          )
+            setSelectionToolsDismissed(false);
+        }}
         onKeyDown={(event) => {
           if (
             (event.ctrlKey || event.metaKey) &&
@@ -458,11 +467,17 @@ export function JournalRichEditor({
             }
           }
           if (event.key === 'Tab') event.stopPropagation();
-          if (event.key === 'Escape' && (link || toolbar)) {
+          if (
+            event.key === 'Escape' &&
+            (link || toolbar || (selected && !selectionToolsDismissed))
+          ) {
             event.preventDefault();
             event.stopPropagation();
             if (link) setLink(false);
-            else setToolbar(false);
+            else {
+              setToolbar(false);
+              setSelectionToolsDismissed(true);
+            }
             editor?.commands.focus(undefined, { scrollIntoView: false });
           }
         }}
@@ -480,7 +495,10 @@ export function JournalRichEditor({
                   to: editor.state.selection.to,
                 };
             }}
-            onClick={() => setToolbar(!toolbar)}
+            onClick={() => {
+              setToolbar(!toolbar);
+              setSelectionToolsDismissed(toolbar);
+            }}
           >
             Форматирование
           </button>
@@ -505,7 +523,7 @@ export function JournalRichEditor({
             }}
           />
         </div>
-        {(toolbar || selected) && (
+        {(toolbar || (selected && !selectionToolsDismissed)) && (
           <div
             className={`journal-format-toolbar${selected && !toolbar ? ' journal-format-toolbar--floating' : ''}`}
             role="toolbar"
