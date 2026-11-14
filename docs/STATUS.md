@@ -1,5 +1,17 @@
 # Статус разработки
 
+## C34/D29 — Task 1: bounded content и migration005, 2026-11-14
+
+Реализован первый блок [плана](superpowers/plans/2026-11-14-journal-media.md): независимые strict rich/plain content и journal v2 schemas, media metadata, bounded prewalk, literal projection и JSON-only legacy adapter. Лимиты: rich doc 48 KiB/1000 nodes/depth 12/list nesting 4, проекция 10000 UTF-16/30000 UTF-8, 10 distinct media/50 MiB. Отсутствующая metadata, несовместимый kind и пустые списки отклоняются. Старые v1 validators/API/UI и lifecycle1 остаются действующими; upload, journal2 runtime, lifecycle2 capture/restore и editor ещё не подключены.
+
+Migration005 добавляет nullable contentJson, media BLOB/tombstone identity, live/Undo relations и поля manifest v2; расширяет CHECK contract/lifecycle до 2 через точное копирование строк. Только startup seam005 временно отключает FK вне транзакции на ещё не опубликованном connection: IMMEDIATE rebuild, сохранение indexes/triggers и AUTOINCREMENT high-water mark, foreign_key_check до commit, обязательное восстановление FK в finally. Обычный runtime FK не отключает. Проверены legacy bytes с CRLF/NUL, nonempty sidecars, pruning watermark, schema5 reopen без DDL, synthetic rollback/нарушение FK; прежние миграции неизменны. Docker allowlist/package gate включает005.
+
+Pinned Tiptap core/react/pm/starter-kit 3.34.0, multipart 10.1.8 и sharp 0.35.5. Проверены registry integrity/license/lifecycle metadata всех 84 новых lockfile entries: MIT/0BSD/Apache-2.0 и LGPL-3.0-or-later для libvips/части платформенных bundles. Новых install scripts нет; source prepare scripts не исполняются при установке registry tarballs. Existing allowScripts не расширен, существующие версии dependencies не изменены/не удалены. npm ci и native synthetic 1×1 PNG → lossless WebP → raw PASS.
+
+TDD: первоначальный RED новых suites подтверждён отсутствием модуля/schema5/media tables; дополнительный RED двух пустых списков исправлен без ослабления assertions. PASS: focused 43/43, typecheck, lint, unit 1166/1166 (56 files), integration 417/417 (29 files), build, format:check, check:package, check:kit и diff checks. Build сохраняет предупреждение chunk >500 kB. npm audit FAIL: 15 findings (1 low/12 moderate/2 high) в ранее существовавших dependency versions, включая Zod/undici; автоматический audit fix не выполнялся. Это отдельный незакрытый риск, отсутствие новых advisory в добавленных пакетах не означает чистый аудит всего приложения.
+
+NOT RUN: полный verify/preflight/history, E2E, container build/runtime, remote CI/push/deploy; container integration в текущем окружении недоступна. Task 1 не заявляет JM01–JM22 или готовность функции/релиза. Следующий шаг — независимый task review, затем Task 2: upload/download/GC. S4–S6 остаются незавершёнными.
+
 ## C34/D29 — начало реализации, 2026-11-14
 
 После независимых PASS спецификации владелец поручил продолжить реализацию. Подготовлен [план из пяти последовательных задач](superpowers/plans/2026-11-14-journal-media.md): bounded content/contracts и005, upload/download/GC, journal2/lifecycle2/backup, компактный editor/controller/renderer, JM01–JM22 и полная приёмка. Exact OSS versions и peer/license metadata проверены в официальном registry; lifecycle scripts и native compatibility проверяются до установки. Работа продолжается в `feat/journal-media` с одним writer и независимым task review; дополнительных worktree/remote действий нет. Это начало выполнения, не готовая функция; текущие application/SQL/lockfile ещё не менялись на момент подготовки плана.

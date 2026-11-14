@@ -23,6 +23,7 @@ const expected = [
   '!migrations/002-scheduling.sql',
   '!migrations/003-optional-scheduling.sql',
   '!migrations/004-task-journal.sql',
+  '!migrations/005-journal-media.sql',
 ];
 const rules = readFileSync('.dockerignore', 'utf8')
   .split('\n')

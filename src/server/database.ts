@@ -35,7 +35,7 @@ export function openDatabase(
     if (
       !isFreshDatabase &&
       (versions.length < 2 ||
-        versions.length > 4 ||
+        versions.length > 5 ||
         versions.some((row, index) => row.version !== index + 1))
     )
       throw new Error('Unsupported database schema');
@@ -69,6 +69,7 @@ export function openDatabase(
         },
       },
       { version: 4, file: '004-task-journal.sql' },
+      { version: 5, file: '005-journal-media.sql' },
     ];
     if (isFreshDatabase)
       db.exec('CREATE TABLE migrations (version INTEGER PRIMARY KEY) STRICT');
@@ -90,13 +91,49 @@ export function openDatabase(
           'utf8',
         );
       }
-      db.transaction(() => {
-        if (entry.prepare) entry.prepare(sql);
-        else db.exec(sql);
-        db.prepare('INSERT INTO migrations(version) VALUES (?)').run(
-          entry.version,
-        );
-      }).immediate();
+      // Only migration005 rebuilds a referenced table. This connection is not yet
+      // exposed to runtime callers; ordinary application writes always enforce FKs.
+      const rebuildReferencedTable = entry.version === 5;
+      const rebuiltObjects = rebuildReferencedTable
+        ? (db
+            .prepare(
+              "SELECT type,name,sql FROM sqlite_schema WHERE tbl_name IN ('undo_snapshots','journal_operations') AND type IN ('index','trigger') AND sql IS NOT NULL",
+            )
+            .all() as { type: string; name: string; sql: string }[])
+        : [];
+      if (rebuildReferencedTable) {
+        db.pragma('foreign_keys = OFF');
+        if (db.pragma('foreign_keys', { simple: true }) !== 0)
+          throw new Error('Migration cannot rebuild referenced tables');
+      }
+      try {
+        db.transaction(() => {
+          if (entry.prepare) entry.prepare(sql);
+          else db.exec(sql);
+          for (const object of rebuiltObjects) {
+            if (
+              !db
+                .prepare('SELECT 1 FROM sqlite_schema WHERE type=? AND name=?')
+                .get(object.type, object.name)
+            )
+              db.exec(object.sql);
+          }
+          db.prepare('INSERT INTO migrations(version) VALUES (?)').run(
+            entry.version,
+          );
+          if (
+            rebuildReferencedTable &&
+            (db.pragma('foreign_key_check') as unknown[]).length !== 0
+          )
+            throw new Error('Migration foreign key validation failed');
+        }).immediate();
+      } finally {
+        if (rebuildReferencedTable) {
+          db.pragma('foreign_keys = ON');
+          if (db.pragma('foreign_keys', { simple: true }) !== 1)
+            throw new Error('Database foreign key enforcement unavailable');
+        }
+      }
     }
     db.pragma('journal_mode = WAL');
     return db;
