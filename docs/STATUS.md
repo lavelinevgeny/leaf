@@ -1,5 +1,13 @@
 # Статус разработки
 
+## C34/D29 — спецификация форматированных записей и медиа, 2026-11-14
+
+Владелец выбрал компактный готовый редактор записей с изображениями между абзацами, вставкой из буфера/drop/file picker, ссылками с названием, скачиваемыми файлами, жирным текстом и списками. Ошибки upload сохраняют черновик; видеоплеер и карточки сайтов — отдельный следующий этап. Подготовлены [спецификация](superpowers/specs/2026-11-14-journal-media-design.md) и предложенный [ADR 016](adr/016-journal-rich-content-media.md). C34 отражает согласованный product scope, D29 отдельно обозначает proposed технические решения, ожидающие проверки.
+
+Проверены фактические editor/controller/feed/focus, journal contracts/API/repository/lifecycle, migration004/startup и backup. Просмотрены три утверждённых PNG; использованы только исходники и синтетические примеры. Предлагаются server-validated rich JSON, journal2 с exact frozen1 compatibility, bounded authenticated upload, SQLite BLOB, lifecycle2/manifest/GC и единая backup. Спецификация определяет ошибки/limits/RAM retry/keyboard/preview, 22 сценария JM01–JM22 и последовательные этапы реализации. Реальные runtime данные, исходники приложения, lockfile и SQL не менялись; новые библиотеки не устанавливались.
+
+Self-review документа завершён: уточнены strict v2 mutation/read envelopes, legacy date-only preservation, доступ binary GET без custom header, multipart aggregate limit и отдельные input/internal decoder errors. PASS: `npm run doctor`, `npm run check:kit` (87 Markdown, 589 local links, три approved references, 10 CPM/4 calendar examples), `git diff --check`, `npm run security:staged` (9 index blobs, privacy guard и настоящий Gitleaks). Application verify/unit/integration/E2E/format/package, full preflight/history, container/OS clipboard/IME/zoom и remote CI в этом документационном этапе NOT RUN. Следующий шаг — проверка письменной спецификации владельцем, затем подробный implementation plan. Ветка `feat/journal-media`; worktree не создавался, push/deployment не выполнялись. S4–S6 и первый релиз не завершены.
+
 ## C33/D28 — окончательная реализация и приёмка, 2026-11-07
 
 Реализация C33 и [DUX01–DUX12](ACCEPTANCE.md#зависимости-c33--d28--dux01dux12) завершена: общий направленный picker, оба QuickAdd, симметричный граф, chain/count общих строк, atomic create-only successorIds и сохранение серверных replay/Undo/CPM правил. Независимые reviews спецификации, плана, этапов и всей ветки завершены; находки F1/F2/F3 закрыты отдельным Spec/Quality PASS. F1 сохраняет глобальные Ctrl/Cmd+Z и layered Escape; F2 закрывает outgoing ADD по подтверждению точного job, включая exact retry, с отменяемым владением фокусом; DELETE остаётся открытым. D28 остаётся рабочим уточнением, не новым решением владельца.
