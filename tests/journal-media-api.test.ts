@@ -429,3 +429,113 @@ it('times out a stalled upload at30seconds and releases admission for a new requ
     ).statusCode,
   ).toBe(201);
 });
+import { openDatabase } from '../src/server/database.js';
+it('rejects ambiguous boundary declarations without BLOBs and preserves single quoted/unquoted header limits and admission', async () => {
+  const oversized = rawForm([
+    field('kind', 'file'),
+    field('uploadId', randomUUID()),
+    filePart(
+      Array.from({ length: 40 }, (_, i) => `X-Synthetic-${i}: x\r\n`).join(''),
+    ),
+  ])
+    .bytes.toString()
+    .replaceAll('synthetic-boundary', 'actual');
+  for (const type of [
+    "multipart/form-data; boundary*=UTF-8''actual; boundary=dummy",
+    'multipart/form-data; boundary=actual; boundary=dummy',
+    'multipart/form-data; boundary=actual; boundary=actual',
+    'multipart/form-data; boundary*0=actual; boundary=dummy',
+    'multipart/form-data; boundary="actual"; boundary="dummy"',
+  ]) {
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      headers: uploadHeaders(type),
+      payload: oversized,
+    });
+    expect(response.statusCode).toBe(400);
+  }
+  for (const type of [
+    'multipart/form-data; boundary=actual',
+    'multipart/form-data; boundary="actual"',
+  ]) {
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      headers: uploadHeaders(type),
+      payload: oversized,
+    });
+    expect(response.statusCode).toBe(413);
+  }
+  const db = openDatabase(join(dir, 'synthetic.sqlite'));
+  try {
+    expect(db.prepare('SELECT count(*) AS n FROM journal_media').get()).toEqual(
+      { n: 0 },
+    );
+  } finally {
+    db.close();
+  }
+  for (const quoted of [false, true]) {
+    const f = form();
+    const type = quoted
+      ? 'multipart/form-data; boundary="synthetic-boundary"'
+      : f.type;
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url,
+          headers: uploadHeaders(type),
+          payload: f.bytes,
+        })
+      ).statusCode,
+    ).toBe(201);
+  }
+  const browserForm = new FormData();
+  browserForm.set('uploadId', randomUUID());
+  browserForm.set('kind', 'file');
+  browserForm.set('file', new Blob(['synthetic']), 'example.txt');
+  const browserRequest = new Request(origin + url, {
+    method: 'POST',
+    body: browserForm,
+  });
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: uploadHeaders(browserRequest.headers.get('content-type')!),
+        payload: Buffer.from(await browserRequest.arrayBuffer()),
+      })
+    ).statusCode,
+  ).toBe(201);
+});
+it('rejects extended and duplicate boundaries on real sockets before receiving body bytes', async () => {
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  for (const type of [
+    "multipart/form-data; boundary*=UTF-8''actual; boundary=dummy",
+    'multipart/form-data; boundary="actual"; boundary=dummy',
+  ]) {
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        address + url,
+        {
+          method: 'POST',
+          headers: { ...uploadHeaders(type), 'transfer-encoding': 'chunked' },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode!);
+          req.destroy();
+        },
+      );
+      req.on('error', reject);
+      req.setTimeout(1500, () => {
+        req.destroy();
+        reject(Error('Boundary was not rejected before body'));
+      });
+      req.flushHeaders();
+    });
+    expect(status).toBe(400);
+  }
+});

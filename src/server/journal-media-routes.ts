@@ -20,6 +20,17 @@ const tooLarge = () =>
   );
 const invalid = () =>
   new DomainError('MEDIA_INVALID', 'Проверьте поля загрузки.');
+/** Accept one ordinary RFC2046 boundary only. Extended/continued/duplicate
+ * parameters and quoted escapes are excluded before either parser sees bytes. */
+function parseUploadBoundary(contentType: string): string {
+  const match =
+    /^multipart\/form-data[ \t]*;[ \t]*boundary[ \t]*=[ \t]*(?:([0-9A-Za-z'+_.-]{1,70})|"([0-9A-Za-z'()+_,./:=? -]{1,70})")[ \t]*$/i.exec(
+      contentType,
+    );
+  const boundary = match?.[1] ?? match?.[2];
+  if (!boundary || boundary.endsWith(' ')) throw invalid();
+  return boundary;
+}
 let activeUploads = 0;
 const attempts = new Map<string, { count: number; until: number }>();
 /** A second, bounded wire scan: busboy truncates excessive headers silently.
@@ -29,10 +40,7 @@ class WireGuard {
   private buffer: Buffer = Buffer.alloc(0);
   private state: 'boundary' | 'headers' | 'body' = 'boundary';
   private readonly boundary: Buffer;
-  constructor(contentType: string) {
-    const value = /;\s*boundary=(?:"([^"\r\n]+)"|([^;\s]+))/i.exec(contentType);
-    const boundary = value?.[1] ?? value?.[2];
-    if (!boundary || boundary.length > 70) throw invalid();
+  constructor(boundary: string) {
     this.boundary = Buffer.from(`\r\n--${boundary}`);
   }
   push(chunk: Buffer): void {
@@ -111,7 +119,7 @@ export function registerJournalMediaRoutes(
     });
     const admissions = new WeakMap<
       FastifyRequest,
-      { session: string; release: () => void }
+      { session: string; boundary: string; release: () => void }
     >();
     const release = (r: FastifyRequest) => admissions.get(r)?.release();
     scoped.addHook('onResponse', async (request) => {
@@ -144,6 +152,9 @@ export function registerJournalMediaRoutes(
               'Требуется multipart загрузка.',
               415,
             );
+          const boundary = parseUploadBoundary(
+            request.headers['content-type']!,
+          );
           const time = options.now();
           for (const [id, item] of attempts)
             if (item.until <= time) attempts.delete(id);
@@ -167,6 +178,7 @@ export function registerJournalMediaRoutes(
           let released = false;
           admissions.set(request, {
             session,
+            boundary,
             release: () => {
               if (!released) {
                 released = true;
@@ -199,7 +211,7 @@ export function registerJournalMediaRoutes(
           request.raw.pause();
           request.raw.emit('error', error);
         };
-        const guard = new WireGuard(request.headers['content-type']!);
+        const guard = new WireGuard(admissions.get(request)!.boundary);
         const onData = (chunk: Buffer) => {
           try {
             guard.push(chunk);
