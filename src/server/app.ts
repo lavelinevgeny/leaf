@@ -71,7 +71,7 @@ function requireContractVersion(
 function requireJournalVersion(request: FastifyRequest): void {
   if (request.headers['x-leaf-journal-contract-version'] !== '2')
     throw new DomainError(
-      'CONTRACT_VERSION_CONFLICT',
+      'JOURNAL_CONTRACT_VERSION_CONFLICT',
       'Версия приложения устарела. Обновите страницу для продолжения. Этот запрос не изменил данные.',
       426,
     );
@@ -176,11 +176,23 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
         return reply
           .code(error.statusCode)
           .send({ code: error.code, message: error.message });
-      if (error instanceof ZodError)
+      if (error instanceof ZodError) {
+        if (
+          error.issues.some(
+            (issue) =>
+              issue.code === 'custom' &&
+              issue.params?.journalLimit === 'entryFiles',
+          )
+        )
+          return reply.code(413).send({
+            code: 'JOURNAL_LIMIT',
+            message: 'Превышен лимит числа вложений записи.',
+          });
         return reply.code(400).send({
           code: 'INVALID_REQUEST',
           message: 'Проверьте поля запроса.',
         });
+      }
       const statusCode = (error as { statusCode?: number }).statusCode;
       if (statusCode && statusCode >= 400 && statusCode < 500)
         return reply.code(statusCode).send({

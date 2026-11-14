@@ -4,6 +4,7 @@ import { DomainError } from '../domain/tree.js';
 import { uuidSchema } from '../shared/contracts.js';
 import {
   collectJournalMediaIds,
+  JournalPublicationError,
   journalContentSchema,
   projectJournalContent,
   type JournalContent,
@@ -347,7 +348,19 @@ export class JournalMediaRepository {
       verify(row);
       return metadata(row);
     });
-    projectJournalContent(content, result);
+    try {
+      projectJournalContent(content, result);
+    } catch (error) {
+      // Only resolved client semantics are translated. Stored schema/hash failures
+      // above and missing/internal metadata errors retain safe500 handling.
+      if (!(error instanceof JournalPublicationError)) throw error;
+      if (error.reason === 'media-kind') throw invalid();
+      throw new DomainError(
+        'JOURNAL_LIMIT',
+        'Превышен лимит размера записи или вложений.',
+        413,
+      );
+    }
     return result;
   }
   attach(

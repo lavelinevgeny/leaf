@@ -602,20 +602,25 @@ it('rejects old live reads/new effects, but returns exact validated frozen v1 re
     url,
     `${url}/${randomUUID()}`,
     `/api/projects/${projectId}/tasks/${taskId}/journal`,
-  ])
-    expect(
-      (await app.inject({ url: route, headers: oldHeaders })).statusCode,
-    ).toBe(426);
-  expect(
-    (
-      await app.inject({
-        method: 'POST',
-        url,
-        headers: oldHeaders,
-        payload: createLegacyInput(taskId, 2),
-      })
-    ).statusCode,
-  ).toBe(426);
+  ]) {
+    const response = await app.inject({ url: route, headers: oldHeaders });
+    expect(response.statusCode).toBe(426);
+    expect(response.json().code).toBe('JOURNAL_CONTRACT_VERSION_CONFLICT');
+  }
+  const oldNewEffect = await app.inject({
+    method: 'POST',
+    url,
+    headers: oldHeaders,
+    payload: createLegacyInput(taskId, 2),
+  });
+  expect(oldNewEffect.statusCode).toBe(426);
+  expect(oldNewEffect.json().code).toBe('JOURNAL_CONTRACT_VERSION_CONFLICT');
+  const oldGlobal = await app.inject({
+    url,
+    headers: { ...headers(), 'x-leaf-contract-version': '1' },
+  });
+  expect(oldGlobal.statusCode).toBe(426);
+  expect(oldGlobal.json().code).toBe('CONTRACT_VERSION_CONFLICT');
   const retried = await app.inject({
     method: 'POST',
     url,
@@ -745,3 +750,176 @@ it('publishes media-only v2 over HTTP and fails closed on corrupt stored content
     db.close();
   }
 });
+it.each(['kind', 'scope', 'projection', 'bytes', 'count'] as const)(
+  'rejects client media %s without journal, reference or ownership writes',
+  async (scenario) => {
+    const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+    let uploadTaskId = taskId;
+    if (scenario === 'scope') {
+      const tree = app.repository.getTree(projectId, session);
+      const changed = app.repository.applyCommand(
+        projectId,
+        {
+          contractVersion: 2,
+          operationId: randomUUID(),
+          expectedRevision: tree.project.revision,
+          command: {
+            type: 'task.create',
+            title: 'Other media task',
+            parentId: null,
+          },
+        },
+        session,
+      );
+      uploadTaskId = changed.tasks.find(
+        (task) => task.title === 'Other media task',
+      )!.id;
+    }
+    const sizes =
+      scenario === 'bytes'
+        ? [25 * 1024 * 1024, 25 * 1024 * 1024, 1]
+        : scenario === 'count'
+          ? Array<number>(11).fill(1)
+          : [1];
+    const uploaded = [];
+    for (const [n, size] of sizes.entries())
+      uploaded.push(
+        await app.journalMediaRepository.stage({
+          projectId,
+          taskId: uploadTaskId,
+          sessionId: session,
+          uploadId: randomUUID(),
+          kind: 'file',
+          fileName: `file-${n}.txt`,
+          bytes: Buffer.alloc(size, 65 + n),
+        }),
+      );
+    const base = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/journal`,
+      headers: headers(),
+      payload: createInput(taskId),
+    });
+    expect(base.statusCode).toBe(201);
+    const id = base.json().entry.id;
+    const blocks: unknown[] = uploaded.map((media) => ({
+      type: scenario === 'kind' ? 'journalImage' : 'journalFile',
+      attrs: {
+        mediaId: media.id,
+        ...(scenario === 'kind' ? { alt: 'Synthetic' } : {}),
+      },
+    }));
+    if (scenario === 'projection')
+      blocks.unshift({
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'x'.repeat(9999) }],
+      });
+    const content = {
+      format: 'rich-text',
+      documentVersion: 1,
+      doc: { type: 'doc', content: blocks },
+    };
+    const db = openDatabase(join(dir, 'synthetic.sqlite'));
+    try {
+      const capture = () => ({
+        rows: rawTables(db, [...tables, 'journal_entry_media']),
+        media: db
+          .prepare(
+            'SELECT id,homeEntryId,storedSha256,byteLength,length(bytes) AS storedBytes,unreferencedAt FROM journal_media ORDER BY id',
+          )
+          .all(),
+      });
+      const before = capture();
+      for (const method of ['POST', 'PATCH'] as const) {
+        const response = await app.inject({
+          method,
+          url: `/api/projects/${projectId}/journal${method === 'PATCH' ? `/${id}` : ''}`,
+          headers: headers(),
+          payload: {
+            journalContractVersion: 2,
+            operationId: randomUUID(),
+            expectedJournalRevision: 1,
+            ...(method === 'POST' ? { taskId } : {}),
+            workDate: '2024-02-29',
+            content,
+          },
+        });
+        expect(response.statusCode).toBe(
+          scenario === 'kind' || scenario === 'scope' ? 400 : 413,
+        );
+        expect(response.json().code).toBe(
+          scenario === 'kind' || scenario === 'scope'
+            ? 'MEDIA_INVALID'
+            : 'JOURNAL_LIMIT',
+        );
+        expect(capture()).toEqual(before);
+      }
+    } finally {
+      db.close();
+    }
+  },
+);
+it.each(['metadata', 'hash'] as const)(
+  'keeps damaged stored media %s an internal error at publication',
+  async (damage) => {
+    const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+    const media = await app.journalMediaRepository.stage({
+      projectId,
+      taskId,
+      sessionId: session,
+      uploadId: randomUUID(),
+      kind: 'file',
+      fileName: 'valid.txt',
+      bytes: Buffer.from('safe synthetic bytes'),
+    });
+    const db = openDatabase(join(dir, 'synthetic.sqlite'));
+    try {
+      if (damage === 'metadata')
+        db.prepare('UPDATE journal_media SET fileName=? WHERE id=?').run(
+          '../invalid.txt',
+          media.id,
+        );
+      else
+        db.prepare('UPDATE journal_media SET bytes=? WHERE id=?').run(
+          Buffer.alloc(20, 66),
+          media.id,
+        );
+      const before = rawTables(db, [
+        ...tables,
+        'journal_entry_media',
+        'journal_media',
+      ]);
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/projects/${projectId}/journal`,
+        headers: headers(),
+        payload: {
+          ...createInput(taskId),
+          content: {
+            format: 'rich-text',
+            documentVersion: 1,
+            doc: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'journalImage',
+                  attrs: { mediaId: media.id, alt: 'Synthetic' },
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toEqual({
+        code: 'INTERNAL_ERROR',
+        message: 'Не удалось выполнить запрос.',
+      });
+      expect(
+        rawTables(db, [...tables, 'journal_entry_media', 'journal_media']),
+      ).toEqual(before);
+    } finally {
+      db.close();
+    }
+  },
+);

@@ -293,3 +293,48 @@ it('holds normalized image bytes by stored hash and restores without decoding so
     f.close();
   }
 });
+it('does not inspect damaged surviving media during unrelated planning edits but rejects its deletion atomically', async () => {
+  const f = await richFixture();
+  try {
+    const media = await f.stage();
+    f.journal.create(
+      f.project.id,
+      f.input(mediaContent(media.id)),
+      'synthetic-session',
+    );
+    f.db
+      .prepare('UPDATE journal_media SET bytes=NULL WHERE id=?')
+      .run(media.id);
+    const journalTables = [
+      'journal_entries',
+      'journal_entry_media',
+      'journal_media',
+      'journal_state',
+      'journal_operations',
+    ];
+    const journalBefore = rawTables(f.db, journalTables);
+    const updated = f.command({
+      type: 'task.edit',
+      taskId: f.taskId,
+      changes: { title: 'Unrelated planning rename' },
+    });
+    expect(updated.tasks.find((task) => task.id === f.taskId)?.title).toBe(
+      'Unrelated planning rename',
+    );
+    expect(rawTables(f.db, journalTables)).toEqual(journalBefore);
+    expect(
+      f.db
+        .prepare(
+          'SELECT entryCount,mediaCount FROM undo_journal_manifest ORDER BY undoSequence DESC LIMIT 1',
+        )
+        .get(),
+    ).toEqual({ entryCount: 0, mediaCount: 0 });
+    const beforeDelete = rawTables(f.db, tables);
+    expect(() =>
+      f.command({ type: 'task.delete', taskId: f.taskId }),
+    ).toThrow();
+    expect(rawTables(f.db, tables)).toEqual(beforeDelete);
+  } finally {
+    f.close();
+  }
+});

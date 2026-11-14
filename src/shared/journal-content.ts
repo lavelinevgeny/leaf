@@ -6,6 +6,12 @@ import {
   journalUnicodeStringSchema,
   type JournalMedia,
 } from './journal-media-contracts.js';
+/** Resolved document/media semantics, distinct from corrupt/missing server data. */
+export class JournalPublicationError extends Error {
+  constructor(readonly reason: 'media-kind' | 'media-bytes' | 'projection') {
+    super(`Invalid journal publication: ${reason}`);
+  }
+}
 export type JournalMark =
   { type: 'bold' } | { type: 'link'; attrs: { href: string } };
 export type JournalInlineNode =
@@ -276,7 +282,7 @@ function renderDocument(
           throw new Error('Missing journal media metadata');
         }
         if (found.kind !== (node.type === 'journalImage' ? 'image' : 'file'))
-          throw new Error('Journal media kind mismatch');
+          throw new JournalPublicationError('media-kind');
         return `[${found.kind === 'image' ? 'Изображение' : 'Файл'}: ${found.fileName}]`;
       }
     }
@@ -301,11 +307,19 @@ export const journalContentSchema: z.ZodType<JournalContent> =
         documentVersion: z.literal(1),
         doc: journalDocumentSchema,
       })
+      .refine(
+        (content) =>
+          collectJournalMediaIds(content).length <=
+          JOURNAL_MEDIA_LIMITS.entryFiles,
+        {
+          message: 'Too many journal media objects',
+          params: { journalLimit: 'entryFiles' },
+        },
+      )
       .refine((content) => {
         const ids = collectJournalMediaIds(content);
         const text = renderDocument(content.doc, new Map(), true);
         return (
-          ids.length <= 10 &&
           projectionFits(text) &&
           (ids.length > 0 || hasNonemptyText(content.doc))
         );
@@ -331,10 +345,10 @@ export function projectJournalContent(
       return total + item.byteLength;
     }, 0) > JOURNAL_MEDIA_LIMITS.entryBytes
   )
-    throw new Error('Journal media quota exceeded');
+    throw new JournalPublicationError('media-bytes');
   const projected = renderDocument(parsed.doc, byId, false);
   if (!projectionFits(projected))
-    throw new Error('Journal projection too large');
+    throw new JournalPublicationError('projection');
   return projected;
 }
 export function plainTextToJournalDocument(text: string): JournalDocument {

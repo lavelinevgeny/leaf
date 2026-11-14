@@ -92,7 +92,9 @@ export class JournalLifecycle implements JournalLifecycleContract {
     table: 'journal_entries' | 'undo_journal_entries',
     projectId: string,
     undoSequence?: number,
+    removedTaskIds?: readonly string[],
   ): JournalLifecycleEntry[] {
+    if (removedTaskIds?.length === 0) return [];
     const media = new JournalMediaRepository(this.db);
     const rows = this.db
       .prepare(
@@ -101,7 +103,11 @@ export class JournalLifecycle implements JournalLifecycleContract {
       .all(undoSequence ?? projectId) as (JournalEntry & {
       contentJson: string | null;
     })[];
-    return rows.map((row) => {
+    const removed = removedTaskIds ? new Set(removedTaskIds) : undefined;
+    const scopedRows = removed
+      ? rows.filter((row) => removed.has(row.taskId))
+      : rows;
+    return scopedRows.map((row) => {
       const { contentJson, ...plain } = row;
       const entry = validatedEntry(plain);
       const ids = this.db
@@ -139,9 +145,11 @@ export class JournalLifecycle implements JournalLifecycleContract {
     removedTaskIds: readonly string[],
   ): number {
     this.requireTransaction();
-    const removed = new Set(removedTaskIds);
-    const entries = this.entries('journal_entries', projectId).filter((entry) =>
-      removed.has(entry.taskId),
+    const entries = this.entries(
+      'journal_entries',
+      projectId,
+      undefined,
+      removedTaskIds,
     );
     const insert = this.db.prepare(
       `INSERT INTO undo_journal_entries(undoSequence,${columns},contentJson) VALUES (@undoSequence,@id,@projectId,@taskId,@workDate,@body,@createdAt,@updatedAt,@contentJson)`,

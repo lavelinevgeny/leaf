@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   journalContentSchema,
+  JournalPublicationError,
   journalDocumentSchema,
   collectJournalMediaIds,
   projectJournalContent,
@@ -375,4 +376,53 @@ it('counts media by distinct id and enforces entry bytes and final projection si
     rich([paragraph('x'.repeat(9999)), file]),
   );
   expect(() => projectJournalContent(excessive, [metadata])).toThrow();
+});
+
+it('distinguishes resolved publication semantics from missing or corrupt server metadata', () => {
+  const content = journalContentSchema.parse(rich([file]));
+  expect(() =>
+    projectJournalContent(content, [
+      {
+        ...metadata,
+        kind: 'image',
+        mediaType: 'image/webp',
+        width: 1,
+        height: 1,
+      },
+    ]),
+  ).toThrow(expect.objectContaining({ reason: 'media-kind' }));
+  const excessive = journalContentSchema.parse(
+    rich([paragraph('x'.repeat(9999)), file]),
+  );
+  expect(() => projectJournalContent(excessive, [metadata])).toThrow(
+    expect.objectContaining({ reason: 'projection' }),
+  );
+  for (const items of [[], [{ ...metadata, byteLength: -1 }]]) {
+    let failure: unknown;
+    try {
+      projectJournalContent(content, items);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(JournalPublicationError);
+  }
+  const tooMany = journalContentSchema.safeParse(
+    rich(
+      Array.from({ length: 11 }, (_, n) => ({
+        type: 'journalFile',
+        attrs: {
+          mediaId: `${String(n + 1).padStart(8, '0')}-1111-4111-8111-111111111111`,
+        },
+      })),
+    ),
+  );
+  expect(tooMany.success).toBe(false);
+  if (tooMany.success) throw Error('fixture');
+  expect(tooMany.error.issues).toContainEqual(
+    expect.objectContaining({
+      code: 'custom',
+      params: { journalLimit: 'entryFiles' },
+    }),
+  );
 });

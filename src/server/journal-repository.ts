@@ -424,7 +424,7 @@ export class JournalRepository implements JournalRepositoryContract {
         }
         if (!this.allowNewEffects)
           throw new DomainError(
-            'CONTRACT_VERSION_CONFLICT',
+            'JOURNAL_CONTRACT_VERSION_CONFLICT',
             'Версия приложения устарела. Обновите страницу для продолжения. Этот запрос не изменил данные.',
             426,
           );
