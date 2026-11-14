@@ -1,5 +1,13 @@
 # Статус разработки
 
+## C34/D29 — независимое ревью спецификации, 2026-11-14
+
+Завершён независимый review-cycle документационного кандидата `615bbe73a0d712bf6e79c7589deeb5369d47c3d6` относительно `861f37cf4dfe653f711440428716f21f8a78453e`. Три отдельных read-only reviewer проверили точный commit через Git без смены checkout, правок файлов и дополнительных worktree: Standards — PASS, Spec — PASS, Technical/security/data lifecycle — PASS. По каждой оси actionable P1/P2 замечаний нет; исправления [спецификации](superpowers/specs/2026-11-14-journal-media-design.md) и [ADR 016](adr/016-journal-rich-content-media.md) не потребовались. Полные отчёты/переписка в репозиторий не копировались.
+
+Проверено соответствие C34 и границы предложенных D29, обе journal ленты/черновики, exact frozen1 replay, lifecycle2/manifest, BLOB retention/GC, migration/C17, независимость от scheduler, upload guards/limits и адаптация editor focus. PASS `npm run doctor`, итоговый `npm run check:kit` (87 Markdown, 591 local links, три approved references, 10 CPM/4 calendar examples), `git diff --check`, `git diff --cached --check` и `npm run security:staged` (один изменённый index blob, privacy guard и настоящий Gitleaks). Само ревью подтверждает согласованность документов с текущими public source seams, а не выполнение JM01–JM22: приложение, SQL и lockfile не изменены; application tests, native decoder/container, реальный clipboard/IME/zoom и remote CI в этом цикле NOT RUN. Full preflight/history не запускались; external publication gate этим не заявлен.
+
+Продуктовый выбор C34 сохраняется, инженерные D29 по-прежнему предложены и не становятся решениями владельца от PASS агентов. Следующий шаг — проверка письменной спецификации владельцем перед подробным implementation plan. Ветка `feat/journal-media`; также остаются `main` и `docs/task-panel-ux-spec`. Дополнительных worktree нет; merge/push/deployment не выполнялись. S4–S6 и первый релиз не завершены.
+
 ## C34/D29 — спецификация форматированных записей и медиа, 2026-11-14
 
 Владелец выбрал компактный готовый редактор записей с изображениями между абзацами, вставкой из буфера/drop/file picker, ссылками с названием, скачиваемыми файлами, жирным текстом и списками. Ошибки upload сохраняют черновик; видеоплеер и карточки сайтов — отдельный следующий этап. Подготовлены [спецификация](superpowers/specs/2026-11-14-journal-media-design.md) и предложенный [ADR 016](adr/016-journal-rich-content-media.md). C34 отражает согласованный product scope, D29 отдельно обозначает proposed технические решения, ожидающие проверки.
