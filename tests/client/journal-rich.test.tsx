@@ -581,3 +581,37 @@ it.each(['readonly', 'pending'] as const)(
     expect(api.journalUpload).not.toHaveBeenCalled();
   },
 );
+
+it('the actual remove button is a separate Undo step even immediately after adding a pending file', async () => {
+  vi.spyOn(api, 'journalUpload').mockImplementation(
+    () => new Promise(() => {}),
+  );
+  render(<Harness />);
+  const root = await screen.findByRole('textbox', { name: 'Текст записи' });
+  await waitFor(() => expect(controller.projectFeed?.phase).toBe('ready'));
+  act(() => editor().commands.insertContent('Adjacent text'));
+  fireEvent.paste(root, {
+    clipboardData: {
+      files: [new File(['pending bytes'], 'pending.txt')],
+      getData: () => '',
+    },
+  });
+  await screen.findByRole('button', { name: 'Удалить вложение' });
+  const before = editor().getJSON();
+  fireEvent.click(screen.getByRole('button', { name: 'Удалить вложение' }));
+  expect(screen.queryByRole('button', { name: 'Удалить вложение' })).toBeNull();
+  act(() => editor().commands.undo());
+  expect(editor().getJSON()).toEqual(before);
+  expect(
+    await screen.findByRole('button', { name: 'Удалить вложение' }),
+  ).toBeVisible();
+  expect(editor().getText({ blockSeparator: '\n' })).toBe('Adjacent text\n\n');
+  expect([...controller.drafts.values()][0]!.uploads.size).toBe(1);
+  act(() => editor().commands.redo());
+  expect(editor().getText({ blockSeparator: '\n' })).toBe('Adjacent text\n');
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: 'Удалить вложение' }),
+    ).toBeNull(),
+  );
+});

@@ -6,6 +6,7 @@ import {
   useState,
 } from 'react';
 import { Node, type JSONContent } from '@tiptap/core';
+import { closeHistory } from '@tiptap/pm/history';
 import {
   EditorContent,
   useEditor,
@@ -135,6 +136,10 @@ function UploadNode({ node, editor, getPos }: NodeViewProps) {
             editor
               .chain()
               .focus()
+              .command(({ tr }) => {
+                closeHistory(tr);
+                return true;
+              })
               .deleteRange({ from: pos, to: pos + node.nodeSize })
               .run();
         }}

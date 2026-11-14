@@ -3,7 +3,12 @@ import {
   setTaskStatus,
 } from '../helpers/task-panel.js';
 import { type Locator, type Page } from '@playwright/test';
-import { test, expect, createJournalEntry } from '../helpers/journal-e2e.js';
+import {
+  test,
+  expect,
+  createJournalEntry,
+  expectJournalText,
+} from '../helpers/journal-e2e.js';
 import {
   readTree,
   seedOptionalRuntime,
@@ -439,9 +444,9 @@ test('extreme title uses one shell scroll and keyboard text undo and journal sub
   await editor.press('End');
   await editor.press('Enter');
   await editor.pressSequentially('Вторая строка');
-  await expect(editor).toHaveValue('Первая строка\nВторая строка');
+  await expectJournalText(editor, 'Первая строка\nВторая строка');
   await editor.press('Control+Enter');
-  await expect(editor).toHaveValue('');
+  await expectJournalText(editor, '');
   await expect(panel(page).locator('[data-journal-entry-id]')).toHaveCount(1);
   await expectPanelScrollLayout(panel(page), { requireOverflow: true });
   await expect(panel(page).locator('.panel-footer')).toBeHidden();
