@@ -16,6 +16,14 @@ export const JOURNAL_MEDIA_LIMITS = Object.freeze({
   attemptsPerMinute: 60,
   readTimeoutMilliseconds: 30_000,
   decodeTimeoutSeconds: 10,
+  multipartFiles: 1,
+  multipartFields: 2,
+  multipartParts: 3,
+  multipartFieldNameBytes: 32,
+  multipartFieldBytes: 64,
+  multipartHeaderPairs: 32,
+  multipartHeaderBytes: 16 * 1024,
+  gcBatch: 100,
 });
 export const journalUnicodeStringSchema = z
   .string()

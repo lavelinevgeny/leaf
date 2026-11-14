@@ -38,3 +38,8 @@
 Размер SQLite/WAL/backup растёт; D29 ограничивает file/entry/staged/install budgets. Операционная очистка не гарантирует физическое удаление старых страниц и backups. Journal CRUD Undo не добавляется: прежние edit/delete остаются самостоятельными.
 
 Продуктовый выбор C34 уже сделан; этот ADR и спецификация пока не означают готовую функцию, одобренные technical defaults или изменение production storage. Следующий шаг — проверка спецификации владельцем, затем implementation plan и реализация с JM01–JM22 и штатными gates. Никаких remote действий этим ADR не разрешено.
+
+
+## Уточнение хранения при реализации Task 2
+
+Migration005 сохраняется неизменной. Отдельная additive006 добавляет `sourceFileName`: immutable безопасное исходное имя участвует в upload retry identity, а `fileName` картинки получает нормализованное `.webp`. Одного поля недостаточно для различения одинаковых source bytes с разными исходными extensions. Schema5 rows получают backfill из существующего `fileName`; реконструкция отсутствующей source metadata не обещается. Это техническое уточнение D29 в прежнем SQLite store, без изменения продукта или frozen журналов/Undo.

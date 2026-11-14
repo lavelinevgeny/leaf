@@ -82,7 +82,7 @@ function history(db: Database.Database) {
         .all(),
     ]);
 }
-it('upgrades exact historical bytes/sidecars and sequence watermark, activates schema5 and reopens without DDL', () => {
+it('upgrades exact historical bytes/sidecars and sequence watermark, activates schema6 and reopens without DDL', () => {
   const f = fixture();
   try {
     const before = history(f.db);
@@ -91,7 +91,7 @@ it('upgrades exact historical bytes/sidecars and sequence watermark, activates s
     try {
       expect(
         db.prepare('SELECT MAX(version) AS version FROM migrations').get(),
-      ).toEqual({ version: 5 });
+      ).toEqual({ version: 6 });
       expect(history(db)).toEqual(before);
       expect(
         db.prepare('SELECT contentJson FROM journal_entries').all(),
@@ -263,6 +263,43 @@ it('fails closed and rolls back schema5 when an old sidecar contains a foreign k
       expect(
         db.prepare('SELECT MAX(version) AS version FROM migrations').get(),
       ).toEqual({ version: 4 });
+    } finally {
+      db.close();
+    }
+  } finally {
+    f.db.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+it('adds006 to schema5 preserving bytes/history and backfills only saved source names', () => {
+  const f = fixture();
+  try {
+    f.db.exec(readFileSync('migrations/005-journal-media.sql', 'utf8'));
+    f.db.exec('INSERT INTO migrations VALUES (5)');
+    f.db
+      .prepare(
+        "INSERT INTO journal_media(id,uploadId,projectId,taskId,sessionId,fileName,kind,mediaType,sourceByteLength,sourceSha256,byteLength,storedSha256,width,height,createdAt,unreferencedAt,bytes) VALUES ('media','upload',?,?,'synthetic','saved.webp','image','image/webp',1,?,1,?,1,1,'created','created',?)",
+      )
+      .run(projectId, taskId, 'a'.repeat(64), 'b'.repeat(64), Buffer.from('x'));
+    const before = history(f.db);
+    f.db.close();
+    const db = openDatabase(f.path);
+    try {
+      expect(history(db)).toEqual(before);
+      expect(
+        db
+          .prepare(
+            'SELECT sourceFileName,fileName,hex(bytes) AS bytes FROM journal_media',
+          )
+          .get(),
+      ).toEqual({
+        sourceFileName: 'saved.webp',
+        fileName: 'saved.webp',
+        bytes: '78',
+      });
+      expect(
+        db.prepare('SELECT max(version) AS version FROM migrations').get(),
+      ).toEqual({ version: 6 });
     } finally {
       db.close();
     }

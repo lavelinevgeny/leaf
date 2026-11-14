@@ -113,10 +113,20 @@ vi.mock('../src/server/app.js', async (original) => {
           : {}),
       });
       state.app = app;
-      app.addHook('onClose', async () => {
-        state.closed = true;
-        expect(existsSync(state.path)).toBe(true);
-      });
+      // buildApp returns a ready app; encapsulated plugins prohibit adding hooks
+      // after ready. Observe the public close boundary without changing startup.
+      const close = app.close.bind(app);
+      let closing: Promise<void> | undefined;
+      // This harness exercises close()'s Promise overload only.
+      vi.spyOn(app, 'close').mockImplementation((() => {
+        closing ??= (async () => {
+          expect(existsSync(state.path)).toBe(true);
+          await close();
+          expect(existsSync(state.path)).toBe(true);
+          state.closed = true;
+        })();
+        return closing;
+      }) as typeof app.close);
       vi.spyOn(app, 'listen').mockImplementation(async () => {
         state.listenCalls++;
         if (state.failure === 'listen')

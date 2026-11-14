@@ -89,6 +89,7 @@ it('upgrades schema3 additively preserving historical byte strings and v0 then r
         { version: 3 },
         { version: 4 },
         { version: 5 },
+        { version: 6 },
       ]);
       const schema = db
         .prepare('SELECT type,name,sql FROM sqlite_schema ORDER BY name')

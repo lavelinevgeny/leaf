@@ -49,7 +49,7 @@ it('backs up committed WAL state consistently while a writer remains open', asyn
         snapshot
           .prepare('SELECT MAX(version) AS version FROM migrations')
           .get(),
-      ).toEqual({ version: 5 });
+      ).toEqual({ version: 6 });
     } finally {
       snapshot.close();
     }

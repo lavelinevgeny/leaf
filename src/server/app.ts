@@ -18,6 +18,11 @@ import { Auth, SESSION_SECONDS } from './auth.js';
 import { openDatabase } from './database.js';
 import { Repository } from './repository.js';
 import { JournalRepository } from './journal-repository.js';
+import { JournalMediaRepository } from './journal-media-repository.js';
+import {
+  JOURNAL_MEDIA_UPLOAD_ROUTE,
+  registerJournalMediaRoutes,
+} from './journal-media-routes.js';
 import {
   journalCreateSchema,
   journalUpdateSchema,
@@ -38,6 +43,7 @@ declare module 'fastify' {
     auth: Auth;
     repository: Repository;
     journalRepository: JournalRepository;
+    journalMediaRepository: JournalMediaRepository;
   }
 }
 export type LeafApp = FastifyInstance;
@@ -72,6 +78,10 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
   app.decorate('auth', new Auth(db, options.now, options.demoMode));
   app.decorate('repository', new Repository(db, options.now));
   app.decorate('journalRepository', new JournalRepository(db, options.now));
+  app.decorate(
+    'journalMediaRepository',
+    new JournalMediaRepository(db, options.now),
+  );
   app.addHook('onClose', () => {
     db.close();
   });
@@ -85,6 +95,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
   const demoLimits = options.demoMode ? new DemoLimits(options.now) : undefined;
   const demoSession = options.demoMode ? { demoMode: true } : {};
   try {
+    app.journalMediaRepository.collectGarbage();
     if (options.demoMode) {
       await app.auth.setup(randomBytes(32).toString('base64url'));
       seedDemo(db, app.repository, options.now ?? Date.now);
@@ -96,7 +107,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
         .header('Referrer-Policy', 'no-referrer')
         .header(
           'Content-Security-Policy',
-          "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+          "default-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         );
       // Fastify resolves percent-encoded paths before selecting a route.
       // Apply API policy to that registered route, never the raw URL.
@@ -113,6 +124,10 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
             403,
           );
         if (
+          !(
+            request.method === 'POST' &&
+            request.routeOptions.url === JOURNAL_MEDIA_UPLOAD_ROUTE
+          ) &&
           request.headers['content-type']
             ?.split(';')[0]
             ?.trim()
@@ -150,6 +165,13 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
         code: 'INTERNAL_ERROR',
         message: 'Не удалось выполнить запрос.',
       });
+    });
+    registerJournalMediaRoutes(app, {
+      repository: app.journalMediaRepository,
+      requireSession,
+      requireContract: requireContractVersion,
+      demoMode: options.demoMode ?? false,
+      now: options.now ?? Date.now,
     });
     app.get('/healthz', () => ({ ok: true }));
     app.get('/readyz', (_request, reply) => {

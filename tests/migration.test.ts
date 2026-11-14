@@ -48,6 +48,7 @@ it('creates 1→2→3→4→5 fresh and reopens5 without approval', () => {
     { version: 3 },
     { version: 4 },
     { version: 5 },
+    { version: 6 },
   ]);
   db.close();
   db = openDatabase(path);
@@ -81,6 +82,7 @@ it('refuses legacy startup before journal/DDL changes, then confirms2→3→4→
     { version: 3 },
     { version: 4 },
     { version: 5 },
+    { version: 6 },
   ]);
   active.close();
 });
