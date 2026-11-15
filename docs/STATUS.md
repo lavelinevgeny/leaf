@@ -1,5 +1,13 @@
 # Статус разработки
 
+## 2026-11-15 — исключения dev watcher после ENOSPC
+
+Vite наблюдал весь checkout, включая временные архивы и вложенные worktree. В `server.watch.ignored` добавлены исключения для `.tmp`, `.superpowers`, worktree, локальных данных/агентских каталогов, build и browser/test artifacts. Системные лимиты не менялись; содержимое существующих runtime/архивов/логов не исследовалось и не удалялось. Инструкция перезапуска с сохранением RAM-черновиков и прежних runtime/port параметров добавлена в BOOTSTRAP.
+
+Регрессия создаёт собственный внешний synthetic root с 23 исключаемыми каталогами, запускает настоящий Vite watcher, проверяет отсутствие рекурсивных наблюдателей и событие изменения исходника. RED до исправления подтверждён обходом `.tmp`. Нативная попытка после исправления получила ENOSPC даже для трёх synthetic путей: общий лимит уже исчерпан, прежний пользовательский dev-процесс не останавливался агентом. Test-only polling делает проверку traversal/change events независимой от занятого host inotify; в приложении polling не включён. После перезапуска текущего dev-сервера требуется подтвердить применение исключений в пользовательском сеансе.
+
+PASS: `npx vitest run tests/dev.test.ts` —2/2 (включая прежние proxy/auth/origin/graceful shutdown), typecheck, lint, format:check и production build; прежнее предупреждение client chunk >500kB остаётся. Полные application suites/E2E и нативный watcher после пользовательского перезапуска не запускались. Затронуты только dev config, профильный тест и документация; push/deploy не выполнялись.
+
 ## C34/D29 — итоговая передача, 2026-11-15
 
 Реализация завершена в `feat/journal-media`; исходный whole-branch Standards review PASS, scoped final review source `053e001` — Spec PASS / Quality Approved, оба P3 ADDRESSED, новых Critical/Important нет. Дополнительный Minor о точной исторической классификации исправлен только в документации: у `9852564` был Spec PARTIAL / Quality Approved with nits, у исправленного source — PASS. Этот handoff не меняет приложение, тесты, SQL или зависимости.
