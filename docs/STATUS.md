@@ -1,5 +1,13 @@
 # Статус разработки
 
+## 2026-11-15 — источник исчерпания inotify и временный dev запуск
+
+Повторный ENOSPC после Vite exclusions подтвердил исчерпание общего пула, включая исходные CSS. Диагностика только `/proc` metadata (PID/executable category/count; без command line/env/содержимого файлов) выявила VS Code Server с более521000 registrations при `max_user_watches=524288`. Поэтому один перезапуск Vite не освобождает основной занятый пул. Сообщение API ready не подтверждает frontend watching.
+
+Создан новый локальный `.vscode/settings.json` с `files.watcherExclude` для `.tmp`, `.superpowers`, worktree и node_modules. Ранее файла не было; он остаётся ignored и не добавляется в публичный Git. Основной процесс редактора пока не освободил наблюдатели; требуется применение настроек на уровне фактически открытого workspace/workspace folder и Reload Window. Если leaf только вложена в открытого родителя, её `.vscode` не задаёт настройки родителя. Системные лимиты и процессы владельца не менялись.
+
+PASS: изолированный probe настоящего текущего Vite config с shell-only `CHOKIDAR_USEPOLLING=1 CHOKIDAR_INTERVAL=500`, без test-only override watcher options: source change доставлен, `.tmp` не обходится, watcher errors0; synthetic root закрыт/удалён. Это проверенный временный запуск при занятом inotify, не утверждение о восстановлении native watcher. BOOTSTRAP содержит workspace exclusions, Reload Window и session-only polling с возвратом к native после освобождения пула. Application/source/tests не менялись; полные application suites не повторялись. Подтверждение native работы после действий в редакторе остаётся открытым.
+
 ## 2026-11-15 — исключения dev watcher после ENOSPC
 
 Vite наблюдал весь checkout, включая временные архивы и вложенные worktree. В `server.watch.ignored` добавлены исключения для `.tmp`, `.superpowers`, worktree, локальных данных/агентских каталогов, build и browser/test artifacts. Системные лимиты не менялись; содержимое существующих runtime/архивов/логов не исследовалось и не удалялось. Инструкция перезапуска с сохранением RAM-черновиков и прежних runtime/port параметров добавлена в BOOTSTRAP.

@@ -114,6 +114,28 @@ E2E запускает реальные собранные серверные п
 
 Vite исключает из file watching временные каталоги, worktree, локальные данные и результаты сборок/тестов. При `ENOSPC: System limit for number of file watchers reached` сохраните нужные RAM-черновики, остановите dev-сервер через Ctrl+C и повторите прежнюю команду запуска с теми же параметрами `LEAF_DATA_DIR`/портов: старый процесс должен освободить наблюдатели, прежде чем новый применит исключения. Само сообщение не означает нехватку места на диске. Если ошибка остаётся, проверьте другие dev-процессы, использующие общий пользовательский лимит inotify.
 
+Если лимит занимает VS Code, задайте исключения **в настройках открытого workspace/его workspace folder** и выполните `Developer: Reload Window`. Если leaf — только вложенная папка открытого родителя, её собственная `.vscode` не задаёт настройки родительского workspace. Сохраните нужные черновики до перезагрузки окна. Минимальные исключения для временных архивов и вложенных checkout ([VS Code ENOSPC](https://code.visualstudio.com/docs/setup/linux), [workspace settings](https://code.visualstudio.com/docs/configure/settings)):
+
+```json
+{
+  "files.watcherExclude": {
+    "**/.tmp/**": true,
+    "**/.superpowers/**": true,
+    "**/.worktrees/**": true,
+    "**/worktrees/**": true,
+    "**/node_modules/**": true
+  }
+}
+```
+
+Для временного запуска Vite без inotify задайте в текущем shell:
+
+```sh
+export CHOKIDAR_USEPOLLING=1 CHOKIDAR_INTERVAL=500
+```
+
+Затем повторите прежнюю dev-команду с теми же runtime/port параметрами. Polling проверяет файлы каждые500ms, увеличивает число filesystem обращений и может задерживать обновление до следующего опроса. После освобождения пула выполните `unset CHOKIDAR_USEPOLLING CHOKIDAR_INTERVAL` и перезапустите dev-сервер для возврата к native watching. Это настройка текущего shell; серверный Node watch и production runtime не меняются. [Vite server.watch](https://vite.dev/config/server-options.html#server-watch) описывает polling и его нагрузку.
+
 Новая пустая база последовательно применяет 001→002→003→004. Schema3 получает только аддитивную004 журнала, повторное открытие schema4 не выполняет DDL и не требует подтверждения. Существующая schema2 требует отдельного согласия на C17-конвертацию. Обычный startup отказывает до изменяющих PRAGMA/DDL. Schema1 и неизвестные версии отклоняются до промежуточных миграций и очистки истории.
 
 Владелец останавливает сервер и сохраняет согласованный приватный backup через `npm run db:backup -- /absolute/external/new-snapshot.sqlite`. Затем на той же установке выполняет:
