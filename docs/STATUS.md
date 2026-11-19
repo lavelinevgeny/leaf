@@ -1,5 +1,13 @@
 # Статус разработки
 
+## 2026-11-20 — устранение блокеров CI интеграции journal-media
+
+На `8ed24c0` ordinary clean clone прошёл полный локальный gate: preflight (kit56/56 и privacy/Gitleaks), verify (92файла/1698tests, typecheck/lint/build), format:check, check:package и E2E452/452 за11.9min без retries/skips. Независимый review последних dev changes не нашёл merge blockers. Прямой push `main` отклонён repository rules: необходим PR и `app`/`kit`. Ветка отправлена, создан PR18; настройки защиты сохранены. Remote `kit` PASS в обоих событиях.
+
+Remote `app` выявил test-driver failures: первый push job не дождался готовности dev-сервера в30 коротких попыток; его повтор прошёл verify, но E2E451/452 выявил визуальную постановку курсора перед hanging spaces вместо точного конца текста. Отдельный PR job прошёл444 E2E без failures и был остановлен общим20min лимитом. Эти результаты не объявляются успешным CI; слияние remote остаётся заблокировано.
+
+Исправлены только verification inputs: dev test опрашивает настоящий `/readyz` с ограничением10s вместо примерно1.5s; browser driver сначала проверяет исходный текст и ставит DOM selection в точный конец последнего абзаца перед настоящим Enter, сохраняя exact whitespace/body/revision assertions; общий CI job получает30min для полного набора. Приложение, private boundaries, retry policy тестов, SQL, зависимости и scheduler не меняются. На момент записи focused/full проверки исправленного кандидата и повторный CI ещё предстоят. После их успеха требуется обычное слияние PR, синхронизация main и проверка `app`/`kit` точного merge commit; deployment/release не выполняются.
+
 ## 2026-11-20 — подготовка разрешённой интеграции journal-media в main
 
 Владелец разрешил слияние `feat/journal-media` в `main` и отправку `main` в существующий remote. Исходный кандидат `4caadfe`; рабочее дерево чистое, `main` и обновлённый `origin/main` являются его предками. Интеграция возможна fast-forward без merge commit. Локальный `main` уже содержит30 коммитов сверх `origin/main`; отправка включает их вместе с16 коммитами journal-media. Приложение, SQL, зависимости и scheduling semantics на этом этапе не меняются.

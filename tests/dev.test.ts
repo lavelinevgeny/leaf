@@ -163,27 +163,25 @@ it('dev proxies a custom server port, enforces browser origin and stops both chi
       });
       current.once('close', resolve);
     });
-    let ready = false;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      if (failed || current.exitCode !== null || current.signalCode !== null)
-        throw new Error('Dev process exited early');
-      try {
-        if (
-          (
-            await fetch(`${devOrigin}/readyz`, {
-              signal: AbortSignal.timeout(200),
-            })
-          ).ok
-        ) {
-          ready = true;
-          break;
-        }
-      } catch {
-        /* Real process startup. */
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    expect(ready).toBe(true);
+    // Wait for actual readiness; cold CI startup can exceed the old 1.5s budget.
+    await expect
+      .poll(
+        async () => {
+          if (failed || current.exitCode !== null || current.signalCode !== null)
+            throw new Error('Dev process exited early');
+          try {
+            return (
+              await fetch(`${devOrigin}/readyz`, {
+                signal: AbortSignal.timeout(200),
+              })
+            ).ok;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 10_000, interval: 50 },
+      )
+      .toBe(true);
     expect((await fetch(devOrigin)).status).toBe(200);
     expect((await fetch(`${devOrigin}/api/projects`)).status).toBe(401);
     expect(

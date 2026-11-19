@@ -87,11 +87,18 @@ test('work progress keeps Enter local, saves the exact backdated body once and p
   await date.fill('29.02.2024');
   const original = '  Синтетический отчёт\n\n  Работа и сведения  \n';
   await body.fill(original.slice(0, -1));
-  // Contenteditable End stops at the visual edge before hanging spaces.
-  // Move beyond the two hanging spaces before appending a newline.
-  await body.press('Control+End');
-  await body.press('ArrowRight');
-  await body.press('ArrowRight');
+  await expectJournalText(body, original.slice(0, -1));
+  // Select the literal document end, including hanging spaces, before real Enter.
+  // Visual End/ArrowRight navigation differs between browser environments.
+  await body.evaluate((node) => {
+    const paragraph = node.querySelector('p:last-child')!;
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(false);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
   await body.press('Enter');
   await expectJournalText(body, original);
   expect(
