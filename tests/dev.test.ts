@@ -167,7 +167,11 @@ it('dev proxies a custom server port, enforces browser origin and stops both chi
     await expect
       .poll(
         async () => {
-          if (failed || current.exitCode !== null || current.signalCode !== null)
+          if (
+            failed ||
+            current.exitCode !== null ||
+            current.signalCode !== null
+          )
             throw new Error('Dev process exited early');
           try {
             return (
