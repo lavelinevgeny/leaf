@@ -1,5 +1,11 @@
 # Статус разработки
 
+## 2026-11-20 — ожидание клиентского подтверждения в settings E2E
+
+Точный `2ef9760` прошёл повторный полный локальный gate: preflight/verify1698/format/package и E2E452/452 за11.3min. Remote PR `app` и оба `kit` PASS. Отдельный push `app` завершился E2E451/452: прежние dev/Enter failures устранены, но C20 driver отправил Escape после HTTP200 до перехода клиента в clean settings state. `ProjectControls` правильно отклонил закрытие при dirty/disabled; последующее открытие rename не нашло меню. Этот отказ не переименовывается в PASS успешного PR job.
+
+В `196eb0a` изменён только C20 browser driver: после exact retry и финального save он ожидает enabled timezone и отсутствие discard, затем проверяет закрытие настоящим Escape и возврат фокуса opener. Данные, exact envelope,409/revision/Undo/restart и число writes проверяются прежними assertions. Нет новых задержек/retries/timeout, app source или scheduling изменений. Независимый exact-commit review PASS; профильный actual-server сценарий20/20 PASS в обоих viewport за53.9s. Форматирование, diff и staged privacy/Gitleaks PASS. После этой записи полный gate нового кандидата, повторный push/CI и remote merge ещё предстоят; deployment/release не выполнялись.
+
 ## 2026-11-20 — устранение блокеров CI интеграции journal-media
 
 На `8ed24c0` ordinary clean clone прошёл полный локальный gate: preflight (kit56/56 и privacy/Gitleaks), verify (92файла/1698tests, typecheck/lint/build), format:check, check:package и E2E452/452 за11.9min без retries/skips. Независимый review последних dev changes не нашёл merge blockers. Прямой push `main` отклонён repository rules: необходим PR и `app`/`kit`. Ветка отправлена, создан PR18; настройки защиты сохранены. Remote `kit` PASS в обоих событиях.
