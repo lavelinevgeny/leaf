@@ -1,5 +1,13 @@
 # Статус разработки
 
+## 2026-11-20 — подготовка разрешённой интеграции journal-media в main
+
+Владелец разрешил слияние `feat/journal-media` в `main` и отправку `main` в существующий remote. Исходный кандидат `4caadfe`; рабочее дерево чистое, `main` и обновлённый `origin/main` являются его предками. Интеграция возможна fast-forward без merge commit. Локальный `main` уже содержит30 коммитов сверх `origin/main`; отправка включает их вместе с16 коммитами journal-media. Приложение, SQL, зависимости и scheduling semantics на этом этапе не меняются.
+
+PASS: `npm run doctor`, fetch remote и `git diff --check`. Owner-checkout `npm run preflight` остановился на ignored локальных агентских файлах и временных артефактах; они не открывались и не удалялись вручную, guard не ослаблялся. Ordinary clean clone точного `4caadfe` с обычными hooks и lockfile install прошёл полный `npm run preflight`: kit56/56, workspace/index/history/metadata privacy и настоящий Gitleaks PASS.
+
+После этой документационной записи окончательный кандидат должен пройти полный последовательный gate из DEPLOYMENT: preflight, verify, format:check, check:package и test:e2e. На момент записи application gate нового кандидата, merge, push и remote `app`/`kit` ещё не выполнены; результаты передаются владельцу отдельно. Контейнерная/физическая IME приёмка и S4–S6 остаются открытыми. Deployment и release этим поручением не разрешены.
+
 ## 2026-11-15 — источник исчерпания inotify и временный dev запуск
 
 Повторный ENOSPC после Vite exclusions подтвердил исчерпание общего пула, включая исходные CSS. Диагностика только `/proc` metadata (PID/executable category/count; без command line/env/содержимого файлов) выявила VS Code Server с более521000 registrations при `max_user_watches=524288`. Поэтому один перезапуск Vite не освобождает основной занятый пул. Сообщение API ready не подтверждает frontend watching.
