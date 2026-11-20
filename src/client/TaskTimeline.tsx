@@ -11,7 +11,7 @@ import {
 } from 'react';
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { treeRows } from './tree-view.js';
-import { TaskTree, type TreeAction } from './TaskTree.js';
+import { TaskTree, dependencySlotWidth, type TreeAction } from './TaskTree.js';
 import type { AddContext } from './QuickAdd.js';
 import {
   draftTaskId,
@@ -64,6 +64,7 @@ interface Props {
   onToggle: (id: string) => void;
   onSelect: (task: Task) => boolean | void;
   onAction: (action: TreeAction, task: Task) => boolean | void;
+  dependencyBlockedReason?: string | undefined;
   onPredecessors?: ((task: Task, trigger: HTMLElement) => void) | undefined;
   onPlan: (task: Task, kind: PlanGestureKind, target: string) => void;
   disabled: boolean;
@@ -94,6 +95,7 @@ export function TaskTimeline({
   onAction,
   onPlan,
   onPredecessors,
+  dependencyBlockedReason,
   disabled,
   show,
   reveal,
@@ -103,6 +105,9 @@ export function TaskTimeline({
   draft,
   filter = emptyTaskFilter,
 }: Props) {
+  const [keyboardHint, setKeyboardHint] = useState<'row' | 'input' | null>(
+    null,
+  );
   const projection = useMemo(
     () => filterTasks(tree.tasks, filter),
     [tree.tasks, filter],
@@ -279,6 +284,9 @@ export function TaskTimeline({
   };
   const treeProps = {
     tasks: tree.tasks,
+    dependencies: tree.dependencies,
+    onDependencies: onPredecessors,
+    dependencyBlockedReason,
     rows,
     schedule: tree.schedule,
     selectedId,
@@ -295,6 +303,9 @@ export function TaskTimeline({
       className="task-timeline"
       style={
         {
+          '--leaf-dependency-slot-width': dependencySlotWidth(
+            tree.dependencies,
+          ),
           '--tree-width': `${width}px`,
           '--plan-header-height': `${HEADER_HEIGHT}px`,
           '--plan-row-height': `${ROW_HEIGHT}px`,
@@ -304,14 +315,18 @@ export function TaskTimeline({
       <div className="gantt-toolbar">
         {viewControl}
         {projection.active && (
-          <span role="status" className="filter-results">
+          <span
+            role="status"
+            className="filter-results"
+            title={`${strings.taskMatchCount} ${projection.matchIds.size}`}
+          >
             {strings.taskMatchCount} {projection.matchIds.size}
           </span>
         )}
         {show && (
           <div className="gantt-scale-controls">
             <label>
-              {strings.scale}
+              <span className="gantt-scale-label">{strings.scale}</span>
               <select
                 aria-label={strings.scale}
                 value={scale}
@@ -377,12 +392,42 @@ export function TaskTimeline({
         onScroll={captureView}
       >
         <div className={`timeline-columns${show ? '' : ' list-view'}`}>
-          <div className="timeline-tree">
+          <div
+            className="timeline-tree"
+            onFocusCapture={(event) =>
+              setKeyboardHint(
+                event.target.matches('[role="treeitem"]')
+                  ? 'row'
+                  : event.target.id === 'quick-task'
+                    ? 'input'
+                    : null,
+              )
+            }
+            onBlurCapture={() => setKeyboardHint(null)}
+            onKeyDownCapture={(event) => {
+              if (
+                event.key === 'Escape' &&
+                event.target instanceof HTMLElement &&
+                event.target.id === 'quick-task'
+              )
+                setKeyboardHint(null);
+            }}
+          >
             <div className="timeline-heading">
-              {strings.title}
-              <span>
-                {strings.start} / {strings.finish}
-              </span>
+              <div className="timeline-heading-labels">
+                <span>{strings.title}</span>
+                <span>
+                  {strings.start} / {strings.finish}
+                </span>
+              </div>
+              <p className="tree-keyboard-hint">
+                {active &&
+                  (keyboardHint === 'row'
+                    ? strings.treeKeyboardHint
+                    : keyboardHint === 'input'
+                      ? `${strings.quickKeyboardHint} · ${strings.quickCancelHint}`
+                      : '')}
+              </p>
             </div>
             <TaskTree {...treeProps} onJournal={onJournal} />
             {projection.active &&

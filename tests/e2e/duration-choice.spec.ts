@@ -122,6 +122,15 @@ test('cancels stale duration choice when a background command changes the revisi
       tree.tasks.find((task) => task.id === taskId),
     );
     expect(mutations).toBe(1);
+    // The undated new draft may reveal today, outside the fixture's October interval.
+    await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
+    await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Показать на Ганте', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Закрыть панель', exact: true })
+      .click();
     await page
       .getByRole('button', { name: /Работа A, 2026/ })
       .press('Shift+ArrowRight');

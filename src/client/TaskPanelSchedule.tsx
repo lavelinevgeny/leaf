@@ -68,9 +68,11 @@ export function TaskPanelSchedule({
   const anchor = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
   const fields = useRef<PlanFieldsHandle>(null);
+  const requestedField = useRef<keyof SourceFields | null>(null);
   const today = useProjectToday(project.timezone);
   function close(cancel = false) {
     if (cancelDisabled) return;
+    requestedField.current = null;
     // Complete blur before resetting raw buffers, so it cannot restore cancelled input.
     anchor.current?.focus({ preventScroll: true });
     if (cancel) {
@@ -82,6 +84,7 @@ export function TaskPanelSchedule({
   const latestClose = useRef(close);
   latestClose.current = close;
   function closeSaved() {
+    requestedField.current = null;
     const restore =
       popup.current?.contains(document.activeElement) ||
       document.activeElement === document.body;
@@ -92,8 +95,11 @@ export function TaskPanelSchedule({
     closeSaved,
     finishInput: () => fields.current?.finishInput() ?? true,
     focusField(field) {
-      setOpen(true);
-      requestAnimationFrame(() => fields.current?.focusField(field));
+      if (open) fields.current?.focusField(field);
+      else {
+        requestedField.current = field;
+        setOpen(true);
+      }
     },
   }));
   useLayoutEffect(() => {
@@ -109,9 +115,13 @@ export function TaskPanelSchedule({
       node.style.top = `${Math.max(12, Math.min(rect.bottom + 8, window.innerHeight - node.offsetHeight - 12))}px`;
     };
     position();
-    node
-      .querySelector<HTMLInputElement>('input[type="text"]')
-      ?.focus({ preventScroll: true });
+    const field = requestedField.current;
+    requestedField.current = null;
+    if (field) fields.current?.focusField(field);
+    else
+      node
+        .querySelector<HTMLInputElement>('input[type="text"]')
+        ?.focus({ preventScroll: true });
     const observer =
       typeof ResizeObserver === 'undefined'
         ? null
@@ -257,6 +267,7 @@ export function TaskPanelSchedule({
             task={{ status: 'doing' }}
             plan={plan}
             calendar={project.calendarType}
+            timezone={project.timezone}
             summary={false}
             disabled={!!disabledReason}
             compact

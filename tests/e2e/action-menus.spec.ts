@@ -41,7 +41,7 @@ async function documentWidth(page: Page) {
 // C30: row quick actions replace the row menu. Hidden actions never
 // intercept a click; shown ones overlay the date without moving the row.
 function actionsOf(row: Locator) {
-  return row.locator('.task-row-actions-inner');
+  return row.locator('.task-row-actions-secondary');
 }
 async function hitsItself(button: Locator) {
   return button.evaluate((node) => {
@@ -90,8 +90,8 @@ test('Q04/Q05 row quick actions overlay the date without shifting rows', async (
   await expect(date).toHaveCSS('visibility', 'hidden');
   expect(await rects(rows)).toEqual(before);
   await row.focus();
-  await expect(actionsOf(row)).toHaveCSS('opacity', '0');
-  await expect(date).toHaveCSS('visibility', 'visible');
+  await expect(actionsOf(row)).toHaveCSS('opacity', '1');
+  await expect(date).toHaveCSS('visibility', 'hidden');
 });
 
 test('Q04 visible row actions keep rows exactly 38px in the main and subtask trees', async ({
@@ -366,6 +366,7 @@ test('Q01 rows offer subtask and entry actions without a row menu', async ({
   const actions = (title: string) => [
     `Добавить подзадачу: ${title}`,
     `Добавить запись: ${title}`,
+    `Зависимости: ${title}`,
   ];
   await page.getByRole('button', { name: 'Список', exact: true }).click();
   expect(await rowButtons(row)).toEqual(actions('Без дат'));
@@ -421,7 +422,9 @@ test('U10 date column heading aligns with row dates', async ({
     await page.getByRole('button', { name: view, exact: true }).click();
     await expect(row).toBeVisible();
     const edges = await page.evaluate((id) => {
-      const heading = document.querySelector('.timeline-heading > span')!;
+      const heading = document.querySelector(
+        '.timeline-heading-labels > span:last-child',
+      )!;
       const date = document.querySelector(
         `[role="treeitem"][data-task-id="${id}"] .task-date`,
       )!;

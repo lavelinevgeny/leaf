@@ -16,6 +16,38 @@ let dir: string;
 let projectId: string;
 let cookie: string;
 const origin = 'http://127.0.0.1:3000';
+it('accepts optional create-only successors without changing old canonical commands or DTOs', () => {
+  const old = { type: 'task.create', title: 'T', parentId: null };
+  const id = '22222222-2222-4222-8222-222222222222';
+  expect(commandV2Schema.parse(old)).not.toHaveProperty('successorIds');
+  for (const successorIds of [[], [id]])
+    expect(commandV2Schema.safeParse({ ...old, successorIds }).success).toBe(
+      true,
+    );
+  for (const successorIds of [null, 'bad', ['bad'], [id, id]])
+    expect(commandV2Schema.safeParse({ ...old, successorIds }).success).toBe(
+      false,
+    );
+  expect(
+    commandV2Schema.safeParse({
+      type: 'task.edit',
+      taskId: id,
+      changes: { successorIds: [] },
+    }).success,
+  ).toBe(false);
+  expect(taskV2Schema.shape).not.toHaveProperty('successorIds');
+});
+
+function rows() {
+  return [
+    'projects',
+    'tasks',
+    'dependencies',
+    'task_schedule_provenance',
+    'undo_snapshots',
+    'operations',
+  ].map((table) => db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+}
 it('accepts command-only relations, rejecting duplicate IDs and DTO leakage', () => {
   const a = '22222222-2222-4222-8222-222222222222';
   const b = '22222222-2222-4222-8222-222222222223';
@@ -67,6 +99,147 @@ afterEach(async () => {
   await app.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+it.each(
+  [
+    null,
+    'bad',
+    ['bad'],
+    [
+      '22222222-2222-4222-8222-222222222222',
+      '22222222-2222-4222-8222-222222222222',
+    ],
+  ].map((successorIds) => ({ successorIds })),
+)(
+  'strict HTTP create rejects malformed or duplicate successors %j without writes',
+  async ({ successorIds }) => {
+    const saved = rows();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/commands`,
+      headers: { origin, cookie, 'x-leaf-contract-version': '2' },
+      payload: {
+        contractVersion: 2,
+        expectedRevision: 0,
+        operationId: randomUUID(),
+        command: {
+          type: 'task.create',
+          title: 'T',
+          parentId: null,
+          successorIds,
+        },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(rows()).toEqual(saved);
+  },
+);
+
+it.each(['absent', 'empty', 'mixed'] as const)(
+  'HTTP %s create preserves canonical receipts across restart, rejects changed replay and undoes once',
+  async (kind) => {
+    const send = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/projects/${projectId}/commands`,
+        headers: { origin, cookie, 'x-leaf-contract-version': '2' },
+        payload,
+      });
+    const first = await send({
+      contractVersion: 2,
+      expectedRevision: 0,
+      operationId: randomUUID(),
+      command: {
+        type: 'task.create',
+        title: 'A',
+        parentId: null,
+        inputStart: '2026-11-09',
+        inputFinish: '2026-11-09',
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    const a = first.json().tasks[0].id as string;
+    const seed = await send({
+      contractVersion: 2,
+      expectedRevision: 1,
+      operationId: randomUUID(),
+      command: {
+        type: 'task.create',
+        title: 'B',
+        parentId: null,
+        inputStart: '2026-11-09',
+        inputFinish: '2026-11-10',
+      },
+    });
+    expect(seed.statusCode).toBe(200);
+    const b = seed
+      .json()
+      .tasks.find((item: { title: string }) => item.title === 'B').id as string;
+    const payload = {
+      contractVersion: 2,
+      expectedRevision: 2,
+      operationId: randomUUID(),
+      command: {
+        type: 'task.create',
+        title: 'T',
+        parentId: null,
+        inputStart: '2026-11-09',
+        inputFinish: '2026-11-10',
+        ...(kind === 'empty' ? { successorIds: [], predecessorIds: [] } : {}),
+        ...(kind === 'mixed' ? { successorIds: [b], predecessorIds: [a] } : {}),
+      },
+    };
+    const created = await send(payload);
+    expect(created.statusCode).toBe(200);
+    expect(created.json().dependencies).toHaveLength(kind === 'mixed' ? 2 : 0);
+    const receipt = db
+      .prepare('SELECT payload FROM operations WHERE operationId=?')
+      .get(payload.operationId) as { payload: string };
+    const stored = JSON.parse(receipt.payload).command;
+    if (kind === 'absent') expect(stored).not.toHaveProperty('successorIds');
+    else expect(stored.successorIds).toEqual(payload.command.successorIds);
+    const saved = rows();
+    expect((await send(payload)).body).toBe(created.body);
+    await app.close();
+    app = await buildApp({
+      databasePath: join(dir, 'synthetic.sqlite'),
+      publicOrigin: origin,
+    });
+    expect((await send(payload)).body).toBe(created.body);
+    expect(rows()).toEqual(saved);
+    const changed = await send({
+      ...payload,
+      command: {
+        ...payload.command,
+        successorIds: kind === 'mixed' ? [] : [b],
+      },
+    });
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json().code).toBe('OPERATION_REUSED');
+    if (kind === 'absent') {
+      const explicitEmpty = await send({
+        ...payload,
+        command: { ...payload.command, successorIds: [] },
+      });
+      expect(explicitEmpty.statusCode).toBe(409);
+      expect(explicitEmpty.json().code).toBe('OPERATION_REUSED');
+    }
+    const stale = await send({ ...payload, operationId: randomUUID() });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().code).toBe('REVISION_CONFLICT');
+    expect(rows()).toEqual(saved);
+    const undone = await send({
+      contractVersion: 2,
+      expectedRevision: 3,
+      operationId: randomUUID(),
+      command: { type: 'undo' },
+    });
+    expect(undone.statusCode).toBe(200);
+    expect(undone.json().tasks).toEqual(seed.json().tasks);
+    expect(undone.json().dependencies).toEqual(seed.json().dependencies);
+    expect(undone.json().schedule).toEqual(seed.json().schedule);
+  },
+);
 
 it('creates explicit source atomically, retries exactly and undoes once', async () => {
   const before = rawSyntheticCountsAndRevision(db, projectId);

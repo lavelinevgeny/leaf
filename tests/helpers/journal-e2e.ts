@@ -7,9 +7,9 @@ import {
 import { randomUUID } from 'node:crypto';
 import { syntheticRuntime } from '../../scripts/e2e-server.js';
 import type {
-  JournalMutation,
-  JournalPage,
-} from '../../src/shared/journal-contracts.js';
+  JournalMutationV2 as JournalMutation,
+  JournalPageV2 as JournalPage,
+} from '../../src/shared/journal-contracts-v2.js';
 import type { ProjectTree } from '../../src/shared/contracts.js';
 import { seedOptionalRuntime, send } from './optional-e2e.js';
 export const test = base.extend<{
@@ -41,13 +41,17 @@ export async function createJournalEntry(
   const response = await page.request.post(
     `${origin}/api/projects/${projectId}/journal`,
     {
-      headers: { Origin: origin, 'X-Leaf-Contract-Version': '2' },
+      headers: {
+        Origin: origin,
+        'X-Leaf-Contract-Version': '2',
+        'X-Leaf-Journal-Contract-Version': '2',
+      },
       data: {
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         operationId: randomUUID(),
         expectedJournalRevision: revision,
         taskId,
-        body,
+        content: { format: 'plain-text', text: body },
         workDate,
       },
     },
@@ -62,7 +66,12 @@ export async function readJournalPage(
 ): Promise<JournalPage> {
   const response = await page.request.get(
     `${origin}/api/projects/${projectId}/journal`,
-    { headers: { 'X-Leaf-Contract-Version': '2' } },
+    {
+      headers: {
+        'X-Leaf-Contract-Version': '2',
+        'X-Leaf-Journal-Contract-Version': '2',
+      },
+    },
   );
   expect(response.status()).toBe(200);
   return response.json();
@@ -79,12 +88,21 @@ export async function mutateJournal(
     `${origin}/api/projects/${projectId}/journal/${entryId}`,
     {
       method: changes ? 'PATCH' : 'DELETE',
-      headers: { Origin: origin, 'X-Leaf-Contract-Version': '2' },
+      headers: {
+        Origin: origin,
+        'X-Leaf-Contract-Version': '2',
+        'X-Leaf-Journal-Contract-Version': '2',
+      },
       data: {
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         operationId: randomUUID(),
         expectedJournalRevision: revision,
-        ...changes,
+        ...(changes
+          ? {
+              workDate: changes.workDate,
+              content: { format: 'plain-text', text: changes.body },
+            }
+          : {}),
       },
     },
   );
@@ -206,4 +224,18 @@ export function planContent(tree: ProjectTree) {
     schedule: tree.schedule,
     canUndo: tree.canUndo,
   };
+}
+/** Contenteditable has no input value; read its literal plain-text document projection. */
+export async function expectJournalText(locator: Locator, text: string) {
+  await expect
+    .poll(() =>
+      locator.evaluate((node) =>
+        (
+          node as HTMLElement & {
+            editor: { getText(options: { blockSeparator: string }): string };
+          }
+        ).editor?.getText({ blockSeparator: '\n' }),
+      ),
+    )
+    .toBe(text);
 }

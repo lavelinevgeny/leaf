@@ -42,7 +42,7 @@ import { workingDaysInclusive } from '../domain/calendar.js';
 
 import { canonical } from '../shared/canonical.js';
 import { JournalLifecycle } from './journal-lifecycle.js';
-import type { JournalEntry } from '../shared/journal-contracts.js';
+import type { JournalLifecycleEntry } from './journal-lifecycle.js';
 import { replayLegacyOperation } from './legacy-compatibility.js';
 import {
   applyPrivateSourcePatch,
@@ -58,7 +58,7 @@ interface UndoRecord {
   sequence: number;
   afterRevision: number;
   beforeSnapshot: string;
-  journalLifecycleVersion: 0 | 1;
+  journalLifecycleVersion: 0 | 1 | 2;
 }
 interface OperationRecord {
   projectId: string;
@@ -380,7 +380,7 @@ export class Repository {
           );
         const beforeTaskIds = snapshot.tasks.map((task) => task.id);
         const lifecycle = new JournalLifecycle(this.db);
-        let restoredEntries: JournalEntry[] = [];
+        let restoredEntries: JournalLifecycleEntry[] = [];
         let undoRecord: UndoRecord | undefined;
         let undoPreviousRevision: number | undefined;
         let removedEntryCount = 0;
@@ -412,7 +412,7 @@ export class Repository {
           change(snapshot, timestamp);
           const inserted = this.db
             .prepare(
-              'INSERT INTO undo_snapshots(projectId,sessionId,afterRevision,beforeSnapshot,journalLifecycleVersion) VALUES (?,?,?,?,1)',
+              'INSERT INTO undo_snapshots(projectId,sessionId,afterRevision,beforeSnapshot,journalLifecycleVersion) VALUES (?,?,?,?,2)',
             )
             .run(projectId, sessionId, revision + 1, beforeSnapshot);
           const nextIds = new Set(snapshot.tasks.map((task) => task.id));
@@ -740,6 +740,14 @@ export class Repository {
         tasks.push(task);
         if (command.predecessorIds !== undefined)
           this.replacePredecessors(snapshot, task.id, command.predecessorIds);
+        for (const successorId of command.successorIds ?? []) {
+          snapshot.dependencies.push({
+            id: randomUUID(),
+            projectId: snapshot.project.id,
+            predecessorId: task.id,
+            successorId,
+          });
+        }
         break;
       }
       case 'task.update': {

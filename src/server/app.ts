@@ -18,6 +18,18 @@ import { Auth, SESSION_SECONDS } from './auth.js';
 import { openDatabase } from './database.js';
 import { Repository } from './repository.js';
 import { JournalRepository } from './journal-repository.js';
+import { JournalRepositoryV2 } from './journal-repository-v2.js';
+import { type JournalContentLimit } from '../shared/journal-content.js';
+import {
+  journalCreateV2Schema,
+  journalUpdateV2Schema,
+  journalDeleteV2Schema,
+} from '../shared/journal-contracts-v2.js';
+import { JournalMediaRepository } from './journal-media-repository.js';
+import {
+  JOURNAL_MEDIA_UPLOAD_ROUTE,
+  registerJournalMediaRoutes,
+} from './journal-media-routes.js';
 import {
   journalCreateSchema,
   journalUpdateSchema,
@@ -25,6 +37,16 @@ import {
   journalProjectQuerySchema,
   journalTaskQuerySchema,
 } from '../shared/journal-contracts.js';
+
+const journalLimitMessages: Record<JournalContentLimit, string> = {
+  documentBytes: 'Размер документа превышает лимит 49152 байта.',
+  nodes: 'Число узлов документа превышает лимит 1000.',
+  depth: 'Глубина документа превышает лимит 12.',
+  listDepth: 'Вложенность списков превышает лимит 4.',
+  textUnits: 'Длина текста превышает лимит 10000 единиц UTF-16.',
+  textBytes: 'Размер текста превышает лимит 30000 байт UTF-8.',
+  entryFiles: 'Число вложений записи превышает лимит 10.',
+};
 
 export interface BuildAppOptions {
   databasePath: string;
@@ -37,7 +59,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     auth: Auth;
     repository: Repository;
-    journalRepository: JournalRepository;
+    journalRepository: JournalRepositoryV2;
+    journalMediaRepository: JournalMediaRepository;
   }
 }
 export type LeafApp = FastifyInstance;
@@ -56,6 +79,28 @@ function requireContractVersion(
   if (replay !== undefined && (!replayAllowed || replay !== '1'))
     throw new DomainError('INVALID_REQUEST', 'Проверьте поля запроса.');
 }
+function requireJournalVersion(request: FastifyRequest): void {
+  if (request.headers['x-leaf-journal-contract-version'] !== '2')
+    throw new DomainError(
+      'JOURNAL_CONTRACT_VERSION_CONFLICT',
+      'Версия приложения устарела. Обновите страницу для продолжения. Этот запрос не изменил данные.',
+      426,
+    );
+}
+function legacyJournalRequest(request: FastifyRequest): boolean {
+  const version = request.headers['x-leaf-journal-contract-version'];
+  if (version === '2') return false;
+  if (
+    (version === undefined || version === '1') &&
+    request.body &&
+    typeof request.body === 'object' &&
+    'journalContractVersion' in request.body &&
+    request.body.journalContractVersion === 1
+  )
+    return true;
+  requireJournalVersion(request);
+  return false;
+}
 export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
   const parsedOrigin = new URL(options.publicOrigin);
   if (
@@ -71,7 +116,12 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
   });
   app.decorate('auth', new Auth(db, options.now, options.demoMode));
   app.decorate('repository', new Repository(db, options.now));
-  app.decorate('journalRepository', new JournalRepository(db, options.now));
+  app.decorate('journalRepository', new JournalRepositoryV2(db, options.now));
+  const legacyJournalReplay = new JournalRepository(db, options.now, false);
+  app.decorate(
+    'journalMediaRepository',
+    new JournalMediaRepository(db, options.now),
+  );
   app.addHook('onClose', () => {
     db.close();
   });
@@ -85,6 +135,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
   const demoLimits = options.demoMode ? new DemoLimits(options.now) : undefined;
   const demoSession = options.demoMode ? { demoMode: true } : {};
   try {
+    app.journalMediaRepository.collectGarbage();
     if (options.demoMode) {
       await app.auth.setup(randomBytes(32).toString('base64url'));
       seedDemo(db, app.repository, options.now ?? Date.now);
@@ -96,7 +147,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
         .header('Referrer-Policy', 'no-referrer')
         .header(
           'Content-Security-Policy',
-          "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+          "default-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         );
       // Fastify resolves percent-encoded paths before selecting a route.
       // Apply API policy to that registered route, never the raw URL.
@@ -113,6 +164,10 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
             403,
           );
         if (
+          !(
+            request.method === 'POST' &&
+            request.routeOptions.url === JOURNAL_MEDIA_UPLOAD_ROUTE
+          ) &&
           request.headers['content-type']
             ?.split(';')[0]
             ?.trim()
@@ -132,11 +187,25 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
         return reply
           .code(error.statusCode)
           .send({ code: error.code, message: error.message });
-      if (error instanceof ZodError)
+      if (error instanceof ZodError) {
+        const limit = error.issues
+          .filter((issue) => issue.code === 'custom')
+          .map((issue) => issue.params?.journalLimit)
+          .find(
+            (value): value is JournalContentLimit =>
+              typeof value === 'string' &&
+              Object.hasOwn(journalLimitMessages, value),
+          );
+        if (limit)
+          return reply.code(413).send({
+            code: 'JOURNAL_LIMIT',
+            message: journalLimitMessages[limit],
+          });
         return reply.code(400).send({
           code: 'INVALID_REQUEST',
           message: 'Проверьте поля запроса.',
         });
+      }
       const statusCode = (error as { statusCode?: number }).statusCode;
       if (statusCode && statusCode >= 400 && statusCode < 500)
         return reply.code(statusCode).send({
@@ -150,6 +219,13 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
         code: 'INTERNAL_ERROR',
         message: 'Не удалось выполнить запрос.',
       });
+    });
+    registerJournalMediaRoutes(app, {
+      repository: app.journalMediaRepository,
+      requireSession,
+      requireContract: requireContractVersion,
+      demoMode: options.demoMode ?? false,
+      now: options.now ?? Date.now,
     });
     app.get('/healthz', () => ({ ok: true }));
     app.get('/readyz', (_request, reply) => {
@@ -261,6 +337,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     app.get('/api/projects/:id/journal', (request) => {
       requireSession(request);
       requireContractVersion(request);
+      requireJournalVersion(request);
       const { id } = projectParamsSchema.parse(request.params);
       return app.journalRepository.getProjectPage(
         id,
@@ -270,6 +347,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     app.get('/api/projects/:id/tasks/:taskId/journal', (request) => {
       requireSession(request);
       requireContractVersion(request);
+      requireJournalVersion(request);
       const { id, taskId } = taskJournalParams.parse(request.params);
       return app.journalRepository.getTaskPage(
         id,
@@ -280,6 +358,7 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
     app.get('/api/projects/:id/journal/:entryId', (request) => {
       requireSession(request);
       requireContractVersion(request);
+      requireJournalVersion(request);
       const { id, entryId } = entryJournalParams.parse(request.params);
       z.strictObject({}).parse(request.query);
       return app.journalRepository.getEntry(id, entryId);
@@ -289,7 +368,17 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       requireContractVersion(request);
       const { id } = projectParamsSchema.parse(request.params);
       z.strictObject({}).parse(request.query);
-      const input = journalCreateSchema.parse(request.body);
+      if (legacyJournalRequest(request))
+        return reply
+          .code(201)
+          .send(
+            legacyJournalReplay.create(
+              id,
+              journalCreateSchema.parse(request.body),
+              session,
+            ),
+          );
+      const input = journalCreateV2Schema.parse(request.body);
       demoLimits?.admitMutation(request.body);
       return reply
         .code(201)
@@ -300,7 +389,14 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       requireContractVersion(request);
       const { id, entryId } = entryJournalParams.parse(request.params);
       z.strictObject({}).parse(request.query);
-      const input = journalUpdateSchema.parse(request.body);
+      if (legacyJournalRequest(request))
+        return legacyJournalReplay.update(
+          id,
+          entryId,
+          journalUpdateSchema.parse(request.body),
+          session,
+        );
+      const input = journalUpdateV2Schema.parse(request.body);
       demoLimits?.admitMutation(request.body);
       return app.journalRepository.update(id, entryId, input, session);
     });
@@ -309,7 +405,14 @@ export async function buildApp(options: BuildAppOptions): Promise<LeafApp> {
       requireContractVersion(request);
       const { id, entryId } = entryJournalParams.parse(request.params);
       z.strictObject({}).parse(request.query);
-      const input = journalDeleteSchema.parse(request.body);
+      if (legacyJournalRequest(request))
+        return legacyJournalReplay.delete(
+          id,
+          entryId,
+          journalDeleteSchema.parse(request.body),
+          session,
+        );
+      const input = journalDeleteV2Schema.parse(request.body);
       demoLimits?.admitMutation(request.body);
       return app.journalRepository.delete(id, entryId, input, session);
     });

@@ -8,6 +8,39 @@ import { pathToFileURL } from 'node:url';
 import type { Page } from '@playwright/test';
 const execFileAsync = promisify(execFile);
 export const PINNED_S3_SHA = '6317791dff9dc944de3a1676effebcf1322b2ff6';
+export async function installPinnedS3Dependencies(root: string) {
+  const userConfig = join(root, 'npm-user.conf');
+  const globalConfig = join(root, 'npm-global.conf');
+  await writeFile(userConfig, '');
+  await writeFile(globalConfig, '');
+  const configArgs = [
+    `--userconfig=${userConfig}`,
+    `--globalconfig=${globalConfig}`,
+    `--cache=${join(root, 'npm-cache')}`,
+  ];
+  // Prepare the historical lockfile's own cache before the offline rebuild.
+  // The current checkout's install may contain only newer package versions.
+  for (const networkArgs of [[], ['--offline']]) {
+    await execFileAsync(
+      'npm',
+      [
+        ...configArgs,
+        'ci',
+        ...networkArgs,
+        '--ignore-scripts',
+        '--strict-allow-scripts',
+        '--no-audit',
+        '--no-fund',
+      ],
+      {
+        cwd: root,
+        env: { PATH: process.env.PATH },
+        maxBuffer: 4 * 1024 * 1024,
+      },
+    );
+  }
+  return configArgs;
+}
 export async function buildPinnedS3() {
   const root = await mkdtemp(join(tmpdir(), 'leaf-pinned-s3-'));
   // Build subprocesses inherit only the pinned tool PATH, never account env.
@@ -47,27 +80,7 @@ export async function buildPinnedS3() {
       )
         throw new Error('Pinned source provenance mismatch');
     }
-    const userConfig = join(root, 'npm-user.conf');
-    const globalConfig = join(root, 'npm-global.conf');
-    await writeFile(userConfig, '');
-    await writeFile(globalConfig, '');
-    const configArgs = [
-      `--userconfig=${userConfig}`,
-      `--globalconfig=${globalConfig}`,
-    ];
-    await execFileAsync(
-      'npm',
-      [
-        ...configArgs,
-        'ci',
-        '--offline',
-        '--ignore-scripts',
-        '--strict-allow-scripts',
-        '--no-audit',
-        '--no-fund',
-      ],
-      { cwd: root, env: buildEnvironment, maxBuffer: 4 * 1024 * 1024 },
-    );
+    const configArgs = await installPinnedS3Dependencies(root);
     await execFileAsync('npm', [...configArgs, 'run', 'build'], {
       cwd: root,
       env: buildEnvironment,

@@ -1,3 +1,4 @@
+import { expectJournalText } from '../helpers/journal-e2e.js';
 import {
   test,
   expect,
@@ -35,7 +36,11 @@ test('real task create, project edit/date/delete, plain text, independent plan a
     '  Синтетическая работа\n<script>window.journalInjected = true</script>\nстрока %/_  ';
   await panel.getByLabel('Текст записи').fill(body);
   await panel.getByLabel('Текст записи').press('Control+Enter');
-  await expect(panel.getByText(body, { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText('<script>window.journalInjected = true</script>', {
+      exact: true,
+    }),
+  ).toBeVisible();
   expect(await page.evaluate(() => 'journalInjected' in window)).toBe(false);
   await panel
     .getByRole('button', { name: 'Закрыть панель', exact: true })
@@ -421,6 +426,10 @@ test('nested row menu, keyboard tabs and picker include done/summary/undated dup
   await projectTabs.getByRole('tab', { name: 'Задачи', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(
+    projectTabs.getByRole('tab', { name: 'Актуальное', exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(
     projectTabs.getByRole('tab', { name: 'Журнал', exact: true }),
   ).toBeFocused();
   await projectFeed(page)
@@ -546,7 +555,7 @@ test('row quick actions have their own pointer hit targets over the date', async
       const row = page.locator(`[role="treeitem"][data-task-id="${id}"]`);
       await row.hover();
       const geometry = await row.evaluate((node) =>
-        [...node.querySelectorAll('.task-row-actions-inner > button')].map(
+        [...node.querySelectorAll('.task-row-actions-secondary > button')].map(
           (button) => {
             const a = button.getBoundingClientRect();
             const hit = document.elementFromPoint(
@@ -737,7 +746,7 @@ test('U08 compact composer: date and actions share a row; Ctrl+Enter save keeps 
     panel.getByText('Синтетическая запись Ctrl+Enter', { exact: true }),
   ).toBeVisible();
   await expect(body).toBeEnabled();
-  await expect(body).toHaveValue('');
+  await expectJournalText(body, '');
   await expect(body).toBeFocused();
   await expect(save).toHaveCount(0);
   await page.unroute('**/api/projects/*/journal');
@@ -874,7 +883,7 @@ test('acknowledged task write survives failed feed GET and retry reads without a
       exact: true,
     }),
   ).toBeVisible();
-  await expect(panel.getByLabel('Текст записи')).toHaveValue('');
+  await expectJournalText(panel.getByLabel('Текст записи'), '');
   await expect(
     panel.getByRole('button', { name: 'Повторить сохранение' }),
   ).toHaveCount(0);

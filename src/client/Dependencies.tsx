@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import { PredecessorPicker } from './PredecessorPicker.js';
-import { canonicalPredecessorIds } from './predecessor-view.js';
+import {
+  canonicalPredecessorIds,
+  type DependencyDirection,
+} from './predecessor-view.js';
 import { ScheduleStatus } from './ScheduleStatus.js';
 import type {
   Command,
@@ -19,7 +22,10 @@ interface Props {
   tree: ProjectTree;
   disabled: boolean;
   navigationDisabled?: boolean;
-  onCommand: (command: Command) => Promise<boolean>;
+  onCommand: (
+    command: Command,
+    onAcknowledged?: () => void,
+  ) => Promise<boolean>;
   onSelect: (task: Task) => void;
   onShow: (task: Task) => void;
 }
@@ -36,49 +42,115 @@ export function Dependencies({
   onSelect,
   onShow,
 }: Props) {
-  const [direction, setDirection] = useState<
-    'predecessor' | 'successor' | null
-  >(null);
-  const trigger = useRef<HTMLButtonElement | null>(null);
+  const [picker, setPicker] = useState<{
+    taskId: string;
+    projectId: string;
+    direction: DependencyDirection;
+    version: number;
+  } | null>(null);
+  const livePicker = useRef<typeof picker>(null);
+  const direction = picker?.taskId === task.id ? picker.direction : null;
+  const panel = useRef<HTMLDivElement>(null);
+  const beforeHeader = useRef<HTMLDivElement>(null);
+  const afterHeader = useRef<HTMLDivElement>(null);
   const focusVersion = useRef(0);
+  const focusIntent = useRef<{
+    taskId: string;
+    projectId: string;
+    direction: DependencyDirection;
+    trigger: HTMLButtonElement;
+    revoked: boolean;
+    restore: boolean;
+  } | null>(null);
+  const [restoreVersion, setRestoreVersion] = useState(0);
   useEffect(() => {
-    const changed = () => {
-      focusVersion.current++;
+    const changed = (event: Event) => {
+      const intent = focusIntent.current;
+      if (!intent || !(event.target instanceof Node)) return;
+      if (
+        event.target === intent.trigger ||
+        (event.target instanceof Element &&
+          event.target.closest('[data-immediate-recovery]')) ||
+        (panel.current?.contains(event.target) &&
+          event.target instanceof Element &&
+          !!event.target.closest('.predecessor-picker'))
+      )
+        return;
+      // Keep revocation after a later blur to body; a late acknowledgement cannot reclaim focus.
+      intent.revoked = true;
     };
     document.addEventListener('focusin', changed);
-    return () => document.removeEventListener('focusin', changed);
+    document.addEventListener('pointerdown', changed, true);
+    return () => {
+      livePicker.current = null;
+      focusIntent.current = null;
+      document.removeEventListener('focusin', changed);
+      document.removeEventListener('pointerdown', changed, true);
+    };
   }, []);
-  function open(
-    direction: 'predecessor' | 'successor',
-    anchor: HTMLButtonElement,
-  ) {
-    trigger.current = anchor;
-    setRestoreTrigger(null);
-    setDirection(direction);
-  }
-  const [restoreTrigger, setRestoreTrigger] =
-    useState<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (!restoreTrigger) return;
-    const cancel = () => setRestoreTrigger(null);
-    document.addEventListener('focusin', cancel);
-    return () => document.removeEventListener('focusin', cancel);
-  }, [restoreTrigger]);
   useLayoutEffect(() => {
-    if (!restoreTrigger || disabled || taskDirty) return;
+    const intent = focusIntent.current;
     if (
-      restoreTrigger.isConnected &&
-      !restoreTrigger.disabled &&
-      (document.activeElement === document.body ||
-        document.activeElement === restoreTrigger)
+      intent &&
+      (intent.taskId !== task.id || intent.projectId !== task.projectId)
     )
-      restoreTrigger.focus();
-    setRestoreTrigger(null);
-  }, [restoreTrigger, disabled, taskDirty]);
+      focusIntent.current = null;
+    if (
+      picker &&
+      (picker.taskId !== task.id || picker.projectId !== task.projectId)
+    ) {
+      livePicker.current = null;
+      focusIntent.current = null;
+      setPicker(null);
+    }
+  }, [task.id, task.projectId, picker]);
+  useLayoutEffect(() => {
+    const intent = focusIntent.current;
+    if (
+      !intent?.restore ||
+      intent.revoked ||
+      intent.taskId !== task.id ||
+      disabled ||
+      (intent.direction === 'successor' && taskDirty)
+    )
+      return;
+    const visible = (node: HTMLElement | null): node is HTMLElement =>
+      !!node?.isConnected &&
+      !node.closest('[hidden], [inert]') &&
+      getComputedStyle(node).display !== 'none' &&
+      getComputedStyle(node).visibility !== 'hidden';
+    const target =
+      visible(intent.trigger) && !intent.trigger.disabled
+        ? intent.trigger
+        : intent.direction === 'predecessor'
+          ? beforeHeader.current
+          : afterHeader.current;
+    focusIntent.current = null;
+    if (visible(target)) target.focus();
+  }, [restoreVersion, disabled, taskDirty, task.id]);
+  function open(direction: DependencyDirection, anchor: HTMLButtonElement) {
+    if (disabled || (direction === 'successor' && taskDirty)) return;
+    focusIntent.current = {
+      taskId: task.id,
+      projectId: task.projectId,
+      direction,
+      trigger: anchor,
+      revoked: false,
+      restore: false,
+    };
+    livePicker.current = {
+      taskId: task.id,
+      projectId: task.projectId,
+      direction,
+      version: ++focusVersion.current,
+    };
+    setPicker(livePicker.current);
+  }
   function close() {
-    setDirection(null);
-    if (trigger.current?.disabled) setRestoreTrigger(trigger.current);
-    else trigger.current?.focus();
+    livePicker.current = null;
+    setPicker(null);
+    if (focusIntent.current) focusIntent.current.restore = true;
+    setRestoreVersion((version) => version + 1);
   }
   const [beforePage, setBeforePage] = useState(0),
     [afterPage, setAfterPage] = useState(0);
@@ -87,6 +159,11 @@ export function Dependencies({
   const savedBefore = tree.dependencies.filter(
     (edge) => edge.successorId === task.id,
   );
+  const incomingDirty =
+    canonicalPredecessorIds(incomingIds).join('\0') !==
+    canonicalPredecessorIds(savedBefore.map((edge) => edge.predecessorId)).join(
+      '\0',
+    );
   const before: Dependency[] = [
     ...savedBefore,
     ...incomingIds
@@ -113,8 +190,10 @@ export function Dependencies({
     successors = after.slice(afterOffset, afterOffset + 4);
   const summaryIds = new Set(tree.tasks.map((item) => item.parentId));
   const summary = summaryIds.has(task.id);
-  const currentY = 30 + predecessors.length * 72 + 24;
-  const afterY = currentY + 100;
+  const beforeY = 44;
+  const currentY = beforeY + Math.max(36, predecessors.length * 72) + 24;
+  const afterHeaderY = currentY + 84;
+  const afterY = afterHeaderY + beforeY;
   const height = afterY + Math.max(36, successors.length * 72) + 8;
   const schedule = tree.schedule;
   const criticalEdges = new Set(
@@ -216,7 +295,7 @@ export function Dependencies({
     );
   }
   return (
-    <div className="dependencies-panel">
+    <div ref={panel} className="dependencies-panel">
       <button
         className="quiet"
         type="button"
@@ -255,33 +334,46 @@ export function Dependencies({
           </ul>
         </>
       )}
-      <div className="dependency-section-label">
-        {strings.predecessors} ({before.length})
-        {!summary && (
-          <button
-            type="button"
-            className="quiet"
-            disabled={disabled}
-            onClick={(event) => open('predecessor', event.currentTarget)}
-          >
-            {strings.addPredecessor}
-          </button>
-        )}
-        {before.length > 4 && (
-          <button
-            type="button"
-            className="quiet"
-            onClick={() =>
-              setBeforePage((offset) =>
-                offset + 4 < before.length ? offset + 4 : 0,
-              )
-            }
-          >
-            {strings.showMore}
-          </button>
-        )}
-      </div>
       <div className="dependency-graph" style={{ height }}>
+        <div
+          ref={beforeHeader}
+          tabIndex={-1}
+          className="dependency-section-header"
+          style={{ top: 0 }}
+        >
+          <span>
+            {strings.dependencyPredecessors} ({incomingIds.length})
+            {incomingDirty && (
+              <small className="dependency-draft-marker">
+                {strings.dependencyUnsaved}
+              </small>
+            )}
+          </span>
+          {before.length > 4 && (
+            <button
+              type="button"
+              className="quiet"
+              onClick={() =>
+                setBeforePage((offset) =>
+                  offset + 4 < before.length ? offset + 4 : 0,
+                )
+              }
+            >
+              {strings.showMore}
+            </button>
+          )}
+          {!summary && (
+            <button
+              type="button"
+              className="quiet"
+              aria-label={strings.addPredecessor}
+              disabled={disabled}
+              onClick={(event) => open('predecessor', event.currentTarget)}
+            >
+              {strings.addDependencyShort}
+            </button>
+          )}
+        </div>
         {/* SVG user units match the HTML cards in CSS pixels at every width. */}
         <svg width="100%" height={height} aria-label={strings.dependencies}>
           <defs>
@@ -301,7 +393,7 @@ export function Dependencies({
             <path
               key={edge.id}
               data-dependency-edge={edge.id}
-              d={`M38,${30 + index * 72 + 30} H${8 + index * 5} V${currentY + 30} H38`}
+              d={`M38,${beforeY + index * 72 + 30} H${8 + index * 5} V${currentY + 30} H38`}
               markerEnd={`url(#${marker}-dep)`}
               className={`dependency-arrow${added(edge) || pendingRemoval(edge) ? ' dependency-pending' : ''}${criticalEdges.has(edge.id) ? ' critical' : ''}${partialEdges.has(edge.id) ? ' partial-critical' : ''}`}
             >
@@ -335,28 +427,49 @@ export function Dependencies({
           ))}
         </svg>
         {predecessors.map((edge, index) =>
-          card(byId.get(edge.predecessorId), 30 + index * 72, edge),
+          card(byId.get(edge.predecessorId), beforeY + index * 72, edge),
         )}
         {!before.length && (
-          <p className="graph-empty" style={{ top: 0 }}>
+          <p className="graph-empty" style={{ top: beforeY }}>
             {strings.noPredecessors}
           </p>
         )}
         {card(task, currentY)}
-        <span className="graph-section-title" style={{ top: currentY + 74 }}>
-          {strings.successors} ({after.length})
+        <div
+          ref={afterHeader}
+          tabIndex={-1}
+          className="dependency-section-header"
+          style={{ top: afterHeaderY }}
+        >
+          <span>
+            {strings.dependencySuccessors} ({after.length})
+          </span>
+          {after.length > 4 && (
+            <button
+              type="button"
+              className="quiet"
+              onClick={() =>
+                setAfterPage((offset) =>
+                  offset + 4 < after.length ? offset + 4 : 0,
+                )
+              }
+            >
+              {strings.showMore}
+            </button>
+          )}
           {!summary && (
             <button
               type="button"
               className="quiet"
+              aria-label={strings.addSuccessor}
               disabled={disabled || taskDirty}
               aria-describedby={taskDirty ? `${marker}-blocked` : undefined}
               onClick={(event) => open('successor', event.currentTarget)}
             >
-              {strings.addSuccessor}
+              {strings.addDependencyShort}
             </button>
           )}
-        </span>
+        </div>
         {successors.map((edge, index) =>
           card(byId.get(edge.successorId), afterY + index * 72, edge),
         )}
@@ -366,72 +479,70 @@ export function Dependencies({
           </p>
         )}
       </div>
-      {after.length > 4 && (
-        <button
-          className="quiet"
-          type="button"
-          onClick={() =>
-            setAfterPage((offset) =>
-              offset + 4 < after.length ? offset + 4 : 0,
-            )
-          }
-        >
-          {strings.showMore}
-        </button>
-      )}
       {!summary && taskDirty && (
         <p id={`${marker}-blocked`} className="field-hint">
-          {strings.saveTaskBeforeSubtask}
+          {strings.saveOrCancelTask}
         </p>
       )}
       {direction && !summary && (
-        <PredecessorPicker
-          key={direction}
-          tree={tree}
-          {...(direction === 'predecessor'
-            ? { successorId: task.id }
-            : { direction: 'successor' as const, predecessorId: task.id })}
-          selectedIds={
-            direction === 'predecessor'
-              ? incomingIds
-              : after.map((edge) => edge.successorId)
-          }
-          disabled={disabled || (direction === 'successor' && taskDirty)}
-          onAdd={(id) => {
-            if (disabled) return;
-            if (direction === 'predecessor')
-              onIncomingChange(canonicalPredecessorIds([...incomingIds, id]));
-            else if (!taskDirty) {
-              const sentFocusVersion = focusVersion.current;
-              void onCommand({
-                type: 'dependency.create',
-                predecessorId: task.id,
-                successorId: id,
-              }).then((success) => {
-                if (success) {
-                  if (sentFocusVersion === focusVersion.current) close();
-                  else setDirection(null);
-                }
-              });
-            }
-          }}
-          onRemove={(id) => {
-            if (disabled) return;
-            if (direction === 'predecessor')
-              onIncomingChange(
-                incomingIds.filter((selected) => selected !== id),
-              );
-            else if (!taskDirty) {
-              const edge = after.find((edge) => edge.successorId === id);
-              if (edge)
-                void onCommand({
-                  type: 'dependency.delete',
-                  dependencyId: edge.id,
-                });
-            }
-          }}
-          onClose={close}
-        />
+        <div>
+          <PredecessorPicker
+            key={picker?.version}
+            tree={tree}
+            direction={direction}
+            proposal={{
+              task,
+              isNew: false,
+              predecessorIds: incomingIds,
+              successorIds: after.map((edge) => edge.successorId),
+            }}
+            {...(direction === 'successor' && taskDirty
+              ? { blockedReason: strings.saveOrCancelTask }
+              : {})}
+            disabled={disabled || (direction === 'successor' && taskDirty)}
+            onAdd={(selectedDirection, id) => {
+              if (disabled) return;
+              if (selectedDirection === 'predecessor')
+                onIncomingChange(canonicalPredecessorIds([...incomingIds, id]));
+              else if (!taskDirty) {
+                const sentIntent = focusIntent.current;
+                const sentPicker = livePicker.current;
+                void onCommand(
+                  {
+                    type: 'dependency.create',
+                    predecessorId: task.id,
+                    successorId: id,
+                  },
+                  () => {
+                    if (
+                      sentPicker &&
+                      livePicker.current === sentPicker &&
+                      focusIntent.current === sentIntent &&
+                      sentIntent?.taskId === task.id
+                    )
+                      close();
+                  },
+                );
+              }
+            }}
+            onRemove={(selectedDirection, id) => {
+              if (disabled) return;
+              if (selectedDirection === 'predecessor')
+                onIncomingChange(
+                  incomingIds.filter((selected) => selected !== id),
+                );
+              else if (!taskDirty) {
+                const edge = after.find((edge) => edge.successorId === id);
+                if (edge)
+                  void onCommand({
+                    type: 'dependency.delete',
+                    dependencyId: edge.id,
+                  });
+              }
+            }}
+            onClose={close}
+          />
+        </div>
       )}
       {scheduleDirty && <p className="field-hint">{strings.savedPlan}</p>}
       <details className="dependency-calculation">

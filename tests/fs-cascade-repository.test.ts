@@ -93,6 +93,270 @@ function historicalEdge(tree: ProjectTree, from: string, to: string) {
   return repository.getTree(tree.project.id, session);
 }
 
+it.each(['absent', 'empty', 'incoming', 'outgoing', 'mixed'] as const)(
+  'creates %s relations with one revision and complete undo',
+  (kind) => {
+    let before = step(fresh(), {
+      type: 'project.schedule',
+      changes: { calendarType: 'weekdays' },
+    });
+    before = create(before, 'A', '2026-11-09', '2026-11-09');
+    before = create(before, 'B', '2026-11-10', '2026-11-11');
+    const counts = rawSyntheticCountsAndRevision(db, before.project.id);
+    const spy = vi.spyOn(cascade, 'cascadeFs');
+    const after = step(before, {
+      type: 'task.create',
+      title: 'T',
+      parentId: null,
+      inputStart: '2026-11-09',
+      inputFinish: '2026-11-10',
+      durationDays: 2,
+      ...(kind === 'empty' ? { predecessorIds: [], successorIds: [] } : {}),
+      ...(kind === 'incoming' || kind === 'mixed'
+        ? { predecessorIds: [task(before, 'A').id] }
+        : {}),
+      ...(kind === 'outgoing' || kind === 'mixed'
+        ? { successorIds: [task(before, 'B').id] }
+        : {}),
+    });
+    const incoming = kind === 'incoming' || kind === 'mixed';
+    const outgoing = kind === 'outgoing' || kind === 'mixed';
+    expect(task(after, 'T')).toMatchObject({
+      inputStart: incoming ? '2026-11-10' : '2026-11-09',
+      inputFinish: incoming ? '2026-11-11' : '2026-11-10',
+      durationDays: 2,
+    });
+    expect(task(after, 'B')).toMatchObject({
+      inputStart: outgoing
+        ? kind === 'mixed'
+          ? '2026-11-12'
+          : '2026-11-11'
+        : '2026-11-10',
+      inputFinish: outgoing
+        ? kind === 'mixed'
+          ? '2026-11-13'
+          : '2026-11-12'
+        : '2026-11-11',
+    });
+    expect(task(after, 'T')).not.toHaveProperty('successorIds');
+    expect(after.dependencies).toHaveLength(
+      Number(incoming) + Number(outgoing),
+    );
+    const changed = rawSyntheticCountsAndRevision(db, before.project.id);
+    expect(changed.revision).toBe(counts.revision + 1);
+    expect(changed.counts).toEqual(
+      counts.counts.map(
+        (n, i) =>
+          n +
+          (i === 2
+            ? Number(incoming) + Number(outgoing)
+            : [1, 3, 4].includes(i)
+              ? 1
+              : 0),
+      ),
+    );
+    expect(spy).toHaveBeenCalledTimes(incoming || outgoing ? 1 : 0);
+    const undone = step(after, { type: 'undo' });
+    expect(undone.tasks).toEqual(before.tasks);
+    expect(undone.dependencies).toEqual(before.dependencies);
+    expect(undone.schedule).toEqual(before.schedule);
+  },
+);
+
+it('preserves existing incoming edges and IDs through create fan-in and fan-out', () => {
+  let before = create(fresh(), 'A', '2026-11-09', '2026-11-09');
+  before = create(before, 'X', '2026-11-09', '2026-11-11');
+  before = create(before, 'B', '2026-11-12', '2026-11-13', [
+    task(before, 'A').id,
+  ]);
+  before = create(before, 'C', '2026-11-10', '2026-11-11');
+  const after = step(before, {
+    type: 'task.create',
+    title: 'T',
+    parentId: null,
+    inputStart: '2026-11-09',
+    inputFinish: '2026-11-10',
+    predecessorIds: [task(before, 'A').id, task(before, 'X').id],
+    successorIds: [task(before, 'B').id, task(before, 'C').id],
+  });
+  expect(task(after, 'T')).toMatchObject({
+    inputStart: '2026-11-12',
+    inputFinish: '2026-11-13',
+    durationDays: null,
+  });
+  for (const title of ['B', 'C'])
+    expect(task(after, title)).toMatchObject({
+      inputStart: '2026-11-14',
+      inputFinish: '2026-11-15',
+    });
+  expect(after.dependencies).toHaveLength(5);
+  expect(after.dependencies).toEqual(
+    expect.arrayContaining(before.dependencies),
+  );
+  const undone = step(after, { type: 'undo' });
+  expect(undone.tasks).toEqual(before.tasks);
+  expect(undone.dependencies).toEqual(before.dependencies);
+  expect(undone.schedule).toEqual(before.schedule);
+});
+
+it.each([null, 2])(
+  'does not back-plan undated new work with duration %s from a successor',
+  (durationDays) => {
+    const before = create(fresh(), 'B', '2026-11-10', '2026-11-11');
+    const after = step(before, {
+      type: 'task.create',
+      title: 'T',
+      parentId: null,
+      inputStart: null,
+      inputFinish: null,
+      durationDays,
+      successorIds: [task(before, 'B').id],
+    });
+    expect(task(after, 'T')).toMatchObject({
+      inputStart: null,
+      inputFinish: null,
+      durationDays,
+    });
+    expect(task(after, 'B')).toEqual(task(before, 'B'));
+    expect(after.dependencies).toHaveLength(1);
+  },
+);
+
+it.each([
+  'foreign',
+  'missing',
+  'intersection',
+  'cycle',
+  'summary',
+  'converted-parent',
+  'done',
+  'unavailable',
+  'unavailable-predecessor',
+  'overflow',
+] as const)(
+  'rolls back create, edges, dates, sibling order and parent conversion for %s',
+  (kind) => {
+    let before = create(fresh(), 'A', '2026-11-09', '2026-11-09');
+    before = create(before, 'B', '2026-11-10', '2026-11-11');
+    before = create(before, 'P', '2026-11-09', '2026-11-10');
+    before = create(before, 'Summary', null, null);
+    before = create(
+      before,
+      'Child',
+      null,
+      null,
+      undefined,
+      task(before, 'Summary').id,
+    );
+    if (kind === 'cycle') before = historicalEdge(before, 'B', 'A');
+    if (kind === 'done')
+      before = step(before, {
+        type: 'task.edit',
+        taskId: task(before, 'B').id,
+        changes: { status: 'done' },
+      });
+    if (kind === 'unavailable') mark(task(before, 'B').id);
+    if (kind === 'unavailable-predecessor') mark(task(before, 'A').id);
+    const foreign =
+      kind === 'foreign'
+        ? task(create(fresh(), 'Foreign', null, null), 'Foreign').id
+        : randomUUID();
+    const successorIds = [task(before, 'B').id];
+    if (kind === 'foreign' || kind === 'missing') successorIds.push(foreign);
+    if (kind === 'intersection') successorIds.push(task(before, 'A').id);
+    if (kind === 'summary') successorIds.push(task(before, 'Summary').id);
+    if (kind === 'converted-parent') successorIds.push(task(before, 'P').id);
+    const saved = rows();
+    expect(() =>
+      step(before, {
+        type: 'task.create',
+        title: 'T',
+        parentId: kind === 'converted-parent' ? task(before, 'P').id : null,
+        ...(kind === 'converted-parent'
+          ? { preserveWork: true }
+          : { afterId: task(before, 'A').id }),
+        inputStart: kind === 'overflow' ? null : '2026-11-09',
+        inputFinish: kind === 'overflow' ? '9999-12-31' : '2026-11-10',
+        predecessorIds: [task(before, 'A').id],
+        successorIds,
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: {
+          foreign: 'INVALID_DEPENDENCY_ENDPOINT',
+          missing: 'INVALID_DEPENDENCY_ENDPOINT',
+          intersection: 'DEPENDENCY_CYCLE',
+          cycle: 'DEPENDENCY_CYCLE',
+          summary: 'DEPENDENCY_SUMMARY',
+          'converted-parent': 'DEPENDENCY_SUMMARY',
+          done: 'DONE_PLAN_LOCKED',
+          unavailable: 'EXPLICIT_PRECEDENCE_CONFLICT',
+          'unavailable-predecessor': 'EXPLICIT_PRECEDENCE_CONFLICT',
+          overflow: 'CALENDAR_RANGE_EXCEEDED',
+        }[kind],
+      }),
+    );
+    expect(rows()).toEqual(saved);
+  },
+);
+
+it('reopens and replays mixed create after undo without a second cascade or stale writes', () => {
+  let before = create(fresh(), 'A', '2026-11-09', '2026-11-09');
+  before = create(before, 'B', '2026-11-10', '2026-11-11');
+  const envelope = {
+    contractVersion: 2 as const,
+    expectedRevision: before.project.revision,
+    operationId: randomUUID(),
+    command: {
+      type: 'task.create' as const,
+      title: 'T',
+      parentId: null,
+      inputStart: '2026-11-09',
+      inputFinish: '2026-11-10',
+      predecessorIds: [task(before, 'A').id],
+      successorIds: [task(before, 'B').id],
+    },
+  };
+  const after = repository.applyCommand(before.project.id, envelope, session);
+  db.close();
+  db = openDatabase(path);
+  repository = new Repository(db, () => clock);
+  expect(repository.getTree(after.project.id, session)).toEqual(after);
+  const undone = step(after, { type: 'undo' });
+  expect(undone.tasks).toEqual(before.tasks);
+  expect(undone.dependencies).toEqual(before.dependencies);
+  expect(undone.schedule).toEqual(before.schedule);
+  const spy = vi.spyOn(cascade, 'cascadeFs');
+  const saved = rows();
+  expect(repository.applyCommand(before.project.id, envelope, session)).toEqual(
+    after,
+  );
+  expect(() =>
+    repository.applyCommand(
+      before.project.id,
+      {
+        ...envelope,
+        command: { ...envelope.command, successorIds: [] },
+      },
+      session,
+    ),
+  ).toThrow(expect.objectContaining({ code: 'OPERATION_REUSED' }));
+  expect(() =>
+    repository.applyCommand(
+      before.project.id,
+      {
+        ...envelope,
+        operationId: randomUUID(),
+      },
+      session,
+    ),
+  ).toThrow(
+    expect.objectContaining({ code: 'REVISION_CONFLICT', statusCode: 409 }),
+  );
+  expect(rows()).toEqual(saved);
+  expect(spy).not.toHaveBeenCalled();
+});
+
 it('create with predecessors cascades once without DTO leakage, and undoes one complete command', () => {
   const before = create(fresh(), 'A', '2026-10-05', '2026-10-07');
   const counts = rawSyntheticCountsAndRevision(db, before.project.id);

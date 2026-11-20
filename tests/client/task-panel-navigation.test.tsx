@@ -119,7 +119,7 @@ beforeEach(() => {
     }
     if (/\/journal(?:\?|$)/.test(url) && init?.method === 'GET')
       return json({
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         projectId: tree.project.id,
         taskId: url.includes('/tasks/')
           ? url.split('/tasks/')[1]!.split('/')[0]
@@ -587,7 +587,7 @@ it('routes dependency-neighbor selection through the guard while incoming draft 
   ).toBeDisabled();
   expect(
     within(screen.getByRole('tabpanel', { name: 'Зависимости' })).getByText(
-      'Сначала сохраните изменения задачи',
+      'Сначала сохраните или отмените изменения задачи',
     ),
   ).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Открыть: Работа C' }));

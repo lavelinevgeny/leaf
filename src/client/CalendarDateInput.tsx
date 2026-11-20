@@ -7,15 +7,9 @@ import {
   type Ref,
 } from 'react';
 import { calendarDateSchema } from '../shared/contracts.js';
+import { parseDateInput } from './date-input.js';
 import { strings } from './strings.js';
 
-function inputDate(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(trimmed);
-  const iso = match ? `${match[3]}-${match[2]}-${match[1]}` : trimmed;
-  return calendarDateSchema.safeParse(iso).success ? iso : trimmed;
-}
 function displayDate(value: string | null): string {
   if (!value) return '';
   if (!calendarDateSchema.safeParse(value).success) return value;
@@ -36,6 +30,7 @@ interface Props {
   descriptionId?: string;
   highlighted?: boolean;
   today?: string;
+  referenceToday?: string;
   onChange?: (value: string | null) => void;
   onCommit?: (value: string | null) => void;
 }
@@ -49,10 +44,23 @@ export function CalendarDateInput({
   descriptionId,
   highlighted,
   today,
+  referenceToday,
   onChange,
   onCommit,
 }: Props) {
   const id = useId();
+  const yearHintId = `${id}-year`;
+  const [editYear, setEditYear] = useState<string | null>(null);
+  const frozenYear = useRef<string | null>(null);
+  function beginEdit() {
+    frozenYear.current ??= referenceToday?.slice(0, 4) ?? null;
+    setEditYear(frozenYear.current);
+  }
+  function endEdit() {
+    frozenYear.current = null;
+    setEditYear(null);
+  }
+  const hintYear = editYear ?? referenceToday?.slice(0, 4);
   const [focused, setFocused] = useState(false);
   const [raw, setRaw] = useState('');
   const input = useRef<HTMLInputElement>(null);
@@ -62,17 +70,26 @@ export function CalendarDateInput({
   const buffer = useRef('');
   function resetInput() {
     edited.current = false;
+    endEdit();
     buffer.current = displayDate(current.current);
     setRaw(buffer.current);
     setFocused(false);
   }
   useLayoutEffect(resetInput, [resetKey]);
   function commit() {
+    const year = frozenYear.current ?? undefined;
+    endEdit();
     if (!edited.current) return;
     edited.current = false;
-    const next = inputDate(buffer.current);
+    const next = parseDateInput(buffer.current, year);
     // A replaced parent value discards an obsolete focused buffer.
-    if (next === current.current) onCommit?.(next);
+    if (next === current.current) {
+      if (next === null || calendarDateSchema.safeParse(next).success) {
+        buffer.current = displayDate(next);
+        setRaw(buffer.current);
+      }
+      onCommit?.(next);
+    }
   }
   useImperativeHandle(ref, () => ({
     commit,
@@ -90,23 +107,34 @@ export function CalendarDateInput({
           id={id}
           type="text"
           inputMode="numeric"
-          placeholder="ДД.ММ.ГГГГ"
+          placeholder={referenceToday ? 'ДД.ММ или ДД.ММ.ГГГГ' : 'ДД.ММ.ГГГГ'}
           maxLength={10}
           value={focused ? raw : displayDate(value)}
           disabled={disabled}
           aria-invalid={invalid || undefined}
-          aria-describedby={descriptionId}
+          aria-describedby={
+            [descriptionId, referenceToday ? yearHintId : undefined]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           onFocus={() => {
+            beginEdit();
             buffer.current = displayDate(value);
             setRaw(buffer.current);
             setFocused(true);
           }}
           onChange={(event) => {
+            beginEdit();
             setFocused(true);
             edited.current = true;
             buffer.current = event.target.value;
             setRaw(event.target.value);
-            onChange?.(inputDate(event.target.value));
+            onChange?.(
+              parseDateInput(
+                event.target.value,
+                frozenYear.current ?? undefined,
+              ),
+            );
           }}
           onBlur={() => {
             setFocused(false);
@@ -158,6 +186,8 @@ export function CalendarDateInput({
               }
             }}
             onChange={(event) => {
+              edited.current = false;
+              endEdit();
               const next = event.target.value || null;
               onChange?.(next);
               onCommit?.(next);
@@ -165,6 +195,11 @@ export function CalendarDateInput({
           />
         </span>
       </div>
+      {referenceToday && (
+        <span id={yearHintId} className="date-year-hint">
+          Без года — {hintYear}
+        </span>
+      )}
       {today && (
         <button
           type="button"
@@ -172,6 +207,8 @@ export function CalendarDateInput({
           aria-label={`${strings.today}: ${label}`}
           disabled={disabled}
           onClick={() => {
+            edited.current = false;
+            endEdit();
             onChange?.(today);
             onCommit?.(today);
           }}

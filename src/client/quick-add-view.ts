@@ -142,6 +142,7 @@ export interface QuickDraft {
   title: string;
   plan: SourceFields;
   predecessorIds: string[];
+  successorIds: string[];
   context: AddContext;
 }
 export function sameQuickDraft(left: QuickDraft, right: QuickDraft): boolean {
@@ -153,7 +154,9 @@ export function sameQuickDraft(left: QuickDraft, right: QuickDraft): boolean {
     left.plan.inputFinish === right.plan.inputFinish &&
     left.plan.durationDays === right.plan.durationDays &&
     canonicalPredecessorIds(left.predecessorIds).join('\0') ===
-      canonicalPredecessorIds(right.predecessorIds).join('\0')
+      canonicalPredecessorIds(right.predecessorIds).join('\0') &&
+    canonicalPredecessorIds(left.successorIds).join('\0') ===
+      canonicalPredecessorIds(right.successorIds).join('\0')
   );
 }
 export function hasQuickDraft(draft: QuickDraft): boolean {
@@ -165,6 +168,7 @@ export function hasQuickDraft(draft: QuickDraft): boolean {
     draft.plan.inputStart !== null ||
     draft.plan.inputFinish !== null ||
     draft.plan.durationDays !== 1 ||
-    draft.predecessorIds.length > 0
+    draft.predecessorIds.length > 0 ||
+    draft.successorIds.length > 0
   );
 }

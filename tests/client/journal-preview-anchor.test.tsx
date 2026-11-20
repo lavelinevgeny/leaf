@@ -177,7 +177,16 @@ it('measures a changed hidden body before applying the revealed anchor', async (
   const changed = {
     page: {
       ...test.state.page!,
-      entries: [{ ...journal5, body: 'Changed while hidden' }],
+      entries: [
+        {
+          ...journal5,
+          body: 'Changed while hidden',
+          content: {
+            format: 'plain-text' as const,
+            text: 'Changed while hidden',
+          },
+        },
+      ],
     },
   };
   test.view.rerender(test.feed(changed, false));

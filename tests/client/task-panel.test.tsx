@@ -332,7 +332,7 @@ it('saves title source and graph incoming draft in exactly one task.edit', async
   expect(screen.getByRole('tab', { name: 'Зависимости' })).toHaveTextContent(
     'Зависимости',
   );
-  expect(screen.getByText('Не сохранено')).toBeVisible();
+  expect(screen.getAllByText('Не сохранено')).toHaveLength(2);
   expect(
     screen.getByRole('tab', { name: 'Зависимости' }),
   ).not.toHaveTextContent('(1)');
@@ -402,7 +402,7 @@ it('keeps newer incoming draft and current tree after a frozen acknowledgement o
     expect(screen.getByRole('button', { name: 'Сохранить' })).toBeEnabled(),
   );
   expect(screen.queryByText('Сохранено', { exact: true })).toBeNull();
-  expect(screen.getByText('Не сохранено', { exact: true })).toBeVisible();
+  expect(screen.getAllByText('Не сохранено', { exact: true })).toHaveLength(2);
   expect(
     screen.getByRole('button', { name: 'Открыть: B newer' }),
   ).toBeVisible();

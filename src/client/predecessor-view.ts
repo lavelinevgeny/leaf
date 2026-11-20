@@ -1,6 +1,19 @@
 import type { ProjectTree, Task } from '../shared/contracts.js';
 import { validateDependency, realInterval } from '../domain/planning.js';
+import { DomainError } from '../domain/tree.js';
 import { treeRows } from './tree-view.js';
+export type DependencyDirection = 'predecessor' | 'successor';
+export interface DependencyProposal {
+  task: Task;
+  isNew: boolean;
+  predecessorIds: readonly string[];
+  successorIds: readonly string[];
+}
+export interface DependencySelectionIssue {
+  direction: DependencyDirection;
+  taskId: string;
+  reason: string;
+}
 export interface PredecessorCandidate {
   task: Task;
   path: string;
@@ -19,32 +32,64 @@ export function incomingPredecessorIds(
       .map((edge) => edge.predecessorId),
   );
 }
-export function predecessorCandidates(
+export function outgoingSuccessorIds(
   tree: ProjectTree,
-  successorId: string | null,
-  selectedIds: readonly string[],
+  taskId: string,
+): string[] {
+  return canonicalPredecessorIds(
+    tree.dependencies
+      .filter((edge) => edge.predecessorId === taskId)
+      .map((edge) => edge.successorId),
+  );
+}
+function proposalGraph(tree: ProjectTree, proposal: DependencyProposal) {
+  const tasks = tree.tasks.filter((task) => task.projectId === tree.project.id);
+  if (proposal.isNew && proposal.task.projectId === tree.project.id)
+    tasks.push(proposal.task);
+  const selected = (['predecessor', 'successor'] as const).flatMap(
+    (direction) =>
+      (direction === 'predecessor'
+        ? proposal.predecessorIds
+        : proposal.successorIds
+      ).map((taskId, index) => ({
+        id: `proposal:${direction}:${index}:${taskId}`,
+        direction,
+        taskId,
+        predecessorId: direction === 'predecessor' ? taskId : proposal.task.id,
+        successorId: direction === 'predecessor' ? proposal.task.id : taskId,
+      })),
+  );
+  const edges = [
+    ...tree.dependencies.filter(
+      (edge) =>
+        edge.projectId === tree.project.id &&
+        edge.predecessorId !== proposal.task.id &&
+        edge.successorId !== proposal.task.id,
+    ),
+    ...selected,
+  ];
+  return { tasks, edges, selected };
+}
+export function dependencyCandidates(
+  tree: ProjectTree,
+  proposal: DependencyProposal,
+  direction: DependencyDirection,
   query: string,
 ): PredecessorCandidate[] {
-  const tasks = tree.tasks.filter((task) => task.projectId === tree.project.id);
+  const { tasks, edges } = proposalGraph(tree, proposal);
   const byId = new Map(tasks.map((task) => [task.id, task]));
-  const summaryIds = new Set(tasks.map((task) => task.parentId));
-  const selected = new Set(selectedIds);
-  const proposed = [
-    ...tree.dependencies.filter((edge) => edge.successorId !== successorId),
-    ...selectedIds.map((predecessorId) => ({
-      id: `draft:${predecessorId}`,
-      predecessorId,
-      successorId: successorId ?? '',
-    })),
-  ];
   const result: PredecessorCandidate[] = [];
   for (const { task } of treeRows(tasks, new Set())) {
-    if (
-      summaryIds.has(task.id) ||
-      task.id === successorId ||
-      selected.has(task.id)
-    )
+    try {
+      validateDependency(
+        tasks,
+        edges,
+        direction === 'predecessor' ? task.id : proposal.task.id,
+        direction === 'predecessor' ? proposal.task.id : task.id,
+      );
+    } catch {
       continue;
+    }
     const ancestors: string[] = [];
     const visited = new Set([task.id]);
     let parent = task.parentId ? byId.get(task.parentId) : undefined;
@@ -60,13 +105,6 @@ export function predecessorCandidates(
         .includes(query.trim().toLocaleLowerCase('ru'))
     )
       continue;
-    if (successorId) {
-      try {
-        validateDependency(tasks, proposed, task.id, successorId);
-      } catch {
-        continue;
-      }
-    }
     result.push({
       task,
       path,
@@ -75,18 +113,33 @@ export function predecessorCandidates(
   }
   return result;
 }
-
-export function successorCandidates(
+export function dependencySelectionIssues(
   tree: ProjectTree,
-  predecessorId: string,
-  query: string,
-): PredecessorCandidate[] {
-  return predecessorCandidates(tree, null, [], query).filter(({ task }) => {
+  proposal: DependencyProposal,
+): DependencySelectionIssue[] {
+  const { tasks, edges, selected } = proposalGraph(tree, proposal);
+  const issues: DependencySelectionIssue[] = [];
+  for (const edge of selected) {
     try {
-      validateDependency(tree.tasks, tree.dependencies, predecessorId, task.id);
-      return true;
-    } catch {
-      return false;
+      // Check each selection against every other selection, including the opposite direction.
+      validateDependency(
+        tasks,
+        edges.filter((other) => other !== edge),
+        edge.predecessorId,
+        edge.successorId,
+      );
+    } catch (error) {
+      issues.push({
+        direction: edge.direction,
+        taskId: edge.taskId,
+        reason:
+          error instanceof DomainError
+            ? error.code === 'DEPENDENCY_CYCLE'
+              ? 'Связь создаёт цикл зависимостей.'
+              : error.message
+            : 'Связь недопустима.',
+      });
     }
-  });
+  }
+  return issues;
 }

@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import '@testing-library/jest-dom/vitest';
 HTMLDialogElement.prototype.showModal = function () {
   this.setAttribute('open', '');
@@ -74,6 +78,13 @@ it('validates UUID/enums and emits only allowlisted URL fields and opaque histor
       new URL(`https://leaf.test/${workspaceUrl(visit)}&q=private`),
     ),
   ).toEqual(visit);
+  expect(
+    parseWorkspaceUrl(
+      new URL(
+        `https://leaf.test/${workspaceUrl({ ...visit, view: 'current' })}`,
+      ),
+    ),
+  ).toEqual({ ...visit, view: 'current' });
   writeWorkspaceVisit(visit, 'synthetic-visit', 'replace');
   expect(window.history.state).toEqual({
     leaf: { version: 1, visitId: 'synthetic-visit' },
@@ -105,7 +116,7 @@ it('initial URL waits for authentication and never selects a foreign task', asyn
   await screen.findByLabelText('Пароль');
   expect(api.journalProject).not.toHaveBeenCalled();
   expect(api.tree).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText('Пароль'), {
+  changeJournalField(screen.getByLabelText('Пароль'), {
     target: { value: 'synthetic-password' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
@@ -168,19 +179,20 @@ it('mounted task timeline, scale and quick draft survive tabs; history contains 
   render(<App />);
   await screen.findByRole('heading', { name: 'Демо-проект' });
   const timeline = document.querySelector('.task-timeline');
-  fireEvent.change(screen.getByLabelText('Масштаб Ганта'), {
+  changeJournalField(screen.getByLabelText('Масштаб Ганта'), {
     target: { value: 'weeks' },
   });
   const quick = document.getElementById('quick-task')!;
-  fireEvent.change(quick, { target: { value: 'Synthetic quick draft' } });
+  changeJournalField(quick, { target: { value: 'Synthetic quick draft' } });
   await userEvent.click(document.getElementById('project-tab-journal')!);
-  fireEvent.change(screen.getByLabelText('Поиск записей'), {
+  changeJournalField(screen.getByLabelText('Поиск записей'), {
     target: { value: 'private synthetic query' },
   });
   await userEvent.click(document.getElementById('project-tab-tasks')!);
   expect(document.querySelector('.task-timeline')).toBe(timeline);
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
-  expect(document.getElementById('quick-task')).toHaveValue(
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'weeks');
+  expectJournalFieldValue(
+    document.getElementById('quick-task'),
     'Synthetic quick draft',
   );
   expect(window.location.href).not.toContain('synthetic');
@@ -227,7 +239,7 @@ it('blocks Back for a dirty planning baseline and restores the prior history pos
   await userEvent.click(
     screen.getByRole('button', { name: 'Изменить название' }),
   );
-  fireEvent.change(screen.getByLabelText('Название задачи'), {
+  changeJournalField(screen.getByLabelText('Название задачи'), {
     target: { value: 'Pinned own plan title' },
   });
   const before = window.location.search;
@@ -237,7 +249,8 @@ it('blocks Back for a dirty planning baseline and restores the prior history pos
     screen.getByRole('button', { name: 'Продолжить редактирование' }),
   );
   await waitFor(() => expect(window.location.search).toBe(before));
-  expect(screen.getByLabelText('Название задачи')).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByLabelText('Название задачи'),
     'Pinned own plan title',
   );
   expect(api.command).not.toHaveBeenCalled();
@@ -254,7 +267,7 @@ it('uncertain journal disables Undo/task/project navigation and retains exact ed
   await waitFor(() =>
     expect(document.getElementById('panel-journal')).not.toBeNull(),
   );
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'Uncertain synthetic note' },
   });
   await userEvent.click(
@@ -264,11 +277,15 @@ it('uncertain journal disables Undo/task/project navigation and retains exact ed
   expect(
     screen.getByRole('button', { name: 'Отменить изменение плана' }),
   ).toBeDisabled();
-  expect(screen.getByLabelText('Текст записи')).toBeDisabled();
+  expect(screen.getByLabelText('Текст записи')).toHaveAttribute(
+    'contenteditable',
+    'false',
+  );
   const before = window.location.search;
   await travel('back');
   await waitFor(() => expect(window.location.search).toBe(before));
-  expect(screen.getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
     'Uncertain synthetic note',
   );
   expect(api.command).not.toHaveBeenCalled();
@@ -283,7 +300,7 @@ it('rendered edit stays pinned5 across remote6 focus/close/reopen/Back and expli
   await userEvent.click(
     screen.getByRole('menuitem', { name: 'Редактировать запись' }),
   );
-  fireEvent.change(screen.getByLabelText('Текст записи'), {
+  changeJournalField(screen.getByLabelText('Текст записи'), {
     target: { value: 'My pinned edit' },
   });
   server.entries = [read6.entry];
@@ -306,7 +323,10 @@ it('rendered edit stays pinned5 across remote6 focus/close/reopen/Back and expli
   await userEvent.click(
     screen.getByRole('menuitem', { name: 'Редактировать запись' }),
   );
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('My pinned edit');
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
+    'My pinned edit',
+  );
   vi.mocked(api.journalUpdate).mockRejectedValueOnce(
     new ApiError('JOURNAL_REVISION_CONFLICT', 'conflict', 409),
   );
@@ -453,11 +473,11 @@ it('dirty plan stays on its original title/source baseline while refreshed journ
   await userEvent.click(
     screen.getByRole('button', { name: 'Изменить название' }),
   );
-  fireEvent.change(screen.getByLabelText('Название задачи'), {
+  changeJournalField(screen.getByLabelText('Название задачи'), {
     target: { value: 'Own plan title' },
   });
   await userEvent.click(document.getElementById('tab-journal')!);
-  fireEvent.change(await screen.findByLabelText('Текст записи'), {
+  changeJournalField(await screen.findByLabelText('Текст записи'), {
     target: { value: 'Own journal text' },
   });
   server.projects[0] = { ...server.projects[0]!, revision: 1 };
@@ -469,11 +489,15 @@ it('dirty plan stays on its original title/source baseline while refreshed journ
   await act(async () => window.dispatchEvent(new Event('focus')));
   await screen.findByRole('heading', { name: 'Remote renamed task' });
   await userEvent.click(document.getElementById('tab-details')!);
-  expect(screen.getByLabelText('Название задачи')).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByLabelText('Название задачи'),
     'Own plan title',
   );
   await userEvent.click(document.getElementById('tab-journal')!);
-  expect(screen.getByLabelText('Текст записи')).toHaveValue('Own journal text');
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
+    'Own journal text',
+  );
   expect(api.command).not.toHaveBeenCalled();
 });
 it('later manual focus cancels asynchronous journal textarea focus', async () => {
@@ -552,7 +576,7 @@ it('same history snapshot waits for visible Timeline before restoring native scr
   mounted.rerender(view(true, request));
   expect(vertical.scrollTop).toBe(350);
   expect(horizontal.scrollLeft).toBe(180);
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'weeks');
   expect(document.querySelector('.gantt-month')?.textContent).toBe('2026-12');
 });
 it('manual scale, period and both axes after Back survive ordinary tabs and repeated history requests', async () => {
@@ -577,7 +601,7 @@ it('manual scale, period and both axes after Back survive ordinary tabs and repe
     fireEvent.scroll(vertical);
     fireEvent.scroll(horizontal);
   };
-  fireEvent.change(scale(), { target: { value: 'weeks' } });
+  changeJournalField(scale(), { target: { value: 'weeks' } });
   await userEvent.click(
     screen.getByRole('button', { name: 'Следующий период' }),
   );
@@ -586,11 +610,11 @@ it('manual scale, period and both axes after Back survive ordinary tabs and repe
   await userEvent.click(document.getElementById('project-tab-journal')!);
   await screen.findByText('Original synthetic text');
   await travel('back');
-  await waitFor(() => expect(scale()).toHaveValue('weeks'));
+  await waitFor(() => expectJournalFieldValue(scale(), 'weeks'));
   expect(period()).toEqual(restoredPeriod);
   expect(offsets()).toEqual({ top: 350, left: 180 });
 
-  fireEvent.change(scale(), { target: { value: 'months' } });
+  changeJournalField(scale(), { target: { value: 'months' } });
   await userEvent.click(
     screen.getByRole('button', { name: 'Следующий период' }),
   );
@@ -598,7 +622,7 @@ it('manual scale, period and both axes after Back survive ordinary tabs and repe
   const manualPeriod = period();
   expect(manualPeriod).not.toEqual(restoredPeriod);
   const manualState = () => {
-    expect(scale()).toHaveValue('months');
+    expectJournalFieldValue(scale(), 'months');
     expect(period()).toEqual(manualPeriod);
     expect(offsets()).toEqual({ top: 475, left: 230 });
   };
@@ -654,8 +678,8 @@ it('consumes each visible restore once and accepts a new request with the same s
   const mounted = render(view(true, first));
   const vertical = document.querySelector<HTMLElement>('[data-plan-scroll]')!;
   const horizontal = document.querySelector<HTMLElement>('.timeline-time')!;
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
-  fireEvent.change(screen.getByLabelText('Масштаб Ганта'), {
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'weeks');
+  changeJournalField(screen.getByLabelText('Масштаб Ганта'), {
     target: { value: 'months' },
   });
   await userEvent.click(
@@ -668,7 +692,7 @@ it('consumes each visible restore once and accepts a new request with the same s
   fireEvent.scroll(horizontal);
   mounted.rerender(view(false, first));
   mounted.rerender(view(true, first));
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('months');
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'months');
   expect(document.querySelector('.gantt-month')?.textContent).toBe(
     manualPeriod,
   );
@@ -677,17 +701,17 @@ it('consumes each visible restore once and accepts a new request with the same s
   const nextRequest = { state: snapshot };
   expect(nextRequest.state).toBe(first.state);
   mounted.rerender(view(true, nextRequest));
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'weeks');
   expect(vertical.scrollTop).toBe(350);
   expect(horizontal.scrollLeft).toBe(180);
-  fireEvent.change(screen.getByLabelText('Масштаб Ганта'), {
+  changeJournalField(screen.getByLabelText('Масштаб Ганта'), {
     target: { value: 'days' },
   });
   const hiddenRequest = { state: snapshot };
   mounted.rerender(view(false, hiddenRequest));
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('days');
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'days');
   mounted.rerender(view(true, hiddenRequest));
-  expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks');
+  expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'weeks');
   expect(vertical.scrollTop).toBe(350);
   expect(horizontal.scrollLeft).toBe(180);
 });
@@ -701,10 +725,10 @@ it('Back across projects restores Gantt scale, width, both scroll axes and filte
   });
   render(<App />);
   await screen.findByRole('treeitem', { name: /Работа 1/ });
-  fireEvent.change(screen.getByLabelText('Масштаб Ганта'), {
+  changeJournalField(screen.getByLabelText('Масштаб Ганта'), {
     target: { value: 'weeks' },
   });
-  fireEvent.change(screen.getByLabelText('Поиск задач'), {
+  changeJournalField(screen.getByLabelText('Поиск задач'), {
     target: { value: 'Работа 2' },
   });
   await userEvent.click(
@@ -726,9 +750,9 @@ it('Back across projects restores Gantt scale, width, both scroll axes and filte
   await travel('back');
   await screen.findByRole('heading', { name: 'Демо-проект' });
   await waitFor(() =>
-    expect(screen.getByLabelText('Масштаб Ганта')).toHaveValue('weeks'),
+    expectJournalFieldValue(screen.getByLabelText('Масштаб Ганта'), 'weeks'),
   );
-  expect(screen.getByLabelText('Поиск задач')).toHaveValue('Работа 2');
+  expectJournalFieldValue(screen.getByLabelText('Поиск задач'), 'Работа 2');
   expect(screen.getByRole('treeitem', { name: /Работа 1/ })).toHaveAttribute(
     'aria-expanded',
     'false',
@@ -803,12 +827,13 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
     ...journal5,
     id: `33333333-3333-4333-8333-${String(125 - index).padStart(12, '0')}`,
     body: `Synthetic note ${index}`,
+    content: { format: 'plain-text' as const, text: `Synthetic note ${index}` },
   }));
   server.entries = entries;
   vi.mocked(api.journalProject).mockImplementation(async (id, query) => {
     const start = Number(query.cursor ?? 0);
     return {
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       projectId: id,
       taskId: null,
       projectRevision: 0,
@@ -883,4 +908,77 @@ it('hidden focus refresh retains a deep visible anchor, paginates on return and 
   await travel('back');
   await travel('forward');
   await waitFor(() => expect(feed.scrollTop).toBe(7525));
+});
+
+it.each(['stay', 'focus', 'pointer', 'navigate', 'history'] as const)(
+  'returns to the journal origin after the close-triggered reload, respecting %s intent',
+  async (intent) => {
+    mockJournalApp();
+    render(<App />);
+    await projectJournal();
+    const origin = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Работа 1',
+    });
+    await userEvent.click(origin);
+    await screen.findByLabelText('Текст записи');
+    await waitFor(() => expect(origin).toBeEnabled());
+    const read = vi.mocked(api.journalProject);
+    const response = await read.mock.results.at(-1)!.value;
+    let release!: (value: typeof response) => void;
+    read.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          release = done;
+        }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Закрыть панель' }),
+    );
+    await waitFor(() => expect(origin).toBeDisabled());
+    // jsdom retains focus on disabled controls; emulate the native browser blur.
+    origin.disabled = false;
+    origin.blur();
+    origin.disabled = true;
+    expect(document.activeElement).toBe(document.body);
+    if (intent === 'focus') {
+      screen.getByLabelText('Поиск записей').focus();
+      (document.activeElement as HTMLElement).blur();
+    } else if (intent === 'pointer') fireEvent.pointerDown(document.body);
+    else if (intent === 'navigate')
+      await userEvent.click(document.getElementById('project-tab-tasks')!);
+    if (intent === 'history') await travel('back');
+    await act(async () => release(response));
+    await waitFor(() => expect(origin).toBeEnabled());
+    if (intent === 'stay') expect(origin).toHaveFocus();
+    else expect(origin).not.toHaveFocus();
+  },
+);
+
+it('keeps its own journal-tab fallback from cancelling return when the feed was already loading at Close', async () => {
+  mockJournalApp();
+  render(<App />);
+  await projectJournal();
+  const origin = screen.getByRole('button', { name: 'Работа 1' });
+  await userEvent.click(origin);
+  await screen.findByLabelText('Текст записи');
+  await waitFor(() => expect(origin).toBeEnabled());
+  const read = vi.mocked(api.journalProject);
+  const response = await read.mock.results.at(-1)!.value;
+  const releases: ((value: typeof response) => void)[] = [];
+  read.mockImplementation(
+    () =>
+      new Promise((done) => {
+        releases.push(done);
+      }),
+  );
+  fireEvent(window, new Event('focus'));
+  await waitFor(() => expect(origin).toBeDisabled());
+  await userEvent.click(screen.getByRole('button', { name: 'Закрыть панель' }));
+  expect(document.getElementById('project-tab-journal')).toHaveFocus();
+  await waitFor(() => expect(releases).toHaveLength(2));
+  await act(async () => {
+    for (const release of releases) release(response);
+  });
+  await waitFor(() => expect(origin).toBeEnabled());
+  expect(origin).toHaveFocus();
 });

@@ -1,3 +1,4 @@
+import { expectJournalText } from '../helpers/journal-e2e.js';
 import {
   test,
   expect,
@@ -54,7 +55,8 @@ test('pinned revision5 editor survives refresh6, close/reopen and Back; explicit
       workDate: '2026-10-11',
     });
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(editor.getByLabel('Текст записи')).toHaveValue(
+    await expectJournalText(
+      editor.getByLabel('Текст записи'),
       'Мой закреплённый черновик',
     );
     await editor.getByRole('button', { name: 'Закрыть редактор' }).click();
@@ -69,7 +71,8 @@ test('pinned revision5 editor survives refresh6, close/reopen and Back; explicit
     await page.goBack();
     await expect(projectFeed(page)).toBeVisible();
     editor = entryCard(page, entryId).locator('[data-journal-editor]');
-    await expect(editor.getByLabel('Текст записи')).toHaveValue(
+    await expectJournalText(
+      editor.getByLabel('Текст записи'),
       'Мой закреплённый черновик',
     );
     let sentRevision: number | undefined;
@@ -335,12 +338,14 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
   await panel.getByLabel('Текст записи').fill('Отдельный task черновик');
   await panel.getByLabel('Текст записи').press('Enter');
   await panel.getByLabel('Текст записи').press('End');
-  await expect(panel.getByLabel('Текст записи')).toHaveValue(
+  await expectJournalText(
+    panel.getByLabel('Текст записи'),
     'Отдельный task черновик\n',
   );
   await panel.getByRole('tab', { name: 'Задача', exact: true }).click();
   await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
-  await expect(panel.getByLabel('Текст записи')).toHaveValue(
+  await expectJournalText(
+    panel.getByLabel('Текст записи'),
     'Отдельный task черновик\n',
   );
   await panel.getByRole('button', { name: 'Закрыть панель' }).click();
@@ -352,7 +357,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
   const dialog = page.getByRole('region', { name: 'Новая запись журнала' });
-  await expect(dialog.getByLabel('Текст записи')).toHaveValue('');
+  await expectJournalText(dialog.getByLabel('Текст записи'), '');
   await chooseTask(dialog, 'Работа A');
   await dialog.getByLabel('Текст записи').fill('Отдельный modal черновик');
   await dialog.getByLabel('Дата записи', { exact: true }).fill('2026-10-13');
@@ -369,7 +374,8 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  await expect(dialog.getByLabel('Текст записи')).toHaveValue(
+  await expectJournalText(
+    dialog.getByLabel('Текст записи'),
     'Отдельный modal черновик',
   );
   page.once('dialog', async (d) => {
@@ -377,7 +383,8 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
     await d.dismiss();
   });
   await dialog.getByRole('button', { name: 'Очистить черновик' }).click();
-  await expect(dialog.getByLabel('Текст записи')).toHaveValue(
+  await expectJournalText(
+    dialog.getByLabel('Текст записи'),
     'Отдельный modal черновик',
   );
   page.once('dialog', async (d) => {
@@ -414,7 +421,12 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
     (
       await page.request.get(
         `${runtime.origin}/api/projects/${tree.project.id}/tasks/${doneId}/journal`,
-        { headers: { 'X-Leaf-Contract-Version': '2' } },
+        {
+          headers: {
+            'X-Leaf-Contract-Version': '2',
+            'X-Leaf-Journal-Contract-Version': '2',
+          },
+        },
       )
     ).status(),
   ).toBe(401);
@@ -422,7 +434,7 @@ test('RAM task/modal/project isolation, newline/clear/logout/beforeunload and br
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await page.getByRole('treeitem', { name: /^Работа A,/ }).click();
   await panel.getByRole('tab', { name: 'Ход работы', exact: true }).click();
-  await expect(panel.getByLabel('Текст записи')).toHaveValue('');
+  await expectJournalText(panel.getByLabel('Текст записи'), '');
 });
 
 test('literal Moscow day across UTC/browser timezone boundaries keeps touched/dirty/cleared drafts', async ({
@@ -534,7 +546,12 @@ test('expired real session clears private RAM and denies journal URL before reau
     (
       await page.request.get(
         `${runtime.origin}/api/projects/${tree.project.id}/journal`,
-        { headers: { 'X-Leaf-Contract-Version': '2' } },
+        {
+          headers: {
+            'X-Leaf-Contract-Version': '2',
+            'X-Leaf-Journal-Contract-Version': '2',
+          },
+        },
       )
     ).status(),
   ).toBe(401);
@@ -547,11 +564,12 @@ test('expired real session clears private RAM and denies journal URL before reau
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  await expect(
+  await expectJournalText(
     page
       .getByRole('region', { name: 'Новая запись журнала' })
       .getByLabel('Текст записи'),
-  ).toHaveValue('');
+    '',
+  );
 });
 
 test('deleted task keeps own RAM draft unavailable; separate project create draft stays isolated on Back', async ({
@@ -586,7 +604,8 @@ test('deleted task keeps own RAM draft unavailable; separate project create draf
   await expect(
     panel.getByRole('alert').filter({ hasText: 'Задача удалена' }),
   ).toBeVisible();
-  await expect(panel.getByLabel('Текст записи')).toHaveValue(
+  await expectJournalText(
+    panel.getByLabel('Текст записи'),
     'Черновик удалённой задачи',
   );
   await expect(
@@ -612,7 +631,8 @@ test('deleted task keeps own RAM draft unavailable; separate project create draf
   await projectFeed(page)
     .getByRole('button', { name: 'Добавить запись', exact: true })
     .click();
-  await expect(dialog.getByLabel('Текст записи')).toHaveValue(
+  await expectJournalText(
+    dialog.getByLabel('Текст записи'),
     'Только первый проект',
   );
   await page.keyboard.press('Escape');
@@ -697,7 +717,8 @@ test('native conflict replacement protects own body/date until confirmation and 
     for (let attempt = 1; attempt <= 2; attempt++) {
       await replace.click();
       expect(confirmations).toBe(attempt);
-      await expect(editor.getByLabel('Текст записи')).toHaveValue(
+      await expectJournalText(
+        editor.getByLabel('Текст записи'),
         'Собственный несохранённый текст',
       );
       await expect(
@@ -709,7 +730,8 @@ test('native conflict replacement protects own body/date until confirmation and 
     }
     await replace.click();
     expect(confirmations).toBe(3);
-    await expect(editor.getByLabel('Текст записи')).toHaveValue(
+    await expectJournalText(
+      editor.getByLabel('Текст записи'),
       'Текущая чужая запись',
     );
     await expect(editor.getByLabel('Дата записи', { exact: true })).toHaveValue(
@@ -810,7 +832,8 @@ test('saved breadcrumb and journal metadata navigation guard dirty task title wi
       exact: true,
     }),
   ).toBeVisible();
-  await expect(panel.getByLabel('Текст записи')).toHaveValue(
+  await expectJournalText(
+    panel.getByLabel('Текст записи'),
     'Независимый RAM черновик',
   );
   await path
@@ -928,16 +951,23 @@ test('late read A cannot hide uncertain write B and its real exact replay', asyn
     await expect(
       panel.getByRole('button', { name: 'Повторить сохранение', exact: true }),
     ).toBeVisible();
-    await expect(panel.getByLabel('Текст записи')).toHaveValue(
+    await expectJournalText(
+      panel.getByLabel('Текст записи'),
       'Сохранённая один раз операция B',
     );
-    await expect(panel.getByLabel('Текст записи')).toBeDisabled();
+    await expect(panel.getByLabel('Текст записи')).toHaveAttribute(
+      'contenteditable',
+      'false',
+    );
     expect(writes).toHaveLength(2);
     await panel
       .getByRole('button', { name: 'Повторить сохранение', exact: true })
       .click();
-    await expect(panel.getByLabel('Текст записи')).toHaveValue('');
-    await expect(panel.getByLabel('Текст записи')).toBeEnabled();
+    await expectJournalText(panel.getByLabel('Текст записи'), '');
+    await expect(panel.getByLabel('Текст записи')).toHaveAttribute(
+      'contenteditable',
+      'true',
+    );
     expect(writes).toHaveLength(3);
     expect(JSON.stringify(writes[2]) === JSON.stringify(writes[1])).toBe(true);
     expect(writes[1]!.operationId).not.toBe(writes[0]!.operationId);

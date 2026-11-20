@@ -592,6 +592,10 @@ test('settings drafts survive discard, uncertain response, exact retry and real 
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(
     committed,
   );
+  await expect(timezone).toBeEnabled();
+  await expect(
+    dialog.getByRole('button', { name: 'Отбросить изменения', exact: true }),
+  ).toHaveCount(0);
   await timezone.fill('Europe/London');
   const external = await send(page, runtime.origin, committed, {
     type: 'task.edit',
@@ -618,7 +622,16 @@ test('settings drafts survive discard, uncertain response, exact retry and real 
   expect(latest.project.timezone).toBe('Europe/London');
   expect(latest.project.calendarType).toBe('all-days');
   expect(latest.tasks).toEqual(external.tasks);
+  // A completed HTTP response can precede the client's clean settings state.
+  await expect(timezone).toBeEnabled();
+  await expect(
+    dialog.getByRole('button', { name: 'Отбросить изменения', exact: true }),
+  ).toHaveCount(0);
   await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Действия проекта', exact: true }),
+  ).toBeFocused();
   const rename = await open(page, 'Переименовать проект');
   await rename
     .getByLabel('Название проекта', { exact: true })

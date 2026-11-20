@@ -7,6 +7,7 @@ import {
   type TaskFilter,
 } from './task-filter.js';
 import { statusLabels, strings } from './strings.js';
+import { TaskSearch } from './TaskSearch.js';
 import { ControlIcon } from './ControlIcon.js';
 
 interface Props {
@@ -74,42 +75,12 @@ export function TaskFilters({ filter, tasks, onChange, disabled }: Props) {
       className="task-filters"
       onSubmit={(event) => event.preventDefault()}
     >
-      <div className="task-search">
-        <ControlIcon name="search" />
-        <input
-          ref={input}
-          type="text"
-          role="searchbox"
-          aria-label={strings.searchTasks}
-          inputMode="search"
-          placeholder={strings.searchTasks}
-          value={filter.query}
-          disabled={disabled}
-          onChange={(event) =>
-            onChange({ ...filter, query: event.target.value })
-          }
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && filter.query !== '') {
-              event.preventDefault();
-              event.stopPropagation();
-              onChange({ ...filter, query: '' });
-            }
-          }}
-        />
-        <button
-          type="button"
-          className={`quiet task-search-clear${filter.query ? '' : ' is-hidden'}`}
-          aria-label={strings.clearTaskSearch}
-          tabIndex={filter.query ? 0 : -1}
-          disabled={disabled || !filter.query}
-          onClick={() => {
-            onChange({ ...filter, query: '' });
-            input.current?.focus();
-          }}
-        >
-          ×
-        </button>
-      </div>
+      <TaskSearch
+        inputRef={input}
+        value={filter.query}
+        disabled={disabled}
+        onChange={(query) => onChange({ ...filter, query })}
+      />
       <div className="task-filter-anchor">
         <button
           ref={button}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -16,7 +17,7 @@ import { project, task, emptySchedule } from './fixtures.js';
 import type { ProjectTree } from '../../src/shared/contracts.js';
 
 let tree: ProjectTree;
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: ReturnType<typeof vi.fn<(url: string) => Promise<Response>>>;
 const root = task(1, { title: 'Этап A' });
 const group = task(2, { title: 'Группа', parentId: root.id });
 const a = task(3, { title: 'Монтаж A', parentId: group.id, status: 'doing' });
@@ -50,7 +51,7 @@ beforeEach(() => {
     if (url === '/api/projects') return json([project, other]);
     if (/\/journal(?:\?|$)/.test(url))
       return json({
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         projectId: url.includes(other.id) ? other.id : tree.project.id,
         taskId: url.includes('/tasks/')
           ? url.split('/tasks/')[1]!.split('/')[0]
@@ -76,6 +77,8 @@ afterEach(() => {
 async function open() {
   const view = render(<App />);
   await screen.findByRole('treeitem', { name: /Монтаж A,/ });
+  // The tree can render before its background journal read settles.
+  await screen.findByText('Записей пока нет');
   return view;
 }
 function ids() {
@@ -92,6 +95,36 @@ async function chooseStatus(
   await user.click(screen.getByRole('checkbox', { name: label }));
   await user.click(screen.getByRole('button', { name: 'Применить (1)' }));
 }
+
+it('settles the initial journal read before exposing the request baseline', async () => {
+  const respond = fetchMock.getMockImplementation()!;
+  const journalUrl = `/api/projects/${project.id}/journal`;
+  let reply!: () => void;
+  fetchMock.mockImplementation((url: string) => {
+    if (url === journalUrl)
+      return new Promise<Response>((resolve) => {
+        reply = () => void respond(url).then(resolve);
+      });
+    return respond(url);
+  });
+  let opened = false;
+  const opening = open().then((view) => {
+    opened = true;
+    return view;
+  });
+  await screen.findByRole('treeitem', { name: /Монтаж A,/ });
+  await waitFor(() => expect(reply).toBeTypeOf('function'));
+  expect(opened).toBe(false);
+  await act(async () => reply());
+  await opening;
+  expect(screen.getByText('Записей пока нет')).toBeInTheDocument();
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    '/api/auth/session',
+    '/api/projects',
+    `/api/projects/${project.id}/tree`,
+    journalUrl,
+  ]);
+});
 
 it('edits multiple statuses as a draft, applies together and discards uncommitted changes', async () => {
   await open();
@@ -275,10 +308,10 @@ it('reveals matches in collapsed branches and shares literal rows with Gantt wit
   expect(screen.getByText('Найдено задач: 1')).toBeVisible();
   expect(
     screen.getByRole('treeitem', { name: /Этап A,/ }),
-  ).toHaveAccessibleDescription('Родительский контекст');
+  ).toHaveAccessibleDescription(/^Родительский контекст/);
   expect(
     screen.getByRole('treeitem', { name: /Монтаж A,/ }),
-  ).not.toHaveAccessibleDescription('Родительский контекст');
+  ).not.toHaveAccessibleDescription(/^Родительский контекст/);
   expect(fetchMock.mock.calls).toHaveLength(requests);
   expect(tree).toEqual(before);
 });

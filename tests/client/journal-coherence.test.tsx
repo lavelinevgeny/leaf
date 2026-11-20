@@ -11,7 +11,7 @@ import {
   renamedTree,
   deferred,
 } from './journal-fixtures.js';
-import type { JournalPage } from '../../src/shared/journal-contracts.js';
+import type { JournalPageV2 as JournalPage } from '../../src/shared/journal-contracts-v2.js';
 import type { ProjectTree } from '../../src/shared/contracts.js';
 import { task } from './fixtures.js';
 afterEach(() => {
@@ -271,7 +271,7 @@ it.each(['project', 'journal'] as const)(
     );
   },
 );
-import type { JournalMutation } from '../../src/shared/journal-contracts.js';
+import type { JournalMutationV2 as JournalMutation } from '../../src/shared/journal-contracts-v2.js';
 import type { JournalDraftKey } from '../../src/client/journal-state.js';
 it('round1 mutation acknowledgement invalidates an awaited older tree without republishing its page or frozen entry', async () => {
   const page = vi.spyOn(api, 'journalProject').mockResolvedValue(page5);
@@ -313,7 +313,7 @@ it('round1 mutation acknowledgement invalidates an awaited older tree without re
   });
   await act(async () => {
     ack.resolve({
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       kind: 'saved',
       projectId: journal5.projectId,
       journalRevision: 6,

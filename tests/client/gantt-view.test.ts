@@ -6,6 +6,7 @@ import {
   sourceMarkers,
   computedDateLabel,
   compactDateLabel,
+  treeDateLabel,
   shiftDate,
   windowFor,
   todayInZone,
@@ -183,4 +184,24 @@ it('validates left intent without mutating nullable source or accepting range/we
     ),
   ).toThrow('DURATION_RANGE_EXCEEDED');
   expect(a).toEqual(before);
+});
+
+it('labels only real partial tree dates explicitly without changing compact chips', () => {
+  const start = task(1, { inputStart: '2026-11-07' });
+  const finish = task(2, { inputFinish: '2026-11-07' });
+  expect(treeDateLabel(start)).toBe('Начало: 7 нояб.');
+  expect(treeDateLabel(finish)).toBe('Окончание: 7 нояб.');
+  expect(compactDateLabel(start)).toBe('7 нояб.');
+  expect(compactDateLabel(finish)).toBe('7 нояб.');
+  expect(treeDateLabel(task(3))).toBe('');
+  expect(
+    treeDateLabel(
+      task(4, { inputStart: '2026-11-07', inputFinish: '2026-11-07' }),
+    ),
+  ).toBe('7 нояб.');
+  expect(
+    treeDateLabel(
+      task(5, { inputStart: '2026-11-07', inputFinish: '2026-11-09' }),
+    ),
+  ).toBe('7–9 нояб.');
 });

@@ -8,9 +8,12 @@ import {
 } from '../shared/contracts.js';
 import { PredecessorPicker } from './PredecessorPicker.js';
 import { ControlIcon } from './ControlIcon.js';
-import { canonicalPredecessorIds } from './predecessor-view.js';
+import {
+  canonicalPredecessorIds,
+  dependencySelectionIssues,
+} from './predecessor-view.js';
 import { QuickSchedule, type QuickScheduleDraft } from './QuickSchedule.js';
-import { scheduleChip } from './quick-add-view.js';
+import { scheduleChip, draftTask } from './quick-add-view.js';
 import { newTaskPlan } from './planning-view.js';
 import { orderedChildren } from './tree-view.js';
 import { strings } from './strings.js';
@@ -19,9 +22,12 @@ export interface AddContext {
   afterId?: string;
 }
 interface Props {
+  active?: boolean;
   tree: ProjectTree;
   predecessorIds: string[];
   onPredecessors: (ids: string[]) => void;
+  successorIds: string[];
+  onSuccessors: (ids: string[]) => void;
   acknowledgement?: number;
   inputDraft?: QuickScheduleDraft | undefined;
   onInputDraft?: ((draft: QuickScheduleDraft | undefined) => void) | undefined;
@@ -33,6 +39,7 @@ interface Props {
     context: AddContext,
     plan: SourceFields,
     predecessorIds: string[],
+    successorIds: string[],
   ) => Promise<boolean>;
   plan: SourceFields;
   onPlan: (plan: SourceFields) => void;
@@ -52,9 +59,12 @@ interface Props {
   onCancel?: () => void;
 }
 export function QuickAdd({
+  active = true,
   tree,
   predecessorIds,
   onPredecessors,
+  successorIds,
+  onSuccessors,
   acknowledgement,
   inputDraft,
   onInputDraft,
@@ -80,8 +90,37 @@ export function QuickAdd({
   onCancel,
 }: Props) {
   const [editing, setEditing] = useState(false);
+  const [titleFocused, setTitleFocused] = useState(false);
+  const composing = useRef(false);
+  const submitting = useRef(false);
   const chip = useRef<HTMLButtonElement>(null);
   const chain = useRef<HTMLButtonElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  // Picker close and successful creation have independent focus owners.
+  const pickerFocus = useRef<{ revoked: boolean } | null>(null);
+  function closeDependencies() {
+    pickerFocus.current = { revoked: false };
+    setPredecessorsOpen(false);
+  }
+  useEffect(() => {
+    const leavePicker = (event: Event) => {
+      const target = event.target;
+      if (!pickerFocus.current || !(target instanceof Node)) return;
+      if (
+        chain.current?.contains(target) ||
+        form.current?.querySelector('.predecessor-picker')?.contains(target)
+      )
+        return;
+      pickerFocus.current.revoked = true;
+    };
+    document.addEventListener('focusin', leavePicker);
+    document.addEventListener('pointerdown', leavePicker, true);
+    return () => {
+      document.removeEventListener('focusin', leavePicker);
+      document.removeEventListener('pointerdown', leavePicker, true);
+      pickerFocus.current = null;
+    };
+  }, []);
   const [predecessorsOpen, setPredecessorsOpen] = useState(false);
   function beginEditing() {
     setEditing(true);
@@ -92,6 +131,7 @@ export function QuickAdd({
     onTitle('');
     onPlan(newTaskPlan());
     onPredecessors([]);
+    onSuccessors([]);
     resetFields();
     setValid(true);
   }
@@ -136,21 +176,107 @@ export function QuickAdd({
     setValid(nextValid);
   }
   const scheduleId = useId();
-  const canSubmit = valid && sourceFieldsSchema.safeParse(plan).success;
+  const proposal = {
+    task: draftTask(tree, context, title, plan),
+    isNew: true,
+    predecessorIds,
+    successorIds,
+  };
+  const selectionIssues = dependencySelectionIssues(tree, proposal);
+  const canSubmit =
+    valid &&
+    sourceFieldsSchema.safeParse(plan).success &&
+    selectionIssues.length === 0;
+  const dependencyCount = predecessorIds.length + successorIds.length;
   const [restoreFocus, setRestoreFocus] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const parent = tasks.find((task) => task.id === context.parentId);
+  const focusRequest = useRef<{
+    input: HTMLInputElement;
+    revoked: boolean;
+  } | null>(null);
+  useEffect(() => {
+    const leave = (event: FocusEvent) => {
+      if (focusRequest.current && event.target !== focusRequest.current.input)
+        focusRequest.current.revoked = true;
+    };
+    document.addEventListener('focusin', leave);
+    return () => {
+      document.removeEventListener('focusin', leave);
+      focusRequest.current = null;
+    };
+  }, []);
+  const previousContext = useRef({
+    inputId,
+    projectId: tree.project.id,
+    parentId: context.parentId,
+    afterId: context.afterId,
+    acknowledgement,
+    active,
+  });
+  useEffect(() => {
+    const previous = previousContext.current;
+    if (
+      !active ||
+      previous.inputId !== inputId ||
+      previous.projectId !== tree.project.id ||
+      previous.parentId !== context.parentId ||
+      (previous.afterId !== context.afterId &&
+        previous.acknowledgement === acknowledgement)
+    ) {
+      if (focusRequest.current) focusRequest.current.revoked = true;
+      if (pickerFocus.current) pickerFocus.current.revoked = true;
+    }
+    previousContext.current = {
+      inputId,
+      projectId: tree.project.id,
+      parentId: context.parentId,
+      afterId: context.afterId,
+      acknowledgement,
+      active,
+    };
+  }, [
+    context.parentId,
+    context.afterId,
+    acknowledgement,
+    active,
+    inputId,
+    tree.project.id,
+  ]);
+  useEffect(() => {
+    if (predecessorsOpen || busy || blocked) return;
+    const request = pickerFocus.current;
+    pickerFocus.current = null;
+    if (!request || request.revoked || !active) return;
+    const target = chain.current?.isConnected ? chain.current : input.current;
+    if (target?.isConnected && !target.disabled && !target.closest('[hidden]'))
+      target.focus();
+  }, [
+    predecessorsOpen,
+    busy,
+    blocked,
+    active,
+    context.parentId,
+    context.afterId,
+    inputId,
+    tree.project.id,
+  ]);
   useEffect(() => {
     if (!restoreFocus || busy || blocked) return;
-    const active = document.activeElement;
+    const request = focusRequest.current;
+    focusRequest.current = null;
     if (
-      active === document.body ||
-      active === input.current ||
-      (active && input.current?.form?.contains(active))
+      request &&
+      !request.revoked &&
+      active &&
+      request.input === input.current &&
+      request.input.isConnected &&
+      !request.input.disabled &&
+      !request.input.closest('[hidden]')
     )
-      input.current?.focus();
+      request.input.focus();
     setRestoreFocus(false);
-  }, [restoreFocus, busy, blocked]);
+  }, [restoreFocus, busy, blocked, active]);
   const previousAck = useRef(acknowledgement);
   useEffect(() => {
     if (acknowledgement === previousAck.current) return;
@@ -160,16 +286,32 @@ export function QuickAdd({
     setRestoreFocus(true);
   }, [acknowledgement]);
   async function submit() {
-    if (!title.trim() || busy || blocked || !!submitBlockedReason || !canSubmit)
+    if (
+      !title.trim() ||
+      composing.current ||
+      submitting.current ||
+      busy ||
+      blocked ||
+      !!submitBlockedReason ||
+      !canSubmit
+    )
       return;
+    submitting.current = true;
+    if (input.current)
+      focusRequest.current = { input: input.current, revoked: false };
     sentRawVersion.current = rawVersion.current;
-    if (await onCreate(title, context, plan, predecessorIds)) {
-      acknowledgeFields();
-      setRestoreFocus(true);
+    try {
+      if (await onCreate(title, context, plan, predecessorIds, successorIds)) {
+        acknowledgeFields();
+        setRestoreFocus(true);
+      }
+    } finally {
+      submitting.current = false;
     }
   }
   return (
     <form
+      ref={form}
       className={`quick-add${inline ? ' inline-quick-add' : ''}`}
       onBlur={(event) => {
         if (
@@ -184,7 +326,14 @@ export function QuickAdd({
       }}
     >
       <div className="quick-line">
-        <span className="draft-dot" aria-hidden="true">
+        <button
+          type="button"
+          className="draft-dot quick-focus"
+          aria-label={strings.focusQuickInput}
+          title={strings.focusQuickInput}
+          disabled={busy || blocked}
+          onClick={() => input.current?.focus()}
+        >
           {inline ? (
             <svg
               width="16"
@@ -201,19 +350,39 @@ export function QuickAdd({
           ) : (
             '＋'
           )}
-        </span>
+        </button>
         <input
           id={inputId}
           ref={input}
           aria-label={strings.newTask}
-          aria-description={`${strings.parent}: ${parent?.title ?? strings.root}. ${strings.quickHint}`}
+          aria-description={`${strings.parent}: ${parent?.title ?? strings.root}. ${strings.quickKeyboardHint} · ${inline ? strings.quickCancelHint : strings.quickExitHint}`}
           placeholder={strings.newTask}
           value={title}
           maxLength={300}
           disabled={busy || blocked}
-          onFocus={beginEditing}
+          onFocus={() => {
+            setTitleFocused(true);
+            beginEditing();
+          }}
+          onBlur={() => setTitleFocused(false)}
+          onCompositionStart={() => {
+            composing.current = true;
+          }}
+          onCompositionEnd={() => {
+            composing.current = false;
+          }}
           onChange={(event) => onTitle(event.target.value)}
           onKeyDown={(event) => {
+            if (
+              composing.current ||
+              event.nativeEvent.isComposing ||
+              event.keyCode === 229
+            ) {
+              if (event.key === 'Enter') event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            if (event.key === 'Enter') event.stopPropagation();
             if (event.altKey && event.key.toLowerCase() === 'l') {
               event.preventDefault();
               event.stopPropagation();
@@ -230,6 +399,7 @@ export function QuickAdd({
               return;
             }
             if (event.key === 'Escape') {
+              setTitleFocused(false);
               event.preventDefault();
               event.stopPropagation();
               if (inline) cancel();
@@ -272,9 +442,9 @@ export function QuickAdd({
           ref={chain}
           type="button"
           className="predecessor-action"
-          aria-label={strings.newTaskPredecessors}
+          aria-label={`${strings.newTaskLinks}: ${dependencyCount}, не сохранено`}
           aria-expanded={predecessorsOpen}
-          title={`${strings.afterFinish} · Alt+L`}
+          title={`${strings.newTaskLinks} · Alt+L`}
           disabled={busy || blocked}
           onClick={() => {
             setPredecessorsOpen((open) => !open);
@@ -283,7 +453,7 @@ export function QuickAdd({
           }}
         >
           <ControlIcon name="chain" />
-          {predecessorIds.length > 0 && <span>{predecessorIds.length}</span>}
+          {dependencyCount > 0 && <span>{dependencyCount}</span>}
         </button>
         <button
           aria-label={strings.addTask}
@@ -354,8 +524,12 @@ export function QuickAdd({
         <span>
           {strings.parent}: {parent?.title ?? strings.root}
         </span>
-        <span>{strings.quickHint}</span>
-        {(predecessorIds.length > 0 ||
+        {!inline && titleFocused && editing && (
+          <span>
+            {strings.quickKeyboardHint} · {strings.quickExitHint}
+          </span>
+        )}
+        {(dependencyCount > 0 ||
           title ||
           plan.inputStart !== null ||
           plan.inputFinish !== null ||
@@ -382,22 +556,31 @@ export function QuickAdd({
           {strings.planInputError}
         </p>
       )}
+      {selectionIssues.length > 0 && (
+        <p role="alert" className="field-error">
+          {selectionIssues[0]!.reason}
+        </p>
+      )}
       {predecessorsOpen && (
         <PredecessorPicker
           tree={tree}
-          successorId={null}
-          selectedIds={predecessorIds}
+          proposal={proposal}
+          direction="selectable"
           disabled={busy || blocked}
-          onAdd={(id) =>
-            onPredecessors(canonicalPredecessorIds([...predecessorIds, id]))
-          }
-          onRemove={(id) =>
-            onPredecessors(predecessorIds.filter((selected) => selected !== id))
-          }
-          onClose={() => {
-            setPredecessorsOpen(false);
-            chain.current?.focus();
+          onAdd={(direction, id) => {
+            if (direction === 'predecessor')
+              onPredecessors(canonicalPredecessorIds([...predecessorIds, id]));
+            else onSuccessors(canonicalPredecessorIds([...successorIds, id]));
           }}
+          onRemove={(direction, id) => {
+            if (direction === 'predecessor')
+              onPredecessors(
+                predecessorIds.filter((selected) => selected !== id),
+              );
+            else
+              onSuccessors(successorIds.filter((selected) => selected !== id));
+          }}
+          onClose={closeDependencies}
         />
       )}
       {(scheduleOpen || scheduleMounted) && (

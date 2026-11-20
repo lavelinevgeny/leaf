@@ -296,7 +296,7 @@ it('keeps the inline editor, selection and selected tree row on actual pointer s
 });
 
 it.each([false, true])(
-  'keeps tree rows free of chain actions while child creation works (Gantt: %s)',
+  'shares row chain actions while child creation works (Gantt: %s)',
   async (show) => {
     const tree = optionalTreeFixture(),
       onPredecessors = vi.fn(),
@@ -320,14 +320,20 @@ it.each([false, true])(
     const row = screen.getByRole('treeitem', { name: /^Работа C,/ });
     await userEvent.hover(row);
     expect(
-      within(row).queryByRole('button', { name: /^После окончания:/ }),
-    ).not.toBeInTheDocument();
+      within(row).getByRole('button', { name: 'Зависимости: Работа C' }),
+    ).toBeEnabled();
     row.focus();
     expect(
-      within(row).queryByRole('button', { name: /^После окончания:/ }),
-    ).not.toBeInTheDocument();
+      within(row).getByRole('button', { name: 'Зависимости: Работа C' }),
+    ).toBeEnabled();
     fireEvent.keyDown(row, { key: 'l', altKey: true });
     expect(onPredecessors).not.toHaveBeenCalled();
+    const chain = within(row).getByRole('button', {
+      name: 'Зависимости: Работа C',
+    });
+    await userEvent.click(chain);
+    expect(onPredecessors).toHaveBeenLastCalledWith(tree.tasks[2], chain);
+    expect(onSelect).not.toHaveBeenCalled();
     await userEvent.click(
       within(row).getByRole('button', { name: 'Добавить подзадачу: Работа C' }),
     );
@@ -337,3 +343,74 @@ it.each([false, true])(
     expect(onSelect).not.toHaveBeenCalled();
   },
 );
+
+it('K02 exact row focus owns hints; action and dates do not; K03 shortcuts stay isolated', () => {
+  const tree = optionalTreeFixture(),
+    onSelect = vi.fn(),
+    onAction = vi.fn();
+  const context = { parentId: null };
+  const view = render(
+    <TaskTimeline
+      tree={tree}
+      collapsed={new Set()}
+      selectedId={null}
+      onToggle={vi.fn()}
+      onSelect={onSelect}
+      onAction={onAction}
+      onPlan={vi.fn()}
+      disabled={false}
+      show
+      reveal={null}
+      draft={{
+        task: draftTask(tree, context, '', {
+          inputStart: null,
+          inputFinish: null,
+          durationDays: 1,
+        }),
+        context,
+        active: true,
+        input: (
+          <>
+            <input id="quick-task" aria-label="Title" />
+            <input aria-label="Date" />
+          </>
+        ),
+      }}
+    />,
+  );
+  const row = screen.getByRole('treeitem', { name: /^Работа A,/ }),
+    hint = view.container.querySelector('.tree-keyboard-hint')!;
+  fireEvent.focus(row);
+  expect(hint).toHaveTextContent('Enter — открыть');
+  fireEvent.keyDown(row, { key: 'Enter' });
+  expect(onSelect).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(row, { key: 'Insert' });
+  expect(onAction).toHaveBeenLastCalledWith('sibling', tree.tasks[1]);
+  fireEvent.keyDown(row, { key: 'Insert', shiftKey: true });
+  expect(onAction).toHaveBeenLastCalledWith('child', tree.tasks[1]);
+  fireEvent.focus(within(row).getByRole('button'));
+  expect(hint).toBeEmptyDOMElement();
+  fireEvent.focus(screen.getByLabelText('Title'));
+  expect(hint).toHaveTextContent('Esc — отменить');
+  fireEvent.focus(screen.getByLabelText('Date'));
+  expect(hint).toBeEmptyDOMElement();
+});
+it('K02 subtask row hint ends on child-control focus', () => {
+  const tree = optionalTreeFixture();
+  render(
+    <TaskTree
+      rootId={optionalIds.p}
+      tasks={tree.tasks}
+      selectedId={null}
+      collapsed={new Set()}
+      onToggle={vi.fn()}
+      onSelect={vi.fn()}
+      onAction={vi.fn()}
+    />,
+  );
+  const row = screen.getByRole('treeitem', { name: /^Работа A,/ });
+  fireEvent.focus(row);
+  expect(screen.getByText(/Enter — открыть/)).toBeVisible();
+  fireEvent.focus(within(row).getByRole('button'));
+  expect(screen.queryByText(/Enter — открыть/)).toBeNull();
+});

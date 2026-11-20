@@ -1,0 +1,132 @@
+.project-current-container {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  container: current-tasks / inline-size;
+}
+.current-tasks {
+  padding: 12px 24px 32px;
+  min-width: 0;
+}
+.current-group {
+  min-width: 0;
+  margin-bottom: 14px;
+}
+.current-group h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.current-group h2 button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--leaf-border);
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 0;
+  text-align: left;
+}
+.current-chevron {
+  width: 12px;
+  color: var(--leaf-text-muted);
+}
+.current-count {
+  color: var(--leaf-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.current-row {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr) 205px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--leaf-border);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  padding: 12px 8px;
+}
+.current-row:hover {
+  background: var(--surface-subtle, #f5f8f6);
+}
+.current-row:focus-visible,
+.current-group h2 button:focus-visible {
+  outline: 2px solid var(--leaf-focus);
+  outline-offset: -2px;
+}
+.current-status {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid #a6afb0;
+  border-radius: 50%;
+}
+.current-status-doing {
+  border-color: #5393ba;
+  background: #dcecf8;
+}
+.current-task-text {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.current-title,
+.current-path {
+  overflow-wrap: anywhere;
+}
+.current-title {
+  font-size: 14px;
+}
+.current-path {
+  color: var(--leaf-text-muted);
+  font-size: 12px;
+}
+.current-date {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--leaf-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.current-urgency {
+  font-size: 11px;
+}
+.current-overdue .current-urgency {
+  color: #ad5147;
+}
+.current-today .current-urgency {
+  color: #387451;
+}
+.current-empty {
+  margin: 12px 26px;
+  color: var(--leaf-text-muted);
+  font-size: 13px;
+}
+@container current-tasks (max-width: 560px) {
+  .current-tasks {
+    padding: 8px 12px 24px;
+  }
+  .current-row {
+    grid-template-columns: 13px minmax(0, 1fr);
+    gap: 4px 8px;
+  }
+  .current-status {
+    align-self: start;
+    margin-top: 4px;
+  }
+  .current-date {
+    grid-column: 2;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1199px) {
+  .project-current-container.panel-visible {
+    margin-inline-end: var(--leaf-task-panel-width);
+  }
+}

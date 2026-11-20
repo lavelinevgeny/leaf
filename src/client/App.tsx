@@ -1,5 +1,12 @@
 import { useJournal } from './use-journal.js';
 import { useProjectToday } from './use-project-today.js';
+import { CurrentTasks } from './CurrentTasks.js';
+import {
+  currentGroups,
+  defaultCurrentCollapsed,
+  type CurrentGroupId,
+  type CurrentOrigin,
+} from './current-view.js';
 import { ProjectViewTabs } from './ProjectViewTabs.js';
 import { ProjectJournal } from './ProjectJournal.js';
 import { TaskJournal } from './TaskJournal.js';
@@ -9,7 +16,11 @@ import {
   type ProjectView,
   type WorkspaceVisit,
 } from './workspace-navigation.js';
-import { journalFeedCoherent, type JournalPosition } from './journal-state.js';
+import {
+  journalFeedCoherent,
+  type JournalFeedState,
+  type JournalPosition,
+} from './journal-state.js';
 import type { JournalProjectQuery } from '../shared/journal-contracts.js';
 import type {
   TimelineRestoreRequest,
@@ -52,6 +63,7 @@ import { strings } from './strings.js';
 import { ProjectControls } from './ProjectControls.js';
 import { TaskViewControl } from './TaskViewControl.js';
 import { TaskTimeline, type GanttReveal } from './TaskTimeline.js';
+import { TaskSearch } from './TaskSearch.js';
 import { TaskFilters } from './TaskFilters.js';
 import { ControlIcon } from './ControlIcon.js';
 import { emptyTaskFilter, type TaskFilter } from './task-filter.js';
@@ -70,7 +82,11 @@ import {
   type QuickDraft,
 } from './quick-add-view.js';
 import { PredecessorPicker } from './PredecessorPicker.js';
-import { incomingPredecessorIds } from './predecessor-view.js';
+import {
+  incomingPredecessorIds,
+  outgoingSuccessorIds,
+  type DependencyDirection,
+} from './predecessor-view.js';
 import './styles/app.css';
 import './styles/planning.css';
 
@@ -85,6 +101,7 @@ type Mutation =
       sentQuickRawVersion?: number;
       panelTaskId?: string;
       immediateTaskId?: string;
+      onAcknowledged?: (() => void) | undefined;
     }
   | { kind: 'rename'; projectId: string; envelope: RenameProject };
 interface PanelVisit {
@@ -112,7 +129,18 @@ function isTextInput(target: EventTarget | null) {
 }
 export function App() {
   const initialVisit = useRef(parseWorkspaceUrl(new URL(window.location.href)));
+  const [currentQuery, setCurrentQuery] = useState('');
   const [projectView, setProjectView] = useState<ProjectView>('tasks');
+  const [currentCollapsed, setCurrentCollapsed] = useState(
+    defaultCurrentCollapsed,
+  );
+  const currentScrollTop = useRef(0);
+  const restoreCurrentScroll = useRef<number | null>(null);
+  const currentOrigin = useRef<CurrentOrigin | null>(null);
+  const currentRowFocus = useRef<{
+    element: HTMLElement;
+    origin: CurrentOrigin;
+  } | null>(null);
   const [journalQuery, setJournalQuery] = useState<JournalProjectQuery>({});
   const feedPosition = useRef<JournalPosition>({
     id: null,
@@ -125,6 +153,11 @@ export function App() {
     undefined,
   );
   const journalOrigin = useRef<HTMLElement | null>(null);
+  const journalPanelReturn = useRef<{
+    projectId: string;
+    origin: HTMLElement | null;
+    feedAtClose: JournalFeedState | null;
+  } | null>(null);
   const journalFocus = useRef(0);
   const journalFocusRequest = useRef<{ taskId: string; token: number } | null>(
     null,
@@ -137,6 +170,10 @@ export function App() {
     visit: WorkspaceVisit;
     index: number;
     collapsed: Set<string>;
+    currentCollapsed: Set<CurrentGroupId>;
+    currentQuery: string;
+    currentScrollTop: number;
+    currentOrigin: CurrentOrigin | null;
     filter: TaskFilter;
     showGantt: boolean;
     query: JournalProjectQuery;
@@ -150,6 +187,7 @@ export function App() {
   const restorationApplied = useRef(false);
   const [restorationTick, setRestorationTick] = useState(0);
   const suppressedPop = useRef(false);
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -190,11 +228,50 @@ export function App() {
     taskId: string;
     projectId: string;
     trigger: HTMLElement;
+    scope: HTMLElement | null;
+    inputId: string;
+    cancelled: boolean;
+    sequence: number;
   } | null>(null);
+  const immediateSequence = useRef(0);
   const immediateHostRef = useRef(immediateHost);
   immediateHostRef.current = immediateHost;
   const [restoreImmediate, setRestoreImmediate] =
     useState<typeof immediateHost>(null);
+  const restoreImmediateRef = useRef(restoreImmediate);
+  restoreImmediateRef.current = restoreImmediate;
+  function cancelImmediateFocus() {
+    if (immediateHostRef.current) immediateHostRef.current.cancelled = true;
+    if (restoreImmediateRef.current)
+      restoreImmediateRef.current.cancelled = true;
+  }
+  useEffect(() => {
+    const revoke = (event: Event) => {
+      const panelReturn = journalPanelReturn.current;
+      if (
+        panelReturn &&
+        event.target instanceof Node &&
+        !panelReturn.origin?.contains(event.target)
+      )
+        journalPanelReturn.current = null;
+      const host = immediateHostRef.current ?? restoreImmediateRef.current;
+      const target = event.target;
+      if (!host || !(target instanceof Node)) return;
+      if (host.trigger.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest('.immediate-predecessors, [data-immediate-recovery]')
+      )
+        return;
+      host.cancelled = true;
+    };
+    document.addEventListener('focusin', revoke, true);
+    document.addEventListener('pointerdown', revoke, true);
+    return () => {
+      document.removeEventListener('focusin', revoke, true);
+      document.removeEventListener('pointerdown', revoke, true);
+    };
+  }, []);
   const undoFocus = useRef<UndoFocus | null>(null);
   const [restoreUndo, setRestoreUndo] = useState<{
     request: UndoFocus;
@@ -332,6 +409,8 @@ export function App() {
     ++branchRestore.current;
   }
   function expireSession() {
+    journalPanelReturn.current = null;
+    cancelImmediateFocus();
     clearTaskNavigation();
     ++loadSequence.current;
     journal.clearPrivateState();
@@ -355,6 +434,7 @@ export function App() {
     setProjectPlanDirty(false);
     visits.current.clear();
     visitId.current = null;
+    setCurrentQuery('');
   }
   const journal = useJournal(
     session?.authenticated &&
@@ -367,6 +447,7 @@ export function App() {
           taskId: selected?.id ?? null,
           today: projectToday,
           projectQuery: journalQuery,
+          uploadsDisabled: !!session?.demoMode,
           planningTree: tree,
           planningDirty: dirty || projectDirty,
           planningUncertain: uncertain,
@@ -433,12 +514,26 @@ export function App() {
     else requestTaskNavigation(proceed);
     return true;
   }
-  function changeProjectView(view: ProjectView) {
-    if (journalLocked) return;
+  function changeProjectView(view: ProjectView): boolean {
+    if (
+      journalLocked ||
+      lock.current ||
+      pendingRef.current ||
+      conflictRef.current ||
+      loading
+    )
+      return false;
     lastCapture.current();
+    journalPanelReturn.current = null;
     cancelStartFocus();
     ++journalFocus.current;
+    ++branchRestore.current;
+    undoFocus.current = null;
+    currentRowFocus.current = null;
+    restoreCurrentScroll.current =
+      view === 'current' ? currentScrollTop.current : null;
     setProjectView(view);
+    return true;
   }
   function updateQuick(
     projectId: string,
@@ -450,6 +545,7 @@ export function App() {
         previous[projectId] ?? {
           title: '',
           predecessorIds: [],
+          successorIds: [],
           context: { parentId: null },
           plan: newTaskPlan(),
         },
@@ -496,6 +592,7 @@ export function App() {
           inputDraft: saved?.inputDraft,
           title: saved?.title ?? '',
           predecessorIds: saved?.predecessorIds ?? [],
+          successorIds: saved?.successorIds ?? [],
           plan: saved?.plan ?? newTaskPlan(),
           context: {
             parentId,
@@ -561,6 +658,8 @@ export function App() {
     return true;
   }
   function requestTaskNavigation(proceed: () => void): void {
+    journalPanelReturn.current = null;
+    cancelImmediateFocus();
     ++branchRestore.current;
     if (!canNavigate(false, true)) return;
     if (!dirtyRef.current) {
@@ -622,7 +721,11 @@ export function App() {
     };
   }
   async function loadProject(id: string, preserveDraft = false) {
+    journalPanelReturn.current = null;
+    if (!preserveDraft) cancelImmediateFocus();
     if (restoreStartHandle.current?.projectId !== id) cancelStartFocus();
+    undoFocus.current = null;
+    currentRowFocus.current = null;
     setDurationChoice(null);
     if (!preserveDraft) setImmediateHost(null);
     const sequence = ++loadSequence.current;
@@ -631,6 +734,11 @@ export function App() {
     setError(null);
     setNotice('');
     if (!preserveDraft) {
+      setCurrentCollapsed(defaultCurrentCollapsed());
+      setCurrentQuery('');
+      currentScrollTop.current = 0;
+      restoreCurrentScroll.current = null;
+      currentOrigin.current = null;
       setProjectView('tasks');
       setShowGantt(true);
       timelineView.current = undefined;
@@ -853,6 +961,9 @@ export function App() {
       }
       if (job.kind === 'command' && job.panelTaskId)
         setPanelAcknowledgement(next);
+      // This observer belongs to the exact job, including a global retry. It is
+      // never serialized, and ordinary rejection/uncertainty cannot acknowledge it.
+      if (job.kind === 'command') job.onAcknowledged?.();
       if (
         job.kind === 'command' &&
         job.immediateTaskId &&
@@ -886,6 +997,7 @@ export function App() {
             title: '',
             plan: newTaskPlan(),
             predecessorIds: [],
+            successorIds: [],
             context: created
               ? { parentId: created.parentId, afterId: created.id }
               : draft.context,
@@ -928,6 +1040,7 @@ export function App() {
       sentQuickRawVersion?: number;
       panelTaskId?: string;
       immediateTaskId?: string;
+      onAcknowledged?: (() => void) | undefined;
     } = {},
   ) {
     if (
@@ -952,21 +1065,42 @@ export function App() {
       },
     });
   }
-  async function command(value: Command) {
-    return !!(await commandTree(value));
+  async function command(value: Command, onAcknowledged?: () => void) {
+    return !!(await commandTree(value, { onAcknowledged }));
   }
   function openPredecessors(task: Task, trigger: HTMLElement) {
     if (
       !canNavigate() ||
       !treeRef.current ||
-      task.projectId !== treeRef.current.project.id
+      task.projectId !== treeRef.current.project.id ||
+      !treeRef.current.tasks.some((item) => item.id === task.id)
     )
       return;
     if (treeRef.current.tasks.some((child) => child.parentId === task.id)) {
       setNotice(strings.chooseLeaf);
       return;
     }
-    setImmediateHost({ taskId: task.id, projectId: task.projectId, trigger });
+    const scope =
+      trigger.closest<HTMLElement>('[role="tree"]') ??
+      trigger
+        .closest('.task-timeline')
+        ?.querySelector<HTMLElement>('[role="tree"]') ??
+      null;
+    const host = {
+      taskId: task.id,
+      projectId: task.projectId,
+      trigger,
+      scope,
+      inputId: scope?.closest('.panel-subtasks')
+        ? 'quick-subtask'
+        : 'quick-task',
+      cancelled: false,
+      sequence: ++immediateSequence.current,
+    };
+    cancelImmediateFocus();
+    setRestoreImmediate(null);
+    immediateHostRef.current = host;
+    setImmediateHost(host);
   }
   function closePredecessors() {
     setRestoreImmediate(immediateHostRef.current);
@@ -974,51 +1108,70 @@ export function App() {
   }
   useEffect(() => {
     if (!restoreImmediate || busy || loading || pending) return;
-    if (
-      restoreImmediate.trigger.isConnected &&
-      !restoreImmediate.trigger.matches(':disabled') &&
-      !restoreImmediate.trigger.closest('[hidden]')
-    )
-      restoreImmediate.trigger.focus();
-    else {
-      const inputId =
-        restoreImmediate.trigger.dataset.quickInput ?? 'quick-task';
-      const scope =
-        inputId === 'quick-subtask'
-          ? document.querySelector<HTMLElement>(
-              '#panel-details .panel-subtasks',
-            )
-          : document;
-      if (!scope || !focusTaskRow(restoreImmediate.taskId, scope))
-        (
-          document.getElementById(inputId) ??
-          document.getElementById('quick-task')
-        )?.focus();
-    }
-    setRestoreImmediate(null);
+    const host = restoreImmediate;
+    let frame = requestAnimationFrame(() => {
+      if (!host.cancelled && treeRef.current?.project.id === host.projectId) {
+        if (!focusVisible(host.trigger)) {
+          const scope = host.scope;
+          const row =
+            scope?.isConnected && !scope.closest('[hidden]')
+              ? scope.querySelector<HTMLElement>(
+                  `[data-task-id="${host.taskId}"]`,
+                )
+              : null;
+          if (
+            !focusVisible(row || null) &&
+            !focusVisible(document.getElementById(host.inputId)) &&
+            host.inputId === 'quick-subtask' &&
+            scope?.isConnected
+          ) {
+            panelActions.current?.revealSubtaskInput();
+            frame = requestAnimationFrame(() => {
+              if (
+                !host.cancelled &&
+                treeRef.current?.project.id === host.projectId
+              )
+                focusVisible(document.getElementById(host.inputId));
+              setRestoreImmediate((previous) =>
+                previous === host ? null : previous,
+              );
+            });
+            return;
+          }
+        }
+      }
+      setRestoreImmediate((previous) => (previous === host ? null : previous));
+    });
+    return () => cancelAnimationFrame(frame);
   }, [restoreImmediate, busy, loading, pending]);
-  function immediateRelation(id: string, remove: boolean) {
+  function immediateRelation(
+    direction: DependencyDirection,
+    id: string,
+    remove: boolean,
+  ) {
     const host = immediateHostRef.current,
       current = treeRef.current;
     if (
       !host ||
       !current ||
       host.projectId !== current.project.id ||
+      !current.tasks.some((task) => task.id === host.taskId) ||
+      current.tasks.some((task) => task.parentId === host.taskId) ||
       !canNavigate()
     )
       return;
+    const predecessorId = direction === 'predecessor' ? id : host.taskId;
+    const successorId = direction === 'predecessor' ? host.taskId : id;
     const edge = current.dependencies.find(
-      (edge) => edge.predecessorId === id && edge.successorId === host.taskId,
+      (item) =>
+        item.predecessorId === predecessorId &&
+        item.successorId === successorId,
     );
     if (remove && !edge) return;
     void commandTree(
       remove
         ? { type: 'dependency.delete', dependencyId: edge!.id }
-        : {
-            type: 'dependency.create',
-            predecessorId: id,
-            successorId: host.taskId,
-          },
+        : { type: 'dependency.create', predecessorId, successorId },
       { immediateTaskId: host.taskId },
     );
   }
@@ -1039,16 +1192,21 @@ export function App() {
     addContext: AddContext,
     plan: SourceFields,
     predecessorIds: string[],
+    successorIds: string[],
     quickKey?: string,
   ) {
     if (!canNavigate()) return false;
     const preserved = preserveWork(addContext.parentId);
     if (preserved === null) return false;
     const key = quickKey ?? treeRef.current!.project.id;
+    // A refreshed subtask branch can rebase its displayed parent without editing text.
+    // Capture and acknowledge that submitted context as the RAM draft's current context.
+    updateQuick(key, (draft) => ({ ...draft, context: { ...addContext } }));
     return !!(await commandTree(
       {
         type: 'task.create',
         predecessorIds: [...predecessorIds],
+        successorIds: [...successorIds],
         ...plan,
         title,
         ...addContext,
@@ -1062,13 +1220,15 @@ export function App() {
           context: { ...addContext },
           plan: { ...plan },
           predecessorIds: [...predecessorIds],
+          successorIds: [...successorIds],
         },
       },
     ));
   }
   // false: refused, or the reused panel will not take focus (focus returns to the trigger).
-  function selectTask(task: Task): boolean {
+  function selectTask(task: Task, origin?: CurrentOrigin): boolean {
     requestTaskNavigation(() => {
+      currentOrigin.current = origin ?? null;
       setSelected(task);
       setPanelTab('details');
       setPanelHistory([]);
@@ -1083,27 +1243,122 @@ export function App() {
     });
     return true;
   }
+  function focusVisible(element: HTMLElement | null, reveal = false): boolean {
+    if (
+      !element?.isConnected ||
+      element.closest('[hidden]') ||
+      element.matches(':disabled')
+    )
+      return false;
+    element.focus({ preventScroll: !reveal });
+    return true;
+  }
+  function focusCurrent(origin = currentOrigin.current) {
+    if (origin && origin.projectId === treeRef.current?.project.id) {
+      if (
+        focusVisible(
+          document.getElementById(`current-task-${origin.taskId}`),
+          true,
+        )
+      )
+        return;
+      if (
+        focusVisible(
+          document.getElementById(`current-group-${origin.groupId}`),
+          true,
+        )
+      )
+        return;
+    }
+    focusVisible(document.getElementById('project-tab-current'), true);
+  }
+  function focusActiveView(id?: string) {
+    if (projectView === 'current') {
+      focusCurrent();
+      return;
+    }
+    if (projectView === 'journal') {
+      if (!focusVisible(journalOrigin.current))
+        focusVisible(document.getElementById('project-tab-journal'));
+      return;
+    }
+    const mainTree = document.querySelector<HTMLElement>(
+      `[role="tree"][aria-label="${strings.tasks}"]`,
+    );
+    if (
+      !mainTree ||
+      mainTree.closest('[hidden]') ||
+      !(
+        (id && focusTaskRow(id, mainTree)) ||
+        (panelOrigin.current && focusTaskRow(panelOrigin.current, mainTree))
+      )
+    )
+      focusVisible(document.getElementById('quick-task'));
+  }
+  useLayoutEffect(() => {
+    const request = journalPanelReturn.current;
+    if (!request) return;
+    if (
+      selected ||
+      projectView !== 'journal' ||
+      currentProject.current !== request.projectId
+    ) {
+      journalPanelReturn.current = null;
+      return;
+    }
+    const feed = journal.projectFeed;
+    // Closing changes the journal context and reloads the project feed. A
+    // synchronous return is blurred when that reload disables the origin.
+    // Wait for its next settled DOM, preserving any explicit outside intent.
+    if (
+      !feed ||
+      feed === request.feedAtClose ||
+      feed.phase === 'loading' ||
+      feed.phase === 'loading-more'
+    )
+      return;
+    journalPanelReturn.current = null;
+    if (!focusVisible(request.origin))
+      focusVisible(document.getElementById('project-tab-journal'));
+  });
+  useLayoutEffect(() => {
+    if (projectView !== 'current') return;
+    const panel = document.getElementById('project-view-current');
+    if (panel && restoreCurrentScroll.current !== null) {
+      panel.scrollTop = restoreCurrentScroll.current;
+      currentScrollTop.current = panel.scrollTop;
+      restoreCurrentScroll.current = null;
+    }
+    const lost = currentRowFocus.current;
+    if (
+      lost &&
+      (!lost.element.isConnected || lost.element.closest('[hidden]'))
+    ) {
+      currentRowFocus.current = null;
+      if (
+        document.activeElement === document.body ||
+        document.activeElement === lost.element
+      )
+        focusCurrent(lost.origin);
+    }
+  }, [projectView, currentCollapsed, currentQuery, tree, projectToday]);
   function closePanel() {
     requestTaskNavigation(() => {
       const id = selected?.id;
       ++journalFocus.current;
+      const journalReturn =
+        projectView === 'journal' && treeRef.current
+          ? {
+              projectId: treeRef.current.project.id,
+              origin: journalOrigin.current,
+              feedAtClose: journal.projectFeed,
+            }
+          : null;
       setSelected(null);
       setPanelHistory([]);
-      if (projectView === 'journal' && journalOrigin.current?.isConnected) {
-        journalOrigin.current.focus();
-        return;
-      }
-      const mainTree = document.querySelector(
-        `[role="tree"][aria-label="${strings.tasks}"]`,
-      );
-      if (
-        !mainTree ||
-        !(
-          (id && focusTaskRow(id, mainTree)) ||
-          (panelOrigin.current && focusTaskRow(panelOrigin.current, mainTree))
-        )
-      )
-        document.getElementById('quick-task')?.focus();
+      focusActiveView(id);
+      // Our own synchronous fallback is part of this return, not outside intent.
+      journalPanelReturn.current = journalReturn;
     });
   }
   function selectSubtask(task: Task): boolean {
@@ -1133,6 +1388,9 @@ export function App() {
     requestTaskNavigation(() => {
       if (!treeRef.current) return;
       cancelStartFocus();
+      undoFocus.current = null;
+      currentRowFocus.current = null;
+      restoreCurrentScroll.current = null;
       setProjectView('tasks');
       setTaskFilter(emptyTaskFilter);
       const byId = new Map(
@@ -1210,24 +1468,43 @@ export function App() {
   function action(value: TreeAction, task: Task): boolean | void {
     if (!canNavigate()) return false;
     if (value === 'sibling' || value === 'child') {
+      if (!changeProjectView('tasks')) return false;
       quickOrigin.current = task.id;
       setQuickEditing(true);
       setTaskFilter(emptyTaskFilter);
-      if (value === 'child')
-        setCollapsed((previous) => {
-          const next = new Set(previous);
-          next.delete(task.id);
-          return next;
-        });
+      const byId = new Map(
+        (treeRef.current?.tasks ?? []).map((item) => [item.id, item]),
+      );
+      setCollapsed((previous) => {
+        const next = new Set(previous);
+        let parentId = value === 'child' ? task.id : task.parentId;
+        while (parentId) {
+          next.delete(parentId);
+          parentId = byId.get(parentId)?.parentId ?? null;
+        }
+        return next;
+      });
       setContext(
         value === 'child'
           ? { parentId: task.id }
           : { parentId: task.parentId, afterId: task.id },
       );
       setSelected(null);
-      requestAnimationFrame(() =>
-        document.getElementById('quick-task')?.focus(),
-      );
+      const token = ++branchRestore.current;
+      const cancel = () => {
+        ++branchRestore.current;
+      };
+      for (const type of ['focusin', 'pointerdown', 'keydown'])
+        document.addEventListener(type, cancel, true);
+      requestAnimationFrame(() => {
+        for (const type of ['focusin', 'pointerdown', 'keydown'])
+          document.removeEventListener(type, cancel, true);
+        if (
+          token === branchRestore.current &&
+          currentProject.current === task.projectId
+        )
+          focusVisible(document.getElementById('quick-task'), true);
+      });
       return;
     }
     if (value === 'delete') {
@@ -1278,13 +1555,12 @@ export function App() {
     )
       return;
     if (!request.trigger.disabled) request.trigger.focus();
-    else {
+    else if (projectView === 'tasks') {
       const row = document.querySelector<HTMLElement>(
         '[role="tree"][aria-label="Задачи"] [role="treeitem"][tabindex="0"]',
       );
-      if (row) row.focus();
-      else document.getElementById('quick-task')?.focus();
-    }
+      if (!focusVisible(row)) focusActiveView();
+    } else focusActiveView();
   }, [restoreUndo, tree, busy, loading, pending]);
   async function undo() {
     if (!canNavigate() || !treeRef.current?.canUndo) return;
@@ -1444,6 +1720,7 @@ export function App() {
         ? api.enterDemo()
         : api.login(password));
       setPassword('');
+      setProjectsCollapsed(false);
       setSession(auth);
       if (auth.authenticated) await loadProjects();
     } catch (failure) {
@@ -1455,6 +1732,7 @@ export function App() {
     }
   }
   async function logout() {
+    cancelImmediateFocus();
     if (journalLocked) {
       setNotice('Повторите сохранение записи перед выходом.');
       return;
@@ -1474,12 +1752,14 @@ export function App() {
     setError(null);
     try {
       await api.logout();
+      setProjectsCollapsed(false);
       clearTaskNavigation();
       journal.clearPrivateState();
       knownRevision.current = null;
       ++loadSequence.current;
       visits.current.clear();
       visitId.current = null;
+      setCurrentQuery('');
       setSession({
         authenticated: false,
         setupRequired: false,
@@ -1517,6 +1797,10 @@ export function App() {
     visits.current.set(id, {
       ...previous,
       collapsed: new Set(collapsed),
+      currentCollapsed: new Set(currentCollapsed),
+      currentQuery,
+      currentScrollTop: currentScrollTop.current,
+      currentOrigin: currentOrigin.current,
       filter: taskFilter,
       showGantt,
       query: journalQuery,
@@ -1547,6 +1831,10 @@ export function App() {
     const saved: SessionVisit = {
       ...(snapshot ?? {
         collapsed: new Set(),
+        currentCollapsed: defaultCurrentCollapsed(),
+        currentQuery: '',
+        currentScrollTop: 0,
+        currentOrigin: null,
         filter: emptyTaskFilter,
         showGantt: true,
         query: {},
@@ -1569,6 +1857,7 @@ export function App() {
       suppressedPop.current = false;
       return;
     }
+    journalPanelReturn.current = null;
     const targetId = (
       event.state as { leaf?: { version?: number; visitId?: string } } | null
     )?.leaf?.visitId;
@@ -1621,7 +1910,15 @@ export function App() {
   };
   function restoreWorkspace(saved: SessionVisit, next: ProjectTree) {
     restorationApplied.current = true;
+    ++branchRestore.current;
     setRestorationTick((value) => value + 1);
+    undoFocus.current = null;
+    currentRowFocus.current = null;
+    setCurrentCollapsed(new Set(saved.currentCollapsed));
+    setCurrentQuery(saved.currentQuery);
+    currentScrollTop.current = saved.currentScrollTop;
+    restoreCurrentScroll.current = saved.currentScrollTop;
+    currentOrigin.current = saved.currentOrigin;
     setProjectView(saved.visit.view);
     setSelected(
       next.tasks.find((task) => task.id === saved.visit.taskId) ?? null,
@@ -1652,6 +1949,10 @@ export function App() {
         visit,
         index: 0,
         collapsed: new Set(),
+        currentCollapsed: defaultCurrentCollapsed(),
+        currentQuery: '',
+        currentScrollTop: 0,
+        currentOrigin: null,
         filter: emptyTaskFilter,
         showGantt: true,
         query: {},
@@ -1698,6 +1999,10 @@ export function App() {
       visit,
       index: old ? old.index + 1 : 0,
       collapsed: new Set(collapsed),
+      currentCollapsed: new Set(currentCollapsed),
+      currentQuery,
+      currentScrollTop: currentScrollTop.current,
+      currentOrigin: currentOrigin.current,
       filter: taskFilter,
       showGantt,
       query: journalQuery,
@@ -1717,7 +2022,14 @@ export function App() {
   ]);
   useEffect(() => {
     captureVisit();
-  }, [collapsed, taskFilter, showGantt, journalQuery]);
+  }, [
+    collapsed,
+    currentCollapsed,
+    currentQuery,
+    taskFilter,
+    showGantt,
+    journalQuery,
+  ]);
   const errorView = (
     <>
       {notice && (
@@ -1737,6 +2049,7 @@ export function App() {
                         title: '',
                         plan: newTaskPlan(),
                         predecessorIds: [],
+                        successorIds: [],
                       },
                     ]),
                   ),
@@ -1758,6 +2071,7 @@ export function App() {
               type="button"
               disabled={busy || loading}
               data-gantt-start-recovery
+              data-immediate-recovery
               onClick={() => void loadProject(tree.project.id, true)}
             >
               {strings.reload}
@@ -1768,6 +2082,7 @@ export function App() {
               type="button"
               disabled={busy}
               data-gantt-start-recovery
+              data-immediate-recovery
               onClick={() => {
                 if (pendingRef.current)
                   void execute(pendingRef.current).then((success) => {
@@ -1919,7 +2234,29 @@ export function App() {
   return (
     <div
       className="app-shell"
+      onPointerDownCapture={(event) => {
+        if (!(event.target as Element).closest('.current-row'))
+          currentRowFocus.current = null;
+      }}
+      onKeyDownCapture={(event) => {
+        if (!(event.target as Element).closest('.current-row'))
+          currentRowFocus.current = null;
+      }}
       onFocusCapture={(event) => {
+        const row = (event.target as Element).closest<HTMLElement>(
+          '.current-row',
+        );
+        currentRowFocus.current =
+          row && tree
+            ? {
+                element: row,
+                origin: {
+                  projectId: tree.project.id,
+                  taskId: row.id.slice('current-task-'.length),
+                  groupId: row.dataset.currentGroup as CurrentGroupId,
+                },
+              }
+            : null;
         if (!(event.target as Element).closest('#panel-journal'))
           ++journalFocus.current;
         if (
@@ -1937,6 +2274,8 @@ export function App() {
       }}
     >
       <ProjectSidebar
+        collapsed={projectsCollapsed}
+        onToggle={() => setProjectsCollapsed((value) => !value)}
         projects={projects}
         selectedId={tree?.project.id ?? null}
         onSelect={(id, openMenu = false) =>
@@ -1951,6 +2290,7 @@ export function App() {
         controls={
           tree && (
             <ProjectControls
+              sidebarCollapsed={projectsCollapsed}
               key={tree.project.id}
               initialMenuOpen={projectMenuTarget === tree.project.id}
               project={tree.project}
@@ -1983,7 +2323,11 @@ export function App() {
           createUncertain
         }
       />
-      <main className="workspace">
+      <main
+        className={`workspace${selectedTask ? ' panel-visible' : ''}`}
+        data-project-view={projectView}
+        tabIndex={-1}
+      >
         {session.demoMode && (
           <p className="demo-notice">{strings.demoNotice}</p>
         )}
@@ -2029,6 +2373,20 @@ export function App() {
                       }
                     />
                   </label>
+                )}
+                {projectView === 'current' && (
+                  <form
+                    role="search"
+                    aria-label={strings.searchTasks}
+                    className="task-filters"
+                    onSubmit={(event) => event.preventDefault()}
+                  >
+                    <TaskSearch
+                      value={currentQuery}
+                      onChange={setCurrentQuery}
+                      disabled={loading}
+                    />
+                  </form>
                 )}
                 {projectView === 'tasks' && (
                   <TaskFilters
@@ -2080,14 +2438,23 @@ export function App() {
                     context,
                     active:
                       quickEditing ||
-                      !!quickDrafts[tree.project.id]?.title ||
-                      !!quickDrafts[tree.project.id]?.plan.inputStart ||
-                      !!quickDrafts[tree.project.id]?.plan.inputFinish,
+                      (!!quickDrafts[tree.project.id] &&
+                        hasQuickDraft(quickDrafts[tree.project.id]!)),
                     input: (
                       <QuickAdd
+                        active={projectView === 'tasks'}
                         tree={tree}
                         predecessorIds={
                           quickDrafts[tree.project.id]?.predecessorIds ?? []
+                        }
+                        successorIds={
+                          quickDrafts[tree.project.id]?.successorIds ?? []
+                        }
+                        onSuccessors={(successorIds) =>
+                          updateQuick(tree.project.id, (draft) => ({
+                            ...draft,
+                            successorIds,
+                          }))
                         }
                         onPredecessors={(predecessorIds) =>
                           updateQuick(tree.project.id, (draft) => ({
@@ -2185,6 +2552,9 @@ export function App() {
                     );
                   }}
                   onPredecessors={openPredecessors}
+                  dependencyBlockedReason={
+                    dirty ? strings.saveOrCancelTask : undefined
+                  }
                   onPlan={(task, kind, target) =>
                     void planTask(task, kind, target)
                   }
@@ -2194,6 +2564,44 @@ export function App() {
                   onToggle={toggle}
                   onSelect={selectTask}
                   onAction={action}
+                />
+              </div>
+              <div
+                id="project-view-current"
+                role="tabpanel"
+                aria-labelledby="project-tab-current"
+                hidden={projectView !== 'current'}
+                className={`project-current-container${selectedTask ? ' panel-visible' : ''}`}
+                onScroll={(event) => {
+                  if (projectView !== 'current') return;
+                  restoreCurrentScroll.current = null;
+                  currentScrollTop.current = event.currentTarget.scrollTop;
+                  lastCapture.current();
+                }}
+              >
+                <CurrentTasks
+                  query={currentQuery}
+                  groups={currentGroups(
+                    tree.tasks,
+                    tree.project.calendarType,
+                    projectToday,
+                  )}
+                  collapsed={currentCollapsed}
+                  onToggle={(id) =>
+                    setCurrentCollapsed((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                  onOpen={(task, groupId) =>
+                    selectTask(task, {
+                      projectId: tree.project.id,
+                      taskId: task.id,
+                      groupId,
+                    })
+                  }
                 />
               </div>
               <div
@@ -2223,22 +2631,44 @@ export function App() {
           )}
         </div>
       </main>
-      {immediateHost && tree && immediateHost.projectId === tree.project.id && (
-        <div className="immediate-predecessors">
-          <PredecessorPicker
-            tree={tree}
-            successorId={immediateHost.taskId}
-            selectedIds={incomingPredecessorIds(tree, immediateHost.taskId)}
-            disabled={
-              busy || loading || !!pending || conflict || dirty || projectDirty
-            }
-            {...(error ? { error: error.message } : {})}
-            onAdd={(id) => immediateRelation(id, false)}
-            onRemove={(id) => immediateRelation(id, true)}
-            onClose={closePredecessors}
-          />
-        </div>
-      )}
+      {immediateHost &&
+        tree &&
+        immediateHost.projectId === tree.project.id &&
+        tree.tasks.some((task) => task.id === immediateHost.taskId) && (
+          <div className="immediate-predecessors" key={immediateHost.sequence}>
+            <PredecessorPicker
+              tree={tree}
+              proposal={{
+                task: tree.tasks.find(
+                  (task) => task.id === immediateHost.taskId,
+                )!,
+                isNew: false,
+                predecessorIds: incomingPredecessorIds(
+                  tree,
+                  immediateHost.taskId,
+                ),
+                successorIds: outgoingSuccessorIds(tree, immediateHost.taskId),
+              }}
+              direction="selectable"
+              {...(dirty ? { blockedReason: strings.saveOrCancelTask } : {})}
+              disabled={
+                busy ||
+                loading ||
+                !!pending ||
+                conflict ||
+                dirty ||
+                projectDirty ||
+                journalLocked
+              }
+              {...(error ? { error: error.message } : {})}
+              onAdd={(direction, id) => immediateRelation(direction, id, false)}
+              onRemove={(direction, id) =>
+                immediateRelation(direction, id, true)
+              }
+              onClose={closePredecessors}
+            />
+          </div>
+        )}
       {durationChoice && (
         <div
           role="dialog"
@@ -2279,6 +2709,7 @@ export function App() {
             }
           }}
           onJournal={openTaskJournal}
+          onRowDependencies={openPredecessors}
           journalMetadata={journal.taskFeed?.metadata}
           journalNavigationDisabled={!journalFeedCoherent(journal.taskFeed)}
           onAncestor={selectAncestor}
@@ -2297,17 +2728,19 @@ export function App() {
                 requestAnimationFrame(() => {
                   if (
                     request.token === journalFocus.current &&
-                    editor.isConnected &&
-                    !editor.disabled &&
-                    !editor.closest('[hidden]')
+                    editor.root.isConnected &&
+                    editor.root.getAttribute('contenteditable') === 'true' &&
+                    !editor.root.closest('[hidden]')
                   )
                     editor.focus();
                 });
               }}
             />
           )}
-          onDependency={(value) =>
-            canNavigate() ? command(value) : Promise.resolve(false)
+          onDependency={(value, onAcknowledged) =>
+            canNavigate()
+              ? command(value, onAcknowledged)
+              : Promise.resolve(false)
           }
           onNeighbor={selectNeighbor}
           onShow={showOnGantt}
@@ -2394,8 +2827,17 @@ export function App() {
           subtaskDraftActive={!!subtaskDraft && hasQuickDraft(subtaskDraft)}
           subtaskInput={
             <QuickAdd
+              active={visiblePanelTab(panelTab) === 'details'}
               tree={tree}
               predecessorIds={subtaskDraft?.predecessorIds ?? []}
+              successorIds={subtaskDraft?.successorIds ?? []}
+              onSuccessors={(successorIds) =>
+                updateQuick(subtaskKey, (draft) => ({
+                  ...draft,
+                  context: subtaskContext,
+                  successorIds,
+                }))
+              }
               onPredecessors={(predecessorIds) =>
                 updateQuick(subtaskKey, (draft) => ({
                   ...draft,
@@ -2436,8 +2878,15 @@ export function App() {
                   context: subtaskContext,
                 }))
               }
-              onCreate={(title, context, plan, predecessorIds) =>
-                createTask(title, context, plan, predecessorIds, subtaskKey)
+              onCreate={(title, context, plan, predecessorIds, successorIds) =>
+                createTask(
+                  title,
+                  context,
+                  plan,
+                  predecessorIds,
+                  successorIds,
+                  subtaskKey,
+                )
               }
               busy={busy || loading}
               submitBlockedReason={dirty ? strings.saveTaskBeforeSubtask : null}

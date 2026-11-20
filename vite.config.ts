@@ -8,6 +8,16 @@ export default defineConfig({
     host: '127.0.0.1',
     port: Number(process.env.LEAF_DEV_PORT ?? '5173'),
     strictPort: true,
+    watch: {
+      ignored: [
+        '**/.tmp/**',
+        '**/.superpowers/**',
+        '**/{.worktrees,worktrees}/**',
+        '**/{.codex,.claude,.tools}/**',
+        '**/{.data,data,secrets,.private,.local,backups,exports,uploads,logs}/**',
+        '**/{dist,build,coverage,artifacts,screenshots,playwright-report,blob-report}/**',
+      ],
+    },
     proxy: {
       '/api': backend,
       '/healthz': backend,

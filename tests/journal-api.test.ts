@@ -5,8 +5,14 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { buildApp, type LeafApp } from '../src/server/app.js';
 import { openDatabase } from '../src/server/database.js';
-import { createInput, rawTables } from './helpers/journal-fixture.js';
-import type { JournalMutation } from '../src/shared/journal-contracts.js';
+import {
+  createInputV2 as createInput,
+  createInput as createLegacyInput,
+  rawTables,
+} from './helpers/journal-fixture.js';
+import type { JournalMutationV2 as JournalMutation } from '../src/shared/journal-contracts-v2.js';
+import { JournalRepository } from '../src/server/journal-repository.js';
+import type { LegacyJournalRetry } from '../src/client/api.js';
 const origin = 'http://127.0.0.1:3000';
 let app: LeafApp;
 let dir: string;
@@ -23,7 +29,12 @@ const tables = [
   'journal_operations',
 ];
 function headers() {
-  return { origin, cookie, 'x-leaf-contract-version': '2' };
+  return {
+    origin,
+    cookie,
+    'x-leaf-contract-version': '2',
+    'x-leaf-journal-contract-version': '2',
+  };
 }
 function snapshot() {
   const db = openDatabase(join(dir, 'synthetic.sqlite'));
@@ -104,11 +115,11 @@ it('serves six authenticated no-store strict routes and frozen status-specific a
     expect(read.headers['cache-control']).toBe('no-store');
   }
   const update = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 1,
     workDate: '0001-01-01',
-    body: 'Synthetic changed',
+    content: { format: 'plain-text', text: 'Synthetic changed' },
   };
   expect(
     (
@@ -121,7 +132,7 @@ it('serves six authenticated no-store strict routes and frozen status-specific a
     ).statusCode,
   ).toBe(200);
   const remove = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 2,
   };
@@ -133,7 +144,7 @@ it('serves six authenticated no-store strict routes and frozen status-specific a
   });
   expect(deleted.statusCode).toBe(200);
   expect(deleted.json()).toEqual({
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     kind: 'deleted',
     projectId,
     journalRevision: 3,
@@ -204,7 +215,11 @@ it('rejects auth/origin/type/version/query/foreign/size errors without state or 
       payload: input,
       status: 400,
     },
-    { headers: headers(), payload: { ...input, body: ' \n ' }, status: 400 },
+    {
+      headers: headers(),
+      payload: { ...input, content: { format: 'plain-text', text: ' \n ' } },
+      status: 400,
+    },
     {
       headers: headers(),
       payload: { ...input, createdAt: '2026-10-10T00:00:00.000Z' },
@@ -213,7 +228,10 @@ it('rejects auth/origin/type/version/query/foreign/size errors without state or 
     { headers: headers(), payload: { ...input, taskId: missing }, status: 404 },
     {
       headers: headers(),
-      payload: { ...input, body: 'x'.repeat(70000) },
+      payload: {
+        ...input,
+        content: { format: 'plain-text', text: 'x'.repeat(70000) },
+      },
       status: 413,
     },
   ];
@@ -310,14 +328,14 @@ it('keeps foreign entries scoped404 and reports corrupt lifecycle as safe500 wit
         ? undefined
         : method === 'PATCH'
           ? {
-              journalContractVersion: 1,
+              journalContractVersion: 2,
               operationId: randomUUID(),
               expectedJournalRevision: 1,
               workDate: '2024-02-29',
-              body: 'Synthetic',
+              content: { format: 'plain-text', text: 'Synthetic' },
             }
           : {
-              journalContractVersion: 1,
+              journalContractVersion: 2,
               operationId: randomUUID(),
               expectedJournalRevision: 1,
             };
@@ -414,10 +432,10 @@ it('serves escaped-query pagination and exact NUL Unicode CRUD through authentic
   expect(read.statusCode).toBe(200);
   expect(read.json().entry.body).toBe(body);
   const update = {
-    journalContractVersion: 1,
+    journalContractVersion: 2,
     operationId: randomUUID(),
     expectedJournalRevision: 3,
-    body: '\0Updated😀\n',
+    content: { format: 'plain-text', text: '\0Updated😀\n' },
     workDate: '2024-02-28',
   };
   const patched = await app.inject({
@@ -427,11 +445,11 @@ it('serves escaped-query pagination and exact NUL Unicode CRUD through authentic
     payload: update,
   });
   expect(patched.statusCode).toBe(200);
-  expect(patched.json().entry.body).toBe(update.body);
+  expect(patched.json().entry.body).toBe(update.content.text);
   expect(
     (await app.inject({ url: `${url}/${id}`, headers: headers() })).json().entry
       .body,
-  ).toBe(update.body);
+  ).toBe(update.content.text);
   expect(
     (
       await app.inject({
@@ -457,7 +475,7 @@ it('serves escaped-query pagination and exact NUL Unicode CRUD through authentic
     url: `${url}/${id}`,
     headers: headers(),
     payload: {
-      journalContractVersion: 1,
+      journalContractVersion: 2,
       operationId: randomUUID(),
       expectedJournalRevision: 4,
     },
@@ -528,11 +546,11 @@ it('rejects malformed high/low surrogates with safe400 and no journal or plannin
         'PATCH',
         `${url}/${id}`,
         {
-          journalContractVersion: 1,
+          journalContractVersion: 2,
           operationId: randomUUID(),
           expectedJournalRevision: 1,
           workDate: '2024-02-29',
-          body: malformed,
+          content: { format: 'plain-text', text: malformed },
         },
       ],
     ] as const) {
@@ -554,4 +572,529 @@ it('rejects malformed high/low surrogates with safe400 and no journal or plannin
     (await app.inject({ url: `${url}/${id}`, headers: headers() })).json().entry
       .body,
   ).toBe('Synthetic valid😀');
+});
+
+it('rejects old live reads/new effects, but returns exact validated frozen v1 retries after deletion', async () => {
+  const url = `/api/projects/${projectId}/journal`;
+  const oldHeaders = { origin, cookie, 'x-leaf-contract-version': '2' };
+  const input = createLegacyInput(taskId);
+  const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+  const db = openDatabase(join(dir, 'synthetic.sqlite'));
+  let ack;
+  try {
+    const legacy = new JournalRepository(db);
+    ack = legacy.create(projectId, input, session);
+    if (ack.kind !== 'saved') throw Error('fixture');
+    legacy.delete(
+      projectId,
+      ack.entry.id,
+      {
+        journalContractVersion: 1,
+        operationId: randomUUID(),
+        expectedJournalRevision: 1,
+      },
+      session,
+    );
+  } finally {
+    db.close();
+  }
+  const before = snapshot();
+  for (const route of [
+    url,
+    `${url}/${randomUUID()}`,
+    `/api/projects/${projectId}/tasks/${taskId}/journal`,
+  ]) {
+    const response = await app.inject({ url: route, headers: oldHeaders });
+    expect(response.statusCode).toBe(426);
+    expect(response.json().code).toBe('JOURNAL_CONTRACT_VERSION_CONFLICT');
+  }
+  const oldNewEffect = await app.inject({
+    method: 'POST',
+    url,
+    headers: oldHeaders,
+    payload: createLegacyInput(taskId, 2),
+  });
+  expect(oldNewEffect.statusCode).toBe(426);
+  expect(oldNewEffect.json().code).toBe('JOURNAL_CONTRACT_VERSION_CONFLICT');
+  const oldGlobal = await app.inject({
+    url,
+    headers: { ...headers(), 'x-leaf-contract-version': '1' },
+  });
+  expect(oldGlobal.statusCode).toBe(426);
+  expect(oldGlobal.json().code).toBe('CONTRACT_VERSION_CONFLICT');
+  const retried = await app.inject({
+    method: 'POST',
+    url,
+    headers: oldHeaders,
+    payload: input,
+  });
+  expect(retried.statusCode).toBe(201);
+  expect(retried.json()).toEqual(ack);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: oldHeaders,
+        payload: { ...input, body: 'changed' },
+      })
+    ).statusCode,
+  ).toBe(409);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: headers(),
+        payload: input,
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect(snapshot()).toEqual(before);
+  const damaged = openDatabase(join(dir, 'synthetic.sqlite'));
+  try {
+    damaged
+      .prepare(
+        'UPDATE journal_operations SET responseSha256=? WHERE operationId=?',
+      )
+      .run('bad', input.operationId);
+  } finally {
+    damaged.close();
+  }
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        headers: oldHeaders,
+        payload: input,
+      })
+    ).statusCode,
+  ).toBe(500);
+});
+it('publishes media-only v2 over HTTP and fails closed on corrupt stored content and frozen metadata', async () => {
+  const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+  const media = await app.journalMediaRepository.stage({
+    projectId,
+    taskId,
+    sessionId: session,
+    uploadId: randomUUID(),
+    kind: 'file',
+    fileName: 'report.txt',
+    bytes: Buffer.from('synthetic bytes'),
+  });
+  const url = `/api/projects/${projectId}/journal`;
+  const input = {
+    journalContractVersion: 2,
+    operationId: randomUUID(),
+    expectedJournalRevision: 0,
+    taskId,
+    workDate: '2024-02-29',
+    content: {
+      format: 'rich-text',
+      documentVersion: 1,
+      doc: {
+        type: 'doc',
+        content: [{ type: 'journalFile', attrs: { mediaId: media.id } }],
+      },
+    },
+  };
+  const saved = await app.inject({
+    method: 'POST',
+    url,
+    headers: headers(),
+    payload: input,
+  });
+  expect(saved.statusCode).toBe(201);
+  expect(saved.json().entry.body).toBe('[Файл: report.txt]');
+  const id = saved.json().entry.id;
+  const db = openDatabase(join(dir, 'synthetic.sqlite'));
+  try {
+    db.prepare('UPDATE journal_entries SET contentJson=? WHERE id=?').run(
+      '{"format":"unsupported"}',
+      id,
+    );
+    expect(
+      (await app.inject({ url: `${url}/${id}`, headers: headers() }))
+        .statusCode,
+    ).toBe(500);
+    const { createHash } = await import('node:crypto');
+    const corrupted = saved.json();
+    corrupted.entry.media[0].byteLength = -1;
+    const response = JSON.stringify(corrupted);
+    db.prepare(
+      'UPDATE journal_operations SET response=?,responseSha256=? WHERE operationId=?',
+    ).run(
+      response,
+      createHash('sha256').update(response).digest('hex'),
+      input.operationId,
+    );
+    const before = rawTables(db, [
+      ...tables,
+      'journal_media',
+      'journal_entry_media',
+    ]);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url,
+          headers: headers(),
+          payload: input,
+        })
+      ).statusCode,
+    ).toBe(500);
+    expect(
+      rawTables(db, [...tables, 'journal_media', 'journal_entry_media']),
+    ).toEqual(before);
+  } finally {
+    db.close();
+  }
+});
+it.each(['kind', 'scope', 'projection', 'bytes', 'count'] as const)(
+  'rejects client media %s without journal, reference or ownership writes',
+  async (scenario) => {
+    const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+    let uploadTaskId = taskId;
+    if (scenario === 'scope') {
+      const tree = app.repository.getTree(projectId, session);
+      const changed = app.repository.applyCommand(
+        projectId,
+        {
+          contractVersion: 2,
+          operationId: randomUUID(),
+          expectedRevision: tree.project.revision,
+          command: {
+            type: 'task.create',
+            title: 'Other media task',
+            parentId: null,
+          },
+        },
+        session,
+      );
+      uploadTaskId = changed.tasks.find(
+        (task) => task.title === 'Other media task',
+      )!.id;
+    }
+    const sizes =
+      scenario === 'bytes'
+        ? [25 * 1024 * 1024, 25 * 1024 * 1024, 1]
+        : scenario === 'count'
+          ? Array<number>(11).fill(1)
+          : [1];
+    const uploaded = [];
+    for (const [n, size] of sizes.entries())
+      uploaded.push(
+        await app.journalMediaRepository.stage({
+          projectId,
+          taskId: uploadTaskId,
+          sessionId: session,
+          uploadId: randomUUID(),
+          kind: 'file',
+          fileName: `file-${n}.txt`,
+          bytes: Buffer.alloc(size, 65 + n),
+        }),
+      );
+    const base = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/journal`,
+      headers: headers(),
+      payload: createInput(taskId),
+    });
+    expect(base.statusCode).toBe(201);
+    const id = base.json().entry.id;
+    const blocks: unknown[] = uploaded.map((media) => ({
+      type: scenario === 'kind' ? 'journalImage' : 'journalFile',
+      attrs: {
+        mediaId: media.id,
+        ...(scenario === 'kind' ? { alt: 'Synthetic' } : {}),
+      },
+    }));
+    if (scenario === 'projection')
+      blocks.unshift({
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'x'.repeat(9999) }],
+      });
+    const content = {
+      format: 'rich-text',
+      documentVersion: 1,
+      doc: { type: 'doc', content: blocks },
+    };
+    const db = openDatabase(join(dir, 'synthetic.sqlite'));
+    try {
+      const capture = () => ({
+        rows: rawTables(db, [...tables, 'journal_entry_media']),
+        media: db
+          .prepare(
+            'SELECT id,homeEntryId,storedSha256,byteLength,length(bytes) AS storedBytes,unreferencedAt FROM journal_media ORDER BY id',
+          )
+          .all(),
+      });
+      const before = capture();
+      for (const method of ['POST', 'PATCH'] as const) {
+        const response = await app.inject({
+          method,
+          url: `/api/projects/${projectId}/journal${method === 'PATCH' ? `/${id}` : ''}`,
+          headers: headers(),
+          payload: {
+            journalContractVersion: 2,
+            operationId: randomUUID(),
+            expectedJournalRevision: 1,
+            ...(method === 'POST' ? { taskId } : {}),
+            workDate: '2024-02-29',
+            content,
+          },
+        });
+        expect(response.statusCode).toBe(
+          scenario === 'kind' || scenario === 'scope' ? 400 : 413,
+        );
+        expect(response.json().code).toBe(
+          scenario === 'kind' || scenario === 'scope'
+            ? 'MEDIA_INVALID'
+            : 'JOURNAL_LIMIT',
+        );
+        expect(capture()).toEqual(before);
+      }
+    } finally {
+      db.close();
+    }
+  },
+);
+it.each(['metadata', 'hash'] as const)(
+  'keeps damaged stored media %s an internal error at publication',
+  async (damage) => {
+    const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+    const media = await app.journalMediaRepository.stage({
+      projectId,
+      taskId,
+      sessionId: session,
+      uploadId: randomUUID(),
+      kind: 'file',
+      fileName: 'valid.txt',
+      bytes: Buffer.from('safe synthetic bytes'),
+    });
+    const db = openDatabase(join(dir, 'synthetic.sqlite'));
+    try {
+      if (damage === 'metadata')
+        db.prepare('UPDATE journal_media SET fileName=? WHERE id=?').run(
+          '../invalid.txt',
+          media.id,
+        );
+      else
+        db.prepare('UPDATE journal_media SET bytes=? WHERE id=?').run(
+          Buffer.alloc(20, 66),
+          media.id,
+        );
+      const before = rawTables(db, [
+        ...tables,
+        'journal_entry_media',
+        'journal_media',
+      ]);
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/projects/${projectId}/journal`,
+        headers: headers(),
+        payload: {
+          ...createInput(taskId),
+          content: {
+            format: 'rich-text',
+            documentVersion: 1,
+            doc: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'journalImage',
+                  attrs: { mediaId: media.id, alt: 'Synthetic' },
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toEqual({
+        code: 'INTERNAL_ERROR',
+        message: 'Не удалось выполнить запрос.',
+      });
+      expect(
+        rawTables(db, [...tables, 'journal_entry_media', 'journal_media']),
+      ).toEqual(before);
+    } finally {
+      db.close();
+    }
+  },
+);
+
+it('returns precise413 for bounded document quotas below the JSON budget without writes, preserving schema400 and stored500', async () => {
+  const base = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/journal`,
+    headers: headers(),
+    payload: createInput(taskId),
+  });
+  expect(base.statusCode).toBe(201);
+  const entryId = base.json().entry.id;
+  const paragraph = (text: string) => ({
+    type: 'paragraph',
+    content: [{ type: 'text', text }],
+  });
+  let nested: unknown = paragraph('item');
+  for (let i = 0; i < 5; i++)
+    nested = {
+      type: 'bulletList',
+      content: [{ type: 'listItem', content: [paragraph('item'), nested] }],
+    };
+  let deep: unknown = paragraph('item');
+  for (let i = 0; i < 12; i++) deep = { type: 'listItem', content: [deep] };
+  const cases = [
+    [
+      [paragraph('\u0001'.repeat(9000))],
+      'Размер документа превышает лимит 49152 байта.',
+    ],
+    [
+      Array.from({ length: 1000 }, () => ({ type: 'paragraph' })),
+      'Число узлов документа превышает лимит 1000.',
+    ],
+    [[nested], 'Вложенность списков превышает лимит 4.'],
+    [[deep], 'Глубина документа превышает лимит 12.'],
+    [
+      [paragraph('x'.repeat(10001))],
+      'Длина текста превышает лимит 10000 единиц UTF-16.',
+    ],
+    [
+      [paragraph('x'.repeat(5000)), paragraph('y'.repeat(5000))],
+      'Длина текста превышает лимит 10000 единиц UTF-16.',
+    ],
+  ] as const;
+  const db = openDatabase(join(dir, 'synthetic.sqlite'));
+  try {
+    const allTables = [...tables, 'journal_entry_media', 'journal_media'];
+    const before = rawTables(db, allTables);
+    for (const [blocks, message] of cases) {
+      for (const method of ['POST', 'PATCH'] as const) {
+        const payload = {
+          journalContractVersion: 2,
+          operationId: randomUUID(),
+          expectedJournalRevision: 1,
+          ...(method === 'POST' ? { taskId } : {}),
+          workDate: '2024-02-29',
+          content: {
+            format: 'rich-text',
+            documentVersion: 1,
+            doc: { type: 'doc', content: blocks },
+          },
+        };
+        expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(
+          64 * 1024,
+        );
+        const response = await app.inject({
+          method,
+          url: `/api/projects/${projectId}/journal${method === 'PATCH' ? `/${entryId}` : ''}`,
+          headers: headers(),
+          payload,
+        });
+        expect(response.statusCode).toBe(413);
+        expect(response.json()).toEqual({ code: 'JOURNAL_LIMIT', message });
+        expect(rawTables(db, allTables)).toEqual(before);
+      }
+    }
+    const malformed = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/journal`,
+      headers: headers(),
+      payload: {
+        ...createInput(taskId, 1),
+        content: {
+          format: 'rich-text',
+          documentVersion: 1,
+          doc: { type: 'doc', content: [{ type: 'paragraph', content: {} }] },
+        },
+      },
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().code).toBe('INVALID_REQUEST');
+    expect(rawTables(db, allTables)).toEqual(before);
+    db.prepare('UPDATE journal_entries SET contentJson=? WHERE id=?').run(
+      JSON.stringify({
+        format: 'rich-text',
+        documentVersion: 1,
+        doc: { type: 'doc', content: cases[0][0] },
+      }),
+      entryId,
+    );
+    const damaged = rawTables(db, allTables);
+    const read = await app.inject({
+      url: `/api/projects/${projectId}/journal/${entryId}`,
+      headers: headers(),
+    });
+    expect(read.statusCode).toBe(500);
+    expect(read.json()).toEqual({
+      code: 'INTERNAL_ERROR',
+      message: 'Не удалось выполнить запрос.',
+    });
+    expect(rawTables(db, allTables)).toEqual(damaged);
+  } finally {
+    db.close();
+  }
+});
+
+it('runs the new client frozen1 transport against actual HTTP contracts after the original entry is deleted', async () => {
+  const { api } = await import('../src/client/api.js');
+  const session = app.auth.session(cookie.slice('leaf_session='.length))!;
+  const db = openDatabase(join(dir, 'synthetic.sqlite'));
+  try {
+    const legacy = new JournalRepository(db);
+    const input = createLegacyInput(taskId, 0, '  <img> **literal**\r\n\0 ');
+    const saved = legacy.create(projectId, input, session);
+    if (saved.kind !== 'saved') throw Error('fixture');
+    const update = {
+      journalContractVersion: 1 as const,
+      operationId: randomUUID(),
+      expectedJournalRevision: 1,
+      workDate: '2024-03-01',
+      body: '  literal changed\r\n\0 ',
+    };
+    const edited = legacy.update(projectId, saved.entry.id, update, session);
+    const remove = {
+      journalContractVersion: 1 as const,
+      operationId: randomUUID(),
+      expectedJournalRevision: 2,
+    };
+    const deleted = legacy.delete(projectId, saved.entry.id, remove, session);
+    const before = rawTables(db, tables);
+    const requests: LegacyJournalRetry[] = [
+      { method: 'POST', input },
+      { method: 'PATCH', entryId: saved.entry.id, taskId, input: update },
+      { method: 'DELETE', entryId: saved.entry.id, input: remove },
+    ];
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (url, options) => {
+        const headers = new Headers(options?.headers);
+        expect(headers.get('x-leaf-contract-version')).toBe('2');
+        expect(headers.has('x-leaf-journal-contract-version')).toBe(false);
+        expect(headers.has('x-leaf-legacy-replay')).toBe(false);
+        const response = await app.inject({
+          method: options!.method as 'POST' | 'PATCH' | 'DELETE',
+          url: String(url),
+          headers: { ...Object.fromEntries(headers), origin, cookie },
+          payload: options!.body as string,
+        });
+        expect(response.statusCode).toBe(
+          options!.method === 'POST' ? 201 : 200,
+        );
+        return new Response(response.body, { status: response.statusCode });
+      });
+    for (const [index, retry] of requests.entries()) {
+      expect(await api.journalReplayLegacy(projectId, retry)).toEqual(
+        [saved, edited, deleted][index],
+      );
+      expect(fetch.mock.calls[index]![1]!.body).toBe(
+        JSON.stringify(retry.input),
+      );
+      expect(rawTables(db, tables)).toEqual(before);
+    }
+  } finally {
+    db.close();
+  }
 });

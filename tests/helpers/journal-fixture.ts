@@ -68,3 +68,18 @@ export function rawTables(
     db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
   );
 }
+
+export function createInputV2(
+  taskId: string,
+  expectedJournalRevision = 0,
+  text = '  Первая строка\nВторая строка  ',
+) {
+  return {
+    journalContractVersion: 2 as const,
+    operationId: randomUUID(),
+    expectedJournalRevision,
+    taskId,
+    workDate: '2024-02-29',
+    content: { format: 'plain-text' as const, text },
+  };
+}

@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import '@testing-library/jest-dom/vitest';
 // jsdom has no native modal implementation; browsers exercise showModal in E2E.
 HTMLDialogElement.prototype.showModal = function () {
@@ -117,7 +121,7 @@ beforeEach(() => {
     }
     if (/\/journal(?:\?|$)/.test(url) && init?.method === 'GET')
       return json({
-        journalContractVersion: 1,
+        journalContractVersion: 2,
         projectId: tree.project.id,
         taskId: url.includes('/tasks/')
           ? url.split('/tasks/')[1]!.split('/')[0]
@@ -201,6 +205,15 @@ beforeEach(() => {
             projectId: project.id,
             predecessorId,
             successorId: tree.tasks.at(-1)!.id,
+          })),
+        );
+      if (command.type === 'task.create' && command.successorIds)
+        tree.dependencies.push(
+          ...command.successorIds.map((successorId, index) => ({
+            id: id(110 + index),
+            projectId: project.id,
+            predecessorId: tree.tasks.at(-1)!.id,
+            successorId,
           })),
         );
       if (command.type === 'task.delete')
@@ -461,7 +474,7 @@ describe('client HTTP interactions', () => {
       undo.disabled = false;
       undo.blur();
       undo.disabled = true;
-      const search = screen.getByRole('searchbox');
+      const search = screen.getByRole('searchbox', { name: 'Поиск задач' });
       act(() => {
         search.focus();
         if (blur) search.blur();
@@ -577,13 +590,20 @@ describe('client HTTP interactions', () => {
     expect(tree).toEqual(before);
   });
   it('keeps source drafts separate and resets only the confirmed branch on exact retry', async () => {
-    tree.tasks = [task(1, 'Этап')];
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-06T12:00:00Z'));
+    tree.tasks = [task(1, 'Этап'), task(2, 'A'), task(3, 'B')];
     await open();
     const user = userEvent.setup();
     const main = within(screen.getByLabelText('Новая задача').closest('form')!);
+    await selectQuickMixed(user, main as typeof screen, 'A', 'B');
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.clear(main.getByLabelText('Длительность, рабочих дней'));
     await user.type(main.getByLabelText('Длительность, рабочих дней'), '5');
+    await user.click(main.getByLabelText('Начало'));
+    fireEvent.change(main.getByLabelText('Начало'), {
+      target: { value: ' 31.2 ' },
+    });
     await user.tab();
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.click(screen.getByRole('treeitem', { name: /^Этап,/ }));
@@ -591,12 +611,19 @@ describe('client HTTP interactions', () => {
     await openPanelQuick(user);
     const panel = within(screen.getByRole('complementary', { name: 'Задача' }));
     await user.type(panel.getByLabelText('Новая задача'), 'Ребёнок');
+    await selectQuickMixed(user, panel as typeof screen, 'B', 'A');
     await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
     await user.clear(
       within(
         panel.getByRole('dialog', { name: 'Сроки задачи' }),
       ).getByLabelText('Длительность, рабочих дней'),
     );
+    await user.tab();
+    const childStart = within(
+      panel.getByRole('dialog', { name: 'Сроки задачи' }),
+    ).getByLabelText('Начало');
+    await user.click(childStart);
+    fireEvent.change(childStart, { target: { value: '7.11' } });
     await user.tab();
     fetchMock.mockImplementationOnce(() =>
       Promise.reject(new TypeError('synthetic offline')),
@@ -627,8 +654,10 @@ describe('client HTTP interactions', () => {
     ).toBe(firstBody);
     expect(commands[0]?.command).toMatchObject({
       durationDays: null,
-      inputStart: null,
+      inputStart: '2026-11-07',
       inputFinish: null,
+      predecessorIds: [id(3)],
+      successorIds: [id(2)],
     });
     await user.click(panel.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(
@@ -638,13 +667,18 @@ describe('client HTTP interactions', () => {
     ).toHaveValue('1');
     await user.keyboard('{Escape}');
     await user.click(panel.getByRole('button', { name: 'Закрыть панель' }));
+    expect(
+      main.getByRole('button', { name: 'Связи новой задачи: 2, не сохранено' }),
+    ).toBeInTheDocument();
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue('5');
+    expect(main.getByLabelText('Начало')).toHaveValue(' 31.2 ');
     await user.click(
       main.getByRole('button', { name: 'Отменить ввод задачи' }),
     );
     await user.click(main.getByRole('button', { name: 'Сроки новой задачи' }));
     expect(main.getByLabelText('Длительность, рабочих дней')).toHaveValue('1');
+    vi.useRealTimers();
   });
 
   it('accounts for a changed source draft without a title when leaving the page', async () => {
@@ -689,6 +723,7 @@ describe('client HTTP interactions', () => {
     expect(commands[0]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1031,6 +1066,8 @@ describe('client HTTP interactions', () => {
   });
 
   it('preserves a combined plan draft and retries the exact envelope after a lost save response', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-06T12:00:00Z'));
     tree = { ...tree, tasks: [task(1, 'Работа A')] };
     await open();
     const user = userEvent.setup();
@@ -1043,6 +1080,11 @@ describe('client HTTP interactions', () => {
     await user.type(screen.getByLabelText('Название задачи'), 'Работа revised');
     await user.click(screen.getByRole('button', { name: /^Сроки задачи:/ }));
     await user.type(screen.getByLabelText('Длительность, рабочих дней'), '9');
+    await user.click(screen.getByLabelText('Начало'));
+    fireEvent.change(screen.getByLabelText('Начало'), {
+      target: { value: '9.11' },
+    });
+    await user.tab();
     let first: CommandEnvelope | undefined;
     fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
       first = JSON.parse(String(init.body)) as CommandEnvelope;
@@ -1075,11 +1117,17 @@ describe('client HTTP interactions', () => {
     await screen.findByText('Сохранено', { exact: true });
     expect(first?.command).toMatchObject({
       type: 'task.edit',
-      changes: { title: 'Работа revised', durationDays: 9 },
+      changes: {
+        title: 'Работа revised',
+        durationDays: 9,
+        inputStart: '2026-11-09',
+        inputFinish: '2026-11-19',
+      },
     });
     expect(screen.getByLabelText('Длительность, рабочих дней')).toHaveValue(
       '9',
     );
+    vi.useRealTimers();
   });
   it('keeps quick intent on rejected stale reload and reconciles it only on a fresh conflict snapshot', async () => {
     tree = {
@@ -1126,6 +1174,7 @@ describe('client HTTP interactions', () => {
       command: {
         type: 'task.create',
         predecessorIds: [],
+        successorIds: [],
         inputStart: null,
         inputFinish: null,
         durationDays: 1,
@@ -1152,6 +1201,7 @@ describe('client HTTP interactions', () => {
     expect(commands[2]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1178,6 +1228,7 @@ describe('client HTTP interactions', () => {
     expect(commands[2]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1216,6 +1267,7 @@ describe('client HTTP interactions', () => {
       expect(commands[1]?.command).toEqual({
         type: 'task.create',
         predecessorIds: [],
+        successorIds: [],
         inputStart: null,
         inputFinish: null,
         durationDays: 1,
@@ -1253,6 +1305,7 @@ describe('client HTTP interactions', () => {
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1312,6 +1365,7 @@ describe('client HTTP interactions', () => {
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1353,6 +1407,7 @@ describe('client HTTP interactions', () => {
     expect(commands[1]?.command).toEqual({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -1373,6 +1428,7 @@ describe('client HTTP interactions', () => {
       command: {
         type: 'task.create',
         predecessorIds: [],
+        successorIds: [],
         inputStart: null,
         inputFinish: null,
         durationDays: 1,
@@ -1823,6 +1879,7 @@ describe('client HTTP interactions', () => {
     expect(commands[0]?.command).toMatchObject({
       type: 'task.create',
       predecessorIds: [],
+      successorIds: [],
       inputStart: null,
       inputFinish: null,
       durationDays: 1,
@@ -2302,7 +2359,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     scope = screen,
   ) {
     await user.click(
-      scope.getByRole('button', { name: 'После окончания новой задачи' }),
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
     );
     await user.type(
       screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
@@ -2310,10 +2367,124 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     );
     await user.keyboard('{ArrowDown}{Enter}{Escape}');
   }
+  it.each([false, true])(
+    'K06 real App delayed ack never restores after outside then body (retry: %s)',
+    async (retry) => {
+      tree.tasks = [task(1, 'A')];
+      await open();
+      const user = userEvent.setup();
+      const title = screen.getByLabelText('Новая задача');
+      await user.type(title, 'Сохранённая');
+      if (retry) {
+        fetchMock.mockImplementationOnce(() =>
+          Promise.reject(new TypeError('synthetic offline')),
+        );
+        await user.keyboard('{Enter}');
+        await screen.findByText(/Нет связи с сервером/);
+      }
+      const original = fetchMock.getMockImplementation()! as (
+        url: string,
+        init?: RequestInit,
+      ) => Promise<Response>;
+      let resolve!: (response: Response) => void,
+        accepted: Response | undefined;
+      const response = new Promise<Response>((done) => {
+        resolve = done;
+      });
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url.endsWith('/commands') && init?.method === 'POST') {
+          void Promise.resolve(original(url, init)).then((value) => {
+            accepted = value;
+          });
+          return response;
+        }
+        return original(url, init);
+      });
+      if (retry)
+        await user.click(screen.getByRole('button', { name: 'Повторить' }));
+      else await user.keyboard('{Enter}');
+      await waitFor(() => expect(accepted).toBeDefined());
+      const outside = screen.getByRole('tab', { name: 'Журнал' });
+      outside.focus();
+      outside.blur();
+      expect(document.activeElement).toBe(document.body);
+      await act(async () => resolve(accepted!));
+      await waitFor(() => expect(title).toHaveValue(''));
+      expect(document.activeElement).toBe(document.body);
+      expect(
+        tree.tasks.filter((task) => task.title === 'Сохранённая'),
+      ).toHaveLength(1);
+      if (retry) {
+        const bodies = fetchMock.mock.calls
+          .filter(([url]) => String(url).endsWith('/commands'))
+          .map(([, init]) => init?.body);
+        expect(bodies[0]).toBe(bodies[1]);
+      }
+    },
+  );
+  it.each([null, id(1)])(
+    'K04 two sequential creates preserve parent/after and defaults: %s',
+    async (parentId) => {
+      tree.tasks = [task(1, 'Этап')];
+      await open();
+      const user = userEvent.setup();
+      if (parentId) {
+        const row = screen.getByRole('treeitem', { name: /^Этап,/ });
+        row.focus();
+        await user.keyboard('{Shift>}{Enter}{/Shift}');
+      }
+      const input = screen.getByLabelText('Новая задача');
+      for (const title of ['Первый', 'Второй']) {
+        await user.type(input, title);
+        await user.keyboard('{Enter}');
+        await waitFor(() => expect(input).toHaveValue(''));
+        expect(input).toHaveFocus();
+      }
+      expect(commands).toHaveLength(2);
+      expect(commands[0]!.command).toMatchObject({
+        type: 'task.create',
+        parentId,
+        title: 'Первый',
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
+        predecessorIds: [],
+        successorIds: [],
+      });
+      expect(commands[1]!.command).toMatchObject({
+        type: 'task.create',
+        parentId,
+        afterId: id(51),
+        title: 'Второй',
+        inputStart: null,
+        inputFinish: null,
+        durationDays: 1,
+        predecessorIds: [],
+        successorIds: [],
+      });
+      expect(
+        tree.tasks
+          .filter((t) => t.title === 'Первый' || t.title === 'Второй')
+          .map((t) => [t.parentId, t.sortOrder]),
+      ).toEqual([
+        [parentId, 1],
+        [parentId, 2],
+      ]);
+      await user.keyboard('{Enter}');
+      expect(commands).toHaveLength(2);
+      expect(
+        screen.queryByRole('complementary', { name: 'Задача' }),
+      ).toBeNull();
+    },
+  );
   it.each(['main', 'subtask'] as const)(
-    'confirms %s IDs and restores correct title focus after global exact retry',
+    'confirms %s IDs without stealing title focus after global exact retry',
     async (entry) => {
-      tree.tasks = [task(1, 'Этап'), task(2, 'A', null, 1)];
+      tree.tasks = [
+        task(1, 'Этап'),
+        task(2, 'A', null, 1),
+        task(3, 'X', null, 2),
+      ];
       await open();
       const user = userEvent.setup();
       await user.type(screen.getByLabelText('Новая задача'), 'Другой черновик');
@@ -2328,6 +2499,17 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       } else await user.clear(screen.getByLabelText('Новая задача'));
       await user.type(scope.getByLabelText('Новая задача'), 'B');
       await selectA(user, scope);
+      await user.click(
+        scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Перед' }));
+      await user.type(
+        screen.getByRole('searchbox', {
+          name: /Поиск (предшественника|последователя)/,
+        }),
+        'X',
+      );
+      await user.keyboard('{ArrowDown}{Enter}{Escape}');
       fetchMock.mockImplementationOnce(() =>
         Promise.reject(new TypeError('synthetic offline')),
       );
@@ -2338,12 +2520,13 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         .at(-1)?.[1]?.body;
       const envelope = JSON.parse(String(original));
       expect(envelope.command.predecessorIds).toEqual([id(2)]);
+      expect(envelope.command.successorIds).toEqual([id(3)]);
       await user.click(scope.getByRole('button', { name: 'Повторить' }));
       await waitFor(() =>
         expect(scope.getByLabelText('Новая задача')).toHaveValue(''),
       );
       await waitFor(() =>
-        expect(scope.getByLabelText('Новая задача')).toHaveFocus(),
+        expect(scope.getByLabelText('Новая задача')).not.toHaveFocus(),
       );
       expect(
         fetchMock.mock.calls
@@ -2355,11 +2538,26 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
           'Другой черновик',
         );
       await user.click(
-        scope.getByRole('button', { name: 'После окончания новой задачи' }),
+        scope.getByRole('button', { name: /^Связи новой задачи:/ }),
       );
       expect(
         screen.queryByRole('button', { name: 'Убрать предшественника: A' }),
       ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Убрать последователя: X' }),
+      ).not.toBeInTheDocument();
+      expect(tree.dependencies).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            predecessorId: id(2),
+            successorId: id(51),
+          }),
+          expect.objectContaining({
+            predecessorId: id(51),
+            successorId: id(3),
+          }),
+        ]),
+      );
     },
   );
   it('guards relation-only quick drafts on unload/logout and restores them across projects', async () => {
@@ -2376,7 +2574,15 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     fetchMock.mockImplementationOnce(() => json([project, other]));
     await open();
     const user = userEvent.setup();
-    await selectA(user);
+    await user.click(
+      screen.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Перед' }));
+    await user.type(
+      screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+      'A',
+    );
+    await user.keyboard('{ArrowDown}{Enter}{Escape}');
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
@@ -2389,10 +2595,10 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
     await user.click(screen.getByRole('button', { name: /Демо-проект/ }));
     await screen.findByRole('heading', { name: project.title });
     await user.click(
-      screen.getByRole('button', { name: 'После окончания новой задачи' }),
+      screen.getByRole('button', { name: /^Связи новой задачи:/ }),
     );
     expect(
-      screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+      screen.getByRole('button', { name: 'Убрать последователя: A' }),
     ).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Выйти' }));
@@ -2463,7 +2669,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
   ] as const)(
     'coordinates non-default %s raw generation with the real parent acknowledgement; newer=%s',
     async (entry, newer) => {
-      tree.tasks = [task(1, 'A')];
+      tree.tasks = [task(1, 'A'), task(2, 'X'), task(3, 'Y')];
       await open();
       const user = userEvent.setup();
       let scope = screen;
@@ -2474,9 +2680,13 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
           screen.getByRole('complementary', { name: 'Задача' }),
         ) as typeof screen;
       }
+      if (entry === 'main') {
+        screen.getByRole('treeitem', { name: /^A,/ }).focus();
+        await user.keyboard('{Shift>}{Enter}{/Shift}');
+      }
       const title = scope.getByLabelText('Новая задача');
       await user.type(title, 'B');
-      if (entry === 'main') await user.tab();
+      await selectQuickMixed(user, scope, 'X', 'Y');
       await user.click(
         scope.getByRole('button', { name: 'Сроки новой задачи' }),
       );
@@ -2500,7 +2710,11 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
         'expectedRevision',
         'operationId',
       ]);
-      expect(commands[0]!.command).toMatchObject({ durationDays: 3 });
+      expect(commands[0]!.command).toMatchObject({
+        durationDays: 3,
+        predecessorIds: [id(2)],
+        successorIds: [id(3)],
+      });
       expect(title).toBeDisabled();
       expect(duration).toBeDisabled();
       // Existing late-ack boundary: a queued input event arrives after send; ordinary busy UI stays locked.
@@ -2584,7 +2798,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
       await user.click(screen.getByRole('button', { name: 'Повторить' }));
       await waitFor(() =>
         expect(
-          screen.queryByRole('dialog', { name: 'После окончания' }),
+          screen.queryByRole('dialog', { name: 'Зависимости' }),
         ).not.toBeInTheDocument(),
       );
       await waitFor(() => expect(trigger).toHaveFocus());
@@ -2687,7 +2901,7 @@ describe('shared predecessor controls and canonical acknowledgements', () => {
   });
 });
 
-it('searches collapsed/filtered leaves from a Gantt host and restores the quick input when the trigger disappears', async () => {
+it('searches collapsed/filtered leaves from a Gantt host and does not steal focus after filtering hides the trigger', async () => {
   tree.tasks = [
     task(1, 'P'),
     task(2, 'A скрытая', id(1)),
@@ -2717,9 +2931,7 @@ it('searches collapsed/filtered leaves from a Gantt host and restores the quick 
   await user.click(
     screen.getByRole('button', { name: 'Закрыть выбор предшественников' }),
   );
-  await waitFor(() =>
-    expect(screen.getByLabelText('Новая задача')).toHaveFocus(),
-  );
+  expect(document.activeElement).toBe(document.body);
   expect(commands).toHaveLength(0);
 });
 it('keeps confirmed immediate chips/query on rejection and sends one deletion only after selection is acknowledged', async () => {
@@ -2749,7 +2961,7 @@ it('keeps confirmed immediate chips/query on rejection and sends one deletion on
   );
   expect(
     await within(
-      screen.getByRole('dialog', { name: 'После окончания' }),
+      screen.getByRole('dialog', { name: 'Зависимости' }),
     ).findByRole('alert'),
   ).toHaveTextContent('Связь отклонена.');
   expect(
@@ -2761,7 +2973,7 @@ it('keeps confirmed immediate chips/query on rejection and sends one deletion on
   );
   await waitFor(() =>
     expect(
-      screen.queryByRole('dialog', { name: 'После окончания' }),
+      screen.queryByRole('dialog', { name: 'Зависимости' }),
     ).not.toBeInTheDocument(),
   );
   expect(commands[0]?.command).toEqual({
@@ -2770,69 +2982,86 @@ it('keeps confirmed immediate chips/query on rejection and sends one deletion on
   });
 });
 
-it('retains same-title changed relation IDs from queued draft events after a deferred create acknowledgement', async () => {
-  tree.tasks = [task(1, 'A'), task(2, 'X', null, 1)];
-  await open();
-  const user = userEvent.setup();
-  await user.type(screen.getByLabelText('Новая задача'), 'B');
-  await user.keyboard('{Alt>}l{/Alt}');
-  await user.type(
-    screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
-    'A',
-  );
-  await user.keyboard('{ArrowDown}{Enter}');
-  const remove = screen.getByRole('button', {
-    name: 'Убрать предшественника: A',
-  });
-  let resolve!: (response: Response) => void;
-  fetchMock.mockImplementationOnce(
-    () =>
-      new Promise<Response>((done) => {
-        resolve = done;
+it.each(['predecessor', 'successor'] as const)(
+  'retains same-title changed %s IDs from queued draft events after a deferred create acknowledgement',
+  async (direction) => {
+    tree.tasks = [task(1, 'A'), task(2, 'X', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Новая задача'), 'B');
+    await user.keyboard('{Alt>}l{/Alt}');
+    if (direction === 'successor')
+      await user.click(screen.getByRole('button', { name: 'Перед' }));
+    await user.type(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
       }),
-  );
-  // Two callbacks queued before React commits busy state; the second belongs to a newer draft.
-  act(() => {
-    fireEvent.submit(screen.getByLabelText('Новая задача').closest('form')!);
-    fireEvent.click(remove);
-  });
-  expect(screen.getByLabelText('Новая задача')).toBeDisabled();
-  expect(
-    JSON.parse(
-      String(
-        fetchMock.mock.calls
-          .filter(([url]) => String(url).endsWith('/commands'))
-          .at(-1)?.[1]?.body,
-      ),
-    ).command.predecessorIds,
-  ).toEqual([id(1)]);
-  tree = {
-    ...tree,
-    project: { ...project, revision: 1 },
-    tasks: [...tree.tasks, task(51, 'B', null, 2)],
-    dependencies: [
-      {
-        id: id(90),
-        projectId: project.id,
-        predecessorId: id(1),
-        successorId: id(51),
-      },
-    ],
-  };
-  resolve(await json(tree));
-  await waitFor(() =>
-    expect(screen.getByLabelText('Новая задача')).toBeEnabled(),
-  );
-  expect(screen.getByLabelText('Новая задача')).toHaveValue('B');
-  await user.click(
-    screen.getByRole('button', { name: 'После окончания новой задачи' }),
-  );
-  expect(
-    screen.queryByRole('button', { name: 'Убрать предшественника: A' }),
-  ).not.toBeInTheDocument();
-});
+      'A',
+    );
+    await user.keyboard('{ArrowDown}{Enter}');
+    const remove = screen.getByRole('button', {
+      name:
+        direction === 'predecessor'
+          ? 'Убрать предшественника: A'
+          : 'Убрать последователя: A',
+    });
+    let resolve!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((done) => {
+          resolve = done;
+        }),
+    );
+    // Two callbacks queued before React commits busy state; the second belongs to a newer draft.
+    act(() => {
+      fireEvent.submit(screen.getByLabelText('Новая задача').closest('form')!);
+      fireEvent.click(remove);
+    });
+    expect(screen.getByLabelText('Новая задача')).toBeDisabled();
+    expect(
+      JSON.parse(
+        String(
+          fetchMock.mock.calls
+            .filter(([url]) => String(url).endsWith('/commands'))
+            .at(-1)?.[1]?.body,
+        ),
+      ).command[
+        direction === 'predecessor' ? 'predecessorIds' : 'successorIds'
+      ],
+    ).toEqual([id(1)]);
+    tree = {
+      ...tree,
+      project: { ...project, revision: 1 },
+      tasks: [...tree.tasks, task(51, 'B', null, 2)],
+      dependencies: [
+        {
+          id: id(90),
+          projectId: project.id,
+          predecessorId: direction === 'predecessor' ? id(1) : id(51),
+          successorId: direction === 'predecessor' ? id(51) : id(1),
+        },
+      ],
+    };
+    resolve(await json(tree));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Новая задача')).toBeEnabled(),
+    );
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('B');
+    await user.click(
+      screen.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    expect(
+      screen.queryByRole('button', {
+        name:
+          direction === 'predecessor'
+            ? 'Убрать предшественника: A'
+            : 'Убрать последователя: A',
+      }),
+    ).not.toBeInTheDocument();
+  },
+);
 
-it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph actions with dirty Details', async () => {
+it('shares chains with the subtask tree and blocks row/Gantt/graph actions with dirty Details', async () => {
   tree.tasks = [task(1, 'P'), task(2, 'B', id(1)), task(3, 'A', null, 1)];
   await open();
   const user = userEvent.setup();
@@ -2851,12 +3080,12 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
     row = panel.getByRole('treeitem', { name: /^B,/ });
   await user.hover(row);
   expect(
-    within(row).queryByRole('button', { name: 'После окончания: B' }),
-  ).not.toBeInTheDocument();
+    within(row).getByRole('button', { name: 'Зависимости: B' }),
+  ).toBeEnabled();
   row.focus();
   await user.keyboard('{Alt>}l{/Alt}');
   expect(
-    screen.queryByRole('dialog', { name: 'После окончания' }),
+    screen.queryByRole('dialog', { name: 'Зависимости' }),
   ).not.toBeInTheDocument();
   expect(row).toHaveFocus();
   await user.click(row);
@@ -2877,11 +3106,11 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
   ).getByRole('treeitem', { name: /^A,/ });
   fireEvent.keyDown(mainRow, { key: 'l', altKey: true });
   expect(
-    screen.queryByRole('dialog', { name: 'После окончания' }),
+    screen.queryByRole('dialog', { name: 'Зависимости' }),
   ).not.toBeInTheDocument();
   expect(
-    within(mainRow).queryByRole('button', { name: 'После окончания: A' }),
-  ).not.toBeInTheDocument();
+    within(mainRow).getByRole('button', { name: 'Зависимости: A' }),
+  ).toBeDisabled();
   const bar = document.querySelector(
     `[data-gantt-row="${id(3)}"] [role="button"]`,
   )!;
@@ -2892,7 +3121,7 @@ it('keeps the reused subtask tree free of chain actions and blocks Gantt/graph a
     ).getByRole('button', { name: 'После окончания: A' }),
   ).toBeDisabled();
   expect(
-    screen.queryByRole('dialog', { name: 'После окончания' }),
+    screen.queryByRole('dialog', { name: 'Зависимости' }),
   ).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
   expect(
@@ -3069,10 +3298,9 @@ it('keeps task dirty status and all write locks while a Journal POST is pending'
   await user.click(screen.getByRole('button', { name: 'Изменить название' }));
   await user.type(screen.getByLabelText('Название задачи'), ' черновик{Enter}');
   await user.click(document.getElementById('tab-journal')!);
-  await user.type(
-    screen.getByLabelText('Текст записи'),
-    'Синтетическая запись',
-  );
+  changeJournalField(screen.getByLabelText('Текст записи'), {
+    target: { value: 'Синтетическая запись' },
+  });
   const original = fetchMock.getMockImplementation()! as (
     url: string,
     init?: RequestInit,
@@ -3104,6 +3332,9 @@ it('keeps task dirty status and all write locks while a Journal POST is pending'
   expect(
     screen.getByRole('button', { name: /^Сроки задачи:/ }),
   ).toHaveAttribute('aria-description', 'Дождитесь сохранения записи журнала.');
+  expect(
+    screen.getByRole('button', { name: 'Зависимости: Задача журнала' }),
+  ).toBeDisabled();
   expect(commands).toHaveLength(0);
   await act(async () =>
     release(
@@ -3116,8 +3347,993 @@ it('keeps task dirty status and all write locks while a Journal POST is pending'
   expect(
     screen.getByText('Несохранённое название: Задача журнала черновик'),
   ).toBeVisible();
-  expect(screen.getByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByLabelText('Текст записи'),
     'Синтетическая запись',
   );
   expect(commands).toHaveLength(0);
 });
+
+it.each(['main', 'subtask'] as const)(
+  'preserves mixed %s selections on ordinary rejection and 409 revalidates without silently dropping IDs',
+  async (entry) => {
+    tree.tasks = [task(1, 'P'), task(2, 'A', null, 1), task(3, 'B', null, 2)];
+    await open();
+    const user = userEvent.setup();
+    let scope = screen;
+    if (entry === 'subtask') {
+      await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+      await openPanelQuick(user);
+      scope = within(
+        screen.getByRole('complementary', { name: 'Задача' }),
+      ) as typeof screen;
+    }
+    const title = scope.getByLabelText('Новая задача');
+    await user.type(title, 'T');
+    await user.click(
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    await user.type(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
+      }),
+      'A',
+    );
+    await user.keyboard('{ArrowDown}{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Перед' }));
+    await user.clear(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
+      }),
+    );
+    await user.type(
+      screen.getByRole('searchbox', {
+        name: /Поиск (предшественника|последователя)/,
+      }),
+      'B',
+    );
+    await user.keyboard('{ArrowDown}{Enter}{Escape}');
+    fetchMock.mockImplementationOnce(() =>
+      json({ code: 'INVALID_REQUEST', message: 'Синтетический отказ.' }, 400),
+    );
+    await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+    await screen.findByText('Синтетический отказ.');
+    expect(title).toHaveValue('T');
+    await user.click(
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Убрать последователя: B' }),
+    ).toBeVisible();
+    await user.keyboard('{Escape}');
+    fetchMock.mockImplementationOnce(() =>
+      json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
+    );
+    await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+    await screen.findByRole('button', { name: 'Загрузить актуальный проект' });
+    tree = {
+      ...tree,
+      project: { ...project, revision: 1 },
+      tasks: tree.tasks.filter((t) => t.id !== id(3)),
+    };
+    await user.click(
+      screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+    );
+    await waitFor(() => expect(title).toBeEnabled());
+    expect(title).toHaveValue('T');
+    expect(
+      scope.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeDisabled();
+    await user.click(
+      scope.getByRole('button', { name: /^Связи новой задачи:/ }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Убрать предшественника: A' }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole('button', { name: /Убрать последователя:/ }),
+    );
+    await user.keyboard('{Escape}');
+    expect(
+      scope.getByRole('button', { name: 'Добавить задачу' }),
+    ).toBeEnabled();
+  },
+);
+
+async function selectQuickMixed(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: typeof screen,
+  after: string,
+  before: string,
+) {
+  await user.click(scope.getByRole('button', { name: /^Связи новой задачи:/ }));
+  await user.type(
+    screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
+    after,
+  );
+  await user.keyboard('{ArrowDown}{Enter}');
+  await user.click(screen.getByRole('button', { name: 'Перед' }));
+  await user.clear(
+    screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+  );
+  await user.type(
+    screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+    before,
+  );
+  await user.keyboard('{ArrowDown}{Enter}{Escape}');
+}
+
+it('successor-only main draft keeps its parent when selecting another row and clears both groups on cancel', async () => {
+  tree.tasks = [task(1, 'P'), task(2, 'X'), task(3, 'Y')];
+  await open();
+  const user = userEvent.setup();
+  const row = screen.getByRole('treeitem', { name: /^P,/ });
+  row.focus();
+  await user.keyboard('{Shift>}{Enter}{/Shift}');
+  await user.keyboard('{Alt>}l{/Alt}');
+  await user.click(screen.getByRole('button', { name: 'Перед' }));
+  await user.type(
+    screen.getByRole('searchbox', { name: 'Поиск последователя' }),
+    'X',
+  );
+  await user.keyboard('{ArrowDown}{Enter}{Escape}');
+  await user.click(screen.getByRole('treeitem', { name: /^Y,/ }));
+  expect(screen.getByText('Родитель: P')).toBeInTheDocument();
+  await user.click(
+    screen.getByRole('button', { name: 'Отменить ввод задачи' }),
+  );
+  expect(
+    screen.getByRole('button', { name: 'Связи новой задачи: 0, не сохранено' }),
+  ).toBeInTheDocument();
+  const unload = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(false);
+});
+
+it('mixed quick exact replay below the metadata floor refreshes current tree and clears only matched draft', async () => {
+  tree.project.revision = 6;
+  tree.tasks = [task(1, 'P'), task(2, 'A'), task(3, 'B')];
+  const frozen: ProjectTree = {
+    ...structuredClone(tree),
+    project: { ...tree.project, revision: 7 },
+    tasks: [...tree.tasks, task(51, 'T')],
+    dependencies: [
+      {
+        id: id(90),
+        projectId: project.id,
+        predecessorId: id(2),
+        successorId: id(51),
+      },
+      {
+        id: id(91),
+        projectId: project.id,
+        predecessorId: id(51),
+        successorId: id(3),
+      },
+    ],
+    canUndo: true,
+  };
+  const envelopes: CommandEnvelope[] = [];
+  const base = fetchMock.getMockImplementation()! as (
+    url: string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation((url, init) => {
+    if (url.endsWith('/commands') && init?.method === 'POST') {
+      envelopes.push(JSON.parse(String(init.body)) as CommandEnvelope);
+      return envelopes.length === 1
+        ? Promise.reject(new TypeError('synthetic lost response'))
+        : json(frozen);
+    }
+    return base(url, init);
+  });
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+  const title = document.getElementById('quick-task')!;
+  await user.type(title, 'T');
+  await selectQuickMixed(
+    user,
+    within(title.closest('form')!) as typeof screen,
+    'A',
+    'B',
+  );
+  await user.click(
+    within(title.closest('form')!).getByRole('button', {
+      name: 'Добавить задачу',
+    }),
+  );
+  await screen.findByText(/Нет связи с сервером/);
+  tree = {
+    ...structuredClone(frozen),
+    project: { ...frozen.project, revision: 8 },
+    tasks: frozen.tasks.map((t) =>
+      t.id === id(1) ? { ...t, title: 'P revision 8' } : t,
+    ),
+  };
+  await user.click(
+    within(screen.getByRole('complementary', { name: 'Задача' })).getByRole(
+      'tab',
+      { name: 'Ход работы' },
+    ),
+  );
+  fireEvent(window, new Event('focus'));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/tree'))
+        .length,
+    ).toBeGreaterThan(1),
+  );
+  await waitFor(() =>
+    expect(screen.queryByText('Загрузка журнала…')).not.toBeInTheDocument(),
+  );
+  const readsBeforeRetry = fetchMock.mock.calls.filter(([url]) =>
+    String(url).endsWith('/tree'),
+  ).length;
+  await user.click(screen.getByRole('button', { name: 'Повторить' }));
+  await waitFor(() => expect(title).toHaveValue(''));
+  expect(envelopes).toHaveLength(2);
+  expect(envelopes[1]).toEqual(envelopes[0]);
+  expect(envelopes[0]?.command).toMatchObject({
+    predecessorIds: [id(2)],
+    successorIds: [id(3)],
+  });
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/tree'))
+      .length,
+  ).toBeGreaterThan(readsBeforeRetry);
+  expect(
+    screen.getByRole('treeitem', { name: /^P revision 8,/ }),
+  ).toBeInTheDocument();
+});
+
+it.each(['logout', '401'] as const)(
+  'clears both QuickAdd scopes on %s and fresh login starts clean',
+  async (mode) => {
+    tree.tasks = [task(1, 'P'), task(2, 'A'), task(3, 'B')];
+    await open();
+    const user = userEvent.setup();
+    const main = document.getElementById('quick-task')!;
+    await user.type(main, 'Main');
+    await selectQuickMixed(
+      user,
+      within(main.closest('form')!) as typeof screen,
+      'A',
+      'B',
+    );
+    await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+    await openPanelQuick(user);
+    const scope = within(
+      screen.getByRole('complementary', { name: 'Задача' }),
+    ) as typeof screen;
+    await user.type(scope.getByLabelText('Новая задача'), 'Sub');
+    await selectQuickMixed(user, scope, 'A', 'B');
+    if (mode === '401') {
+      fetchMock.mockImplementationOnce(() =>
+        json({ code: 'UNAUTHORIZED', message: 'Сессия завершена' }, 401),
+      );
+      await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Выйти' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Отбросить быстрые черновики' }),
+      );
+      await user.click(screen.getByRole('button', { name: 'Выйти' }));
+    }
+    await screen.findByLabelText('Пароль');
+    await user.type(screen.getByLabelText('Пароль'), 'synthetic-password');
+    fetchMock.mockImplementationOnce(() =>
+      json({ authenticated: true, setupRequired: false }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Войти' }));
+    await screen.findByRole('heading', { name: project.title });
+    expect(document.getElementById('quick-task')).toHaveValue('');
+    expect(
+      screen.getByRole('button', {
+        name: 'Связи новой задачи: 0, не сохранено',
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+    await openPanelQuick(user);
+    const fresh = within(screen.getByRole('complementary', { name: 'Задача' }));
+    expect(fresh.getByLabelText('Новая задача')).toHaveValue('');
+    expect(
+      fresh.getByRole('button', {
+        name: 'Связи новой задачи: 0, не сохранено',
+      }),
+    ).toBeInTheDocument();
+  },
+);
+
+it('reconciles the submitted subtask context after refresh and clears a matched mixed draft', async () => {
+  tree.tasks = [
+    task(1, 'P'),
+    task(2, 'Child', id(1)),
+    task(3, 'A'),
+    task(4, 'B'),
+  ];
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+  await openPanelQuick(user);
+  const scope = within(
+    screen.getByRole('complementary', { name: 'Задача' }),
+  ) as typeof screen;
+  const input = scope.getByLabelText('Новая задача');
+  await user.type(input, 'T');
+  await user.tab();
+  expect(scope.getByText('Родитель: Child')).toBeInTheDocument();
+  await selectQuickMixed(user, scope, 'A', 'B');
+  fetchMock.mockImplementationOnce(() =>
+    json({ code: 'STALE_REVISION', message: 'Проект изменён.' }, 409),
+  );
+  await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+  await screen.findByRole('button', { name: 'Загрузить актуальный проект' });
+  tree = {
+    ...tree,
+    project: { ...project, revision: 1 },
+    tasks: tree.tasks.filter((t) => t.id !== id(2)),
+  };
+  await user.click(
+    screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+  );
+  await waitFor(() => expect(input).toBeEnabled());
+  expect(scope.getByText('Родитель: P')).toBeInTheDocument();
+  await user.click(scope.getByRole('button', { name: 'Добавить задачу' }));
+  await waitFor(() => expect(input).toHaveValue(''));
+  expect(commands.at(-1)?.command).toMatchObject({
+    parentId: id(1),
+    predecessorIds: [id(3)],
+    successorIds: [id(4)],
+  });
+});
+
+it.each(['predecessor', 'successor'] as const)(
+  'routes shared row %s mutations without selecting or moving QuickAdd',
+  async (direction) => {
+    tree.tasks = [task(1, 'A'), task(2, 'T', null, 1), task(3, 'B', null, 2)];
+    await open();
+    const user = userEvent.setup();
+    const quick = screen.getByLabelText('Новая задача');
+    await user.type(quick, 'Черновик');
+    const trigger = within(
+      screen.getByRole('tree', { name: 'Задачи' }),
+    ).getByRole('button', { name: 'Зависимости: T' });
+    await user.click(trigger);
+    expect(
+      screen.queryByRole('complementary', { name: 'Задача' }),
+    ).not.toBeInTheDocument();
+    expect(quick).toHaveValue('Черновик');
+    const picker = screen.getByRole('dialog', { name: 'Зависимости' });
+    await user.click(
+      within(picker).getByRole('button', {
+        name: direction === 'predecessor' ? 'После' : 'Перед',
+      }),
+    );
+    await user.click(within(picker).getByRole('option', { name: /^A/ }));
+    await waitFor(() => expect(commands).toHaveLength(1));
+    expect(commands[0]?.command).toEqual({
+      type: 'dependency.create',
+      predecessorId: direction === 'predecessor' ? id(1) : id(2),
+      successorId: direction === 'predecessor' ? id(2) : id(1),
+    });
+    await waitFor(() => expect(trigger).toHaveFocus());
+  },
+);
+it('drops an outgoing graph acknowledgement after the owning session expires', async () => {
+  tree.tasks = [task(1, 'A'), task(2, 'B')];
+  await open();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+  await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить последователя' }),
+  );
+  const base = fetchMock.getMockImplementation()! as (
+    url: string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  let release!: (response: Response) => void;
+  let accepted!: Response;
+  let expired = false;
+  fetchMock.mockImplementation(async (url, init) => {
+    if (url.endsWith('/commands')) {
+      accepted = await base(url, init);
+      return new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    }
+    if (expired && /\/journal(?:\?|$)/.test(url))
+      return json({ code: 'UNAUTHORIZED', message: 'Сессия завершена' }, 401);
+    return base(url, init);
+  });
+  await user.click(screen.getByRole('option', { name: /^B/ }));
+  await waitFor(() => expect(accepted).toBeDefined());
+  expired = true;
+  fireEvent(window, new Event('focus'));
+  const password = await screen.findByLabelText('Пароль');
+  expect(password).toBeDisabled();
+  await act(async () => release(accepted));
+  expect(password).toBeEnabled();
+  expect(document.activeElement).toBe(document.body);
+  expect(screen.queryByRole('complementary', { name: 'Задача' })).toBeNull();
+  expect(
+    screen.queryByRole('dialog', { name: 'Добавить последователя' }),
+  ).toBeNull();
+  expect(commands).toHaveLength(1);
+});
+
+it.each([400, 409])(
+  'keeps graph add query/context on a definite %s refusal without acknowledgement',
+  async (status) => {
+    tree.tasks = [task(1, 'A'), task(2, 'B')];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Добавить последователя' }),
+    );
+    const dialog = screen.getByRole('dialog', {
+      name: 'Добавить последователя',
+    });
+    const search = within(dialog).getByRole('searchbox');
+    await user.type(search, 'B');
+    fetchMock.mockImplementationOnce(() =>
+      json(
+        {
+          code: status === 409 ? 'STALE_REVISION' : 'INVALID_COMMAND',
+          message: 'Synthetic refusal',
+        },
+        status,
+      ),
+    );
+    await user.keyboard('{Enter}');
+    if (status === 409)
+      await screen.findByRole('button', {
+        name: 'Загрузить актуальный проект',
+      });
+    else await screen.findByText('Synthetic refusal');
+    expect(dialog).toBeVisible();
+    expect(search).toHaveValue('B');
+    expect(tree.dependencies).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();
+  },
+);
+
+it.each(['add', 'delete'] as const)(
+  'closes only the graph add picker after exact retry: %s',
+  async (kind) => {
+    tree.tasks = [task(1, 'A'), task(2, 'B')];
+    if (kind === 'delete')
+      tree.dependencies = [
+        {
+          id: id(90),
+          projectId: project.id,
+          predecessorId: id(1),
+          successorId: id(2),
+        },
+      ];
+    const base = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    const envelopes: CommandEnvelope[] = [];
+    let frozen!: ProjectTree;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (url.endsWith('/commands')) {
+        envelopes.push(JSON.parse(String(init?.body)));
+        if (envelopes.length === 1) {
+          frozen = await (await base(url, init)).json();
+          throw new TypeError('synthetic lost response');
+        }
+        return json(frozen);
+      }
+      return base(url, init);
+    });
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+    await user.click(screen.getByRole('tab', { name: 'Зависимости' }));
+    const trigger = screen.getByRole('button', {
+      name: 'Добавить последователя',
+    });
+    await user.click(trigger);
+    const dialog = screen.getByRole('dialog', {
+      name: 'Добавить последователя',
+    });
+    const search = within(dialog).getByRole('searchbox');
+    await user.type(search, 'B');
+    if (kind === 'add') await user.keyboard('{Enter}');
+    else
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Убрать последователя: B' }),
+      );
+    const retry = await screen.findByRole('button', {
+      name: 'Повторить',
+    });
+    expect(dialog).toBeVisible();
+    expect(search).toHaveValue('B');
+    // The owning retry control is recovery, not deliberate navigation away.
+    await user.click(retry);
+    await waitFor(() => expect(trigger).toBeEnabled());
+    expect(envelopes).toHaveLength(2);
+    expect(envelopes[1]).toEqual(envelopes[0]);
+    expect(tree.project.revision).toBe(1);
+    if (kind === 'add') {
+      expect(
+        screen.queryByRole('dialog', { name: 'Добавить последователя' }),
+      ).toBeNull();
+      expect(trigger).toHaveFocus();
+    } else {
+      expect(dialog).toBeVisible();
+      expect(search).toHaveValue('B');
+      expect(
+        within(dialog).queryByRole('button', {
+          name: 'Убрать последователя: B',
+        }),
+      ).toBeNull();
+    }
+  },
+);
+
+it('deletes the outgoing chip while After is selected, keeping saved counts until ack', async () => {
+  tree.tasks = [task(1, 'A'), task(2, 'T', null, 1), task(3, 'B', null, 2)];
+  const outbound = {
+    id: id(91),
+    projectId: project.id,
+    predecessorId: id(2),
+    successorId: id(3),
+  };
+  tree.dependencies = [
+    {
+      id: id(90),
+      projectId: project.id,
+      predecessorId: id(1),
+      successorId: id(2),
+    },
+    outbound,
+  ];
+  await open();
+  const user = userEvent.setup();
+  const trigger = screen.getByRole('button', { name: 'Зависимости: T' });
+  await user.click(trigger);
+  const original = fetchMock.getMockImplementation()! as (
+    url: string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  let resolve!: (value: Response) => void;
+  let accepted!: Response;
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.endsWith('/commands')) {
+      void Promise.resolve(original(url, init)).then((value) => {
+        accepted = value;
+      });
+      return new Promise<Response>((done) => {
+        resolve = done;
+      });
+    }
+    return original(url, init);
+  });
+  await user.click(
+    screen.getByRole('button', { name: 'Убрать последователя: B' }),
+  );
+  expect(commands[0]?.command).toEqual({
+    type: 'dependency.delete',
+    dependencyId: outbound.id,
+  });
+  expect(trigger).toHaveTextContent('2');
+  expect(
+    screen.getByRole('button', { name: 'Убрать последователя: B' }),
+  ).toBeDisabled();
+  await waitFor(() => expect(accepted).toBeDefined());
+  await act(async () => resolve(accepted));
+  await waitFor(() => expect(trigger).toHaveTextContent('1'));
+  expect(
+    screen.queryByRole('dialog', { name: 'Зависимости' }),
+  ).not.toBeInTheDocument();
+});
+it.each([
+  ['row', 'focus'],
+  ['row', 'pointer'],
+  ['gantt', 'focus'],
+  ['gantt', 'pointer'],
+] as const)(
+  'permanently cancels %s immediate return after outside %s then body',
+  async (host, outsideEvent) => {
+    tree.tasks = [task(1, 'A'), task(2, 'T', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    await user.click(
+      host === 'row'
+        ? screen.getByRole('button', { name: 'Зависимости: T' })
+        : within(
+            document.querySelector<HTMLElement>(`[data-gantt-row="${id(2)}"]`)!,
+          ).getByRole('button', { name: 'После окончания: T' }),
+    );
+    const original = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let resolve!: (value: Response) => void;
+    let accepted!: Response;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/commands')) {
+        void Promise.resolve(original(url, init)).then((value) => {
+          accepted = value;
+        });
+        return new Promise<Response>((done) => {
+          resolve = done;
+        });
+      }
+      return original(url, init);
+    });
+    await user.click(screen.getByRole('option', { name: /^A/ }));
+    const outside = screen.getByRole('searchbox', { name: 'Поиск задач' });
+    if (outsideEvent === 'focus') outside.focus();
+    else fireEvent.pointerDown(document.body);
+    (document.activeElement as HTMLElement)?.blur();
+    await waitFor(() => expect(accepted).toBeDefined());
+    await act(async () => resolve(accepted));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Зависимости' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(document.body);
+  },
+);
+
+it.each(['title', 'raw-date'] as const)(
+  'rechecks immediate locks when another panel becomes dirty: %s',
+  async (field) => {
+    tree.tasks = [task(1, 'A'), task(2, 'T', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+    await user.click(screen.getByRole('button', { name: 'Зависимости: T' }));
+    if (field === 'title') {
+      await user.click(
+        screen.getByRole('button', { name: 'Изменить название' }),
+      );
+      await user.type(screen.getByLabelText('Название задачи'), ' черновик');
+    } else {
+      await user.click(screen.getByRole('button', { name: /^Сроки задачи:/ }));
+      fireEvent.change(screen.getByLabelText('Начало'), {
+        target: { value: '31.2' },
+      });
+    }
+    const picker = within(screen.getByRole('dialog', { name: 'Зависимости' }));
+    expect(
+      picker.getByText('Сначала сохраните или отмените изменения задачи'),
+    ).toBeVisible();
+    expect(picker.getByRole('option', { name: /^A/ })).toBeDisabled();
+    fireEvent.click(picker.getByRole('option', { name: /^A/ }));
+    expect(commands).toHaveLength(0);
+    expect(tree.dependencies).toEqual([]);
+    await user.click(
+      screen.getByRole('button', { name: 'Закрыть выбор предшественников' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Зависимости: T' }));
+    expect(
+      screen.queryByRole('dialog', { name: 'Зависимости' }),
+    ).not.toBeInTheDocument();
+  },
+);
+it.each(['busy', 'uncertain', 'conflict'] as const)(
+  'prevents a second immediate command and reopen while %s',
+  async (state) => {
+    tree.tasks = [task(1, 'A'), task(2, 'T', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    const trigger = screen.getByRole('button', { name: 'Зависимости: T' });
+    await user.click(trigger);
+    let release!: (response: Response) => void;
+    if (state === 'busy')
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((done) => {
+            release = done;
+          }),
+      );
+    if (state === 'uncertain')
+      fetchMock.mockImplementationOnce(() =>
+        Promise.reject(new TypeError('synthetic offline')),
+      );
+    if (state === 'conflict')
+      fetchMock.mockImplementationOnce(() =>
+        json(
+          { code: 'STALE_REVISION', message: 'Синтетический конфликт' },
+          409,
+        ),
+      );
+    await user.click(screen.getByRole('option', { name: /^A/ }));
+    const calls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).endsWith('/commands'),
+    );
+    expect(calls).toHaveLength(1);
+    expect(screen.getByRole('option', { name: /^A/ })).toBeDisabled();
+    expect(trigger).toBeDisabled();
+    fireEvent.click(screen.getByRole('option', { name: /^A/ }));
+    await user.click(
+      screen.getByRole('button', { name: 'Закрыть выбор предшественников' }),
+    );
+    fireEvent.click(trigger);
+    expect(
+      screen.queryByRole('dialog', { name: 'Зависимости' }),
+    ).not.toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/commands')),
+    ).toHaveLength(1);
+    if (state === 'busy')
+      await act(async () =>
+        release(
+          await json({ ...tree, project: { ...tree.project, revision: 1 } }),
+        ),
+      );
+  },
+);
+it.each(['row', 'input'] as const)(
+  'restores Escape to the same subtask chain, then falls back within its own scope to %s after pending close',
+  async (fallback) => {
+    tree.tasks = [task(1, 'P'), task(2, 'T', id(1)), task(3, 'A', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+    const scope = screen.getByRole('tree', { name: 'Подзадачи' });
+    const trigger = within(scope).getByRole('button', {
+      name: 'Зависимости: T',
+    });
+    await user.click(trigger);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await user.click(trigger);
+    const original = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release!: (response: Response) => void, accepted!: Response;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/commands')) {
+        void original(url, init).then((value) => {
+          accepted = value;
+        });
+        return new Promise<Response>((done) => {
+          release = done;
+        });
+      }
+      return original(url, init);
+    });
+    const search = screen.getByRole('searchbox', {
+      name: 'Поиск предшественника',
+    });
+    await user.type(search, 'A');
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(search).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(
+      screen.queryByRole('dialog', { name: 'Зависимости' }),
+    ).not.toBeInTheDocument();
+    trigger.hidden = true;
+    if (fallback === 'input')
+      trigger.closest<HTMLElement>('[role=treeitem]')!.hidden = true;
+    await waitFor(() => expect(accepted).toBeDefined());
+    await act(async () => release(accepted));
+    await waitFor(() => {
+      if (fallback === 'row')
+        expect(
+          within(scope).getByRole('treeitem', { name: /^T,/ }),
+        ).toHaveFocus();
+      else expect(document.getElementById('quick-subtask')).toHaveFocus();
+    });
+    expect(
+      within(screen.getByRole('tree', { name: 'Задачи' })).getByRole(
+        'treeitem',
+        {
+          name: /^T,/,
+        },
+      ),
+    ).not.toHaveFocus();
+  },
+);
+
+it('disables an open immediate picker when project settings become dirty', async () => {
+  tree.tasks = [task(1, 'A'), task(2, 'T', null, 1)];
+  await open();
+  const user = userEvent.setup();
+  const trigger = screen.getByRole('button', { name: 'Зависимости: T' });
+  await user.click(trigger);
+  await user.click(screen.getByRole('button', { name: 'Действия проекта' }));
+  await user.click(screen.getByRole('button', { name: 'Настройки проекта' }));
+  await user.type(screen.getByLabelText('Часовой пояс проекта'), '/invalid');
+  const option = within(
+    screen.getByRole('dialog', { name: 'Зависимости' }),
+  ).getByRole('option', { name: /^A/ });
+  expect(option).toBeDisabled();
+  expect(trigger).toBeDisabled();
+  fireEvent.click(option);
+  expect(commands).toHaveLength(0);
+});
+
+it('keeps row and picker mutations locked while reloading a conflicted snapshot', async () => {
+  tree.tasks = [task(1, 'A'), task(2, 'T', null, 1)];
+  await open();
+  const user = userEvent.setup();
+  const trigger = screen.getByRole('button', { name: 'Зависимости: T' });
+  await user.click(trigger);
+  fetchMock.mockImplementationOnce(() =>
+    json({ code: 'STALE_REVISION', message: 'Синтетический конфликт' }, 409),
+  );
+  await user.click(screen.getByRole('option', { name: /^A/ }));
+  const original = fetchMock.getMockImplementation()! as (
+    url: string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  let release!: (response: Response) => void;
+  fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+    url.endsWith('/tree')
+      ? new Promise<Response>((done) => {
+          release = done;
+        })
+      : original(url, init),
+  );
+  await user.click(
+    screen.getByRole('button', { name: 'Загрузить актуальный проект' }),
+  );
+  await waitFor(() => expect(release).toBeDefined());
+  expect(trigger).toBeDisabled();
+  const option = screen.getByRole('option', { name: /^A/ });
+  expect(option).toBeDisabled();
+  fireEvent.click(option);
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/commands')),
+  ).toHaveLength(1);
+  await act(async () => release(await json(tree)));
+});
+it.each(['writing', 'uncertain'] as const)(
+  'rechecks an open picker against journal %s locks',
+  async (state) => {
+    tree.tasks = [task(1, 'A'), task(2, 'T', null, 1)];
+    await open();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('treeitem', { name: /^A,/ }));
+    const trigger = screen.getByRole('button', { name: 'Зависимости: T' });
+    await user.click(trigger);
+    await user.click(screen.getByRole('tab', { name: 'Ход работы' }));
+    changeJournalField(screen.getByLabelText('Текст записи'), {
+      target: { value: 'Синтетическая запись' },
+    });
+    const original = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release!: (response: Response) => void;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/journal') && init?.method === 'POST')
+        return state === 'uncertain'
+          ? Promise.reject(new TypeError('synthetic offline'))
+          : new Promise<Response>((done) => {
+              release = done;
+            });
+      return original(url, init);
+    });
+    await user.click(screen.getByRole('button', { name: 'Сохранить запись' }));
+    const option = screen.getByRole('option', { name: /^A/ });
+    expect(option).toBeDisabled();
+    expect(trigger).toBeDisabled();
+    fireEvent.click(option);
+    expect(commands).toHaveLength(0);
+    await user.click(
+      screen.getByRole('button', { name: 'Закрыть выбор предшественников' }),
+    );
+    fireEvent.click(trigger);
+    expect(
+      screen.queryByRole('dialog', { name: 'Зависимости' }),
+    ).not.toBeInTheDocument();
+    if (state === 'writing')
+      await act(async () =>
+        release(
+          await json(
+            { code: 'TEST_ERROR', message: 'Синтетическая ошибка' },
+            400,
+          ),
+        ),
+      );
+  },
+);
+
+it.each(['focus', 'pointer', 'task', 'project'] as const)(
+  'revokes the second subtask-input fallback frame after outside %s intent',
+  async (intent) => {
+    tree.tasks = [task(1, 'P'), task(2, 'T', id(1)), task(3, 'A', null, 1)];
+    const other = {
+      ...project,
+      id: '33333333-3333-4333-8333-333333333333',
+      title: 'Другой проект',
+    };
+    const initial = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      url === '/api/projects'
+        ? json([tree.project, other])
+        : url === `/api/projects/${other.id}/tree`
+          ? json({ ...tree, project: other, tasks: [], dependencies: [] })
+          : initial(url, init),
+    );
+    await open();
+    const user = userEvent.setup();
+    const mainInput = screen.getByLabelText('Новая задача');
+    await user.type(mainInput, 'Основной черновик');
+    const originalContext = mainInput.getAttribute('aria-description');
+    await user.click(screen.getByRole('treeitem', { name: /^P,/ }));
+    const scope = screen.getByRole('tree', { name: 'Подзадачи' });
+    const trigger = within(scope).getByRole('button', {
+      name: 'Зависимости: T',
+    });
+    await user.click(trigger);
+    const original = fetchMock.getMockImplementation()! as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release!: (response: Response) => void, accepted!: Response;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/commands')) {
+        void original(url, init).then((response) => {
+          accepted = response;
+        });
+        return new Promise<Response>((done) => {
+          release = done;
+        });
+      }
+      return original(url, init);
+    });
+    await user.type(
+      screen.getByRole('searchbox', { name: 'Поиск предшественника' }),
+      'A',
+    );
+    await user.keyboard('{ArrowDown}{Enter}{Escape}');
+    trigger.closest<HTMLElement>('[role=treeitem]')!.hidden = true;
+    await waitFor(() => expect(accepted).toBeDefined());
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    await act(async () => release(accepted));
+    act(() => {
+      for (const callback of frames.splice(0)) callback(0);
+    });
+    expect(document.getElementById('quick-subtask')).toBeInTheDocument();
+    expect(mainInput).toHaveValue('Основной черновик');
+    expect(mainInput).toHaveAttribute('aria-description', originalContext!);
+    expect(screen.getByRole('heading', { name: 'P' })).toBeVisible();
+    if (intent === 'focus') {
+      screen.getByRole('searchbox', { name: 'Поиск задач' }).focus();
+      (document.activeElement as HTMLElement).blur();
+    } else if (intent === 'pointer') fireEvent.pointerDown(document.body);
+    else if (intent === 'task')
+      fireEvent.click(
+        within(screen.getByRole('tree', { name: 'Задачи' })).getByRole(
+          'treeitem',
+          { name: /^A,/ },
+        ),
+      );
+    else fireEvent.click(screen.getByRole('button', { name: /Другой проект/ }));
+    act(() => {
+      for (const callback of frames.splice(0)) callback(0);
+    });
+    expect(document.activeElement?.id).not.toBe('quick-subtask');
+    if (intent === 'focus' || intent === 'pointer')
+      expect(document.activeElement).toBe(document.body);
+    if (intent === 'task')
+      expect(screen.getByRole('heading', { name: 'A' })).toBeVisible();
+    if (intent === 'project')
+      await screen.findByRole('heading', { name: 'Другой проект' });
+    expect(commands).toHaveLength(1);
+  },
+);

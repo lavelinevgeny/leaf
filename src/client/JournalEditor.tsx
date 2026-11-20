@@ -1,7 +1,11 @@
-import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import type { JournalDraft, JournalController } from './journal-state.js';
-import { journalUpdateSchema } from '../shared/journal-contracts.js';
+import { journalUpdateV2Schema } from '../shared/journal-contracts-v2.js';
+import { JournalRichEditor } from './JournalRichEditor.js';
+import { resolveUploadContent, uploadsReady } from './journal-upload-state.js';
+import type { JournalEditorHandle } from './journal-state.js';
 import { calendarDateSchema } from '../shared/contracts.js';
+import { JournalRichBody } from './JournalRichBody.js';
 import { CalendarDateInput } from './CalendarDateInput.js';
 export function JournalEditor({
   draft,
@@ -13,6 +17,7 @@ export function JournalEditor({
   placeholder,
   compactIdle = false,
   visible = true,
+  onEditorReady,
 }: {
   draft: JournalDraft;
   controller: JournalController;
@@ -23,51 +28,24 @@ export function JournalEditor({
   placeholder?: string;
   compactIdle?: boolean;
   visible?: boolean;
+  onEditorReady?: ((handle: JournalEditorHandle) => void) | undefined;
 }) {
   const id = useId();
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const fontProbe = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => {
-    const node = textarea.current;
-    if (!visible || !node?.closest('.task-journal')) return;
-    const resize = () => {
-      if (node.closest('[hidden]') || node.clientWidth === 0) return;
-      node.style.height = 'auto';
-      const style = getComputedStyle(node);
-      const border =
-        style.boxSizing === 'border-box'
-          ? parseFloat(style.borderTopWidth) +
-            parseFloat(style.borderBottomWidth)
-          : 0;
-      node.style.height = `${node.scrollHeight + border}px`;
-    };
-    resize();
-    let active = true;
-    const resizeFont = () => {
-      if (active) resize();
-    };
-    void document.fonts?.ready.then(resizeFont);
-    document.fonts?.addEventListener('loadingdone', resizeFont);
-    const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
-    if (node.parentElement) observer?.observe(node.parentElement);
-    if (fontProbe.current) observer?.observe(fontProbe.current);
-    return () => {
-      active = false;
-      observer?.disconnect();
-      document.fonts?.removeEventListener('loadingdone', resizeFont);
-    };
-  }, [draft.body, visible]);
   const locked = disabled || controller.writing || !!controller.pending;
-  const valid = journalUpdateSchema.safeParse({
-    journalContractVersion: 1,
-    operationId: '00000000-0000-4000-8000-000000000000',
-    expectedJournalRevision: draft.baselineJournalRevision,
-    body: draft.body,
-    workDate: draft.workDate,
-  }).success;
+  const ready = uploadsReady(draft.content, draft.uploads);
+  const valid =
+    ready &&
+    journalUpdateV2Schema.safeParse({
+      journalContractVersion: 2,
+      operationId: '00000000-0000-4000-8000-000000000000',
+      expectedJournalRevision: draft.baselineJournalRevision,
+      content: ready
+        ? resolveUploadContent(draft.content, draft.uploads)
+        : draft.content,
+      workDate: draft.workDate,
+    }).success;
   const submit = async () => {
-    if (!locked && (await controller.submit(draft.key))) onSaved();
+    if (!locked && ready && (await controller.submit(draft.key))) onSaved();
   };
   const conflict = controller.activeConflictKey === draft.key;
   const idle =
@@ -93,43 +71,39 @@ export function JournalEditor({
         event.preventDefault();
         void submit();
       }}
-      onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing) return;
+      onKeyDownCapture={(event) => {
+        if (event.nativeEvent.isComposing) {
+          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter')
+            event.stopPropagation();
+          return;
+        }
         if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
           event.preventDefault();
+          event.stopPropagation();
           void submit();
         }
       }}
     >
       {taskPicker}
-      <label>
-        <span className={compactIdle ? 'sr-only' : undefined}>
-          Текст записи
-        </span>
-        <textarea
-          ref={textarea}
-          data-journal-body
-          value={draft.body}
-          rows={compactIdle ? 2 : 5}
-          placeholder={placeholder}
-          disabled={locked}
-          aria-describedby={id}
-          onChange={(event) =>
-            controller.changeDraft(draft.key, { body: event.target.value })
-          }
-        />
-        <span
-          ref={fontProbe}
-          className="journal-font-probe"
-          aria-hidden="true"
-        />
-      </label>
+      <JournalRichEditor
+        key={draft.generation}
+        draft={draft}
+        controller={controller}
+        disabled={locked}
+        visible={visible}
+        descriptionId={id}
+        placeholder={placeholder}
+        {...(onEditorReady ? { onReady: onEditorReady } : {})}
+      />
+      {!ready && (
+        <p role="status">Дождитесь загрузки вложений или повторите загрузку.</p>
+      )}
       <p
         id={id}
         className={hintVisible ? 'journal-hint' : 'journal-hint sr-only'}
       >
-        {draft.body.length}/10000 · Нужны дата и непустой текст. Ctrl/Cmd+Enter
-        — сохранить.
+        {draft.body.length}/10000 · Нужны дата и непустой текст или вложение.
+        Ctrl/Cmd+Enter — сохранить.
       </p>
       {controller.unavailableTaskIds.has(draft.taskId ?? '') && (
         <p role="alert">Задача удалена. Скопируйте текст черновика.</p>
@@ -269,9 +243,11 @@ export function JournalConflict({
                 .reverse()
                 .join('.')}
             </p>
-            <p className="journal-body">
-              {controller.conflictCurrent.entry.body}
-            </p>
+            <JournalRichBody
+              readMedia={controller.readMedia}
+              entry={controller.conflictCurrent.entry}
+              expanded
+            />
             <button
               type="button"
               onClick={() => controller.acceptCurrent(draftKey, 'replace')}

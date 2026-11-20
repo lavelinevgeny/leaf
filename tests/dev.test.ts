@@ -1,12 +1,106 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { expect, it } from 'vitest';
+import { createServer as createViteServer } from 'vite';
+import viteConfig from '../vite.config.js';
 import { Auth } from '../src/server/auth.js';
 import { openDatabase } from '../src/server/database.js';
+
+it('dev watches source changes without traversing generated or private directories', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'leaf-dev-watch-'));
+  const ignoredDirectories = [
+    '.tmp',
+    '.superpowers',
+    '.worktrees',
+    'worktrees',
+    '.codex',
+    '.claude',
+    '.tools',
+    '.data',
+    'data',
+    'secrets',
+    '.private',
+    '.local',
+    'backups',
+    'exports',
+    'uploads',
+    'logs',
+    'dist',
+    'build',
+    'coverage',
+    'artifacts',
+    'screenshots',
+    'playwright-report',
+    'blob-report',
+  ];
+  let server: Awaited<ReturnType<typeof createViteServer>> | undefined;
+  try {
+    const sourceDirectory = join(directory, 'src');
+    const source = join(sourceDirectory, 'watched.ts');
+    await mkdir(sourceDirectory);
+    await writeFile(source, 'export const value = 1;');
+    for (const name of ignoredDirectories) {
+      const nested = join(directory, name, 'synthetic', 'nested');
+      await mkdir(nested, { recursive: true });
+      await writeFile(join(nested, 'ignored.ts'), 'export const value = 1;');
+    }
+    server = await createViteServer({
+      ...viteConfig,
+      configFile: false,
+      envFile: false,
+      root: directory,
+      plugins: [],
+      publicDir: false,
+      cacheDir: join(directory, 'node_modules', '.vite'),
+      appType: 'custom',
+      logLevel: 'silent',
+      optimizeDeps: { noDiscovery: true, include: [] },
+      server: {
+        ...viteConfig.server,
+        middlewareMode: true,
+        ws: false,
+        // Exercise traversal and change events without the host's inotify quota.
+        watch: { ...viteConfig.server?.watch, usePolling: true },
+      },
+    });
+    const watcher = server.watcher;
+    const changes: string[] = [];
+    const errors: Error[] = [];
+    watcher.on('change', (path) => changes.push(path));
+    watcher.on('error', (error) => errors.push(error));
+    await expect
+      .poll(() => watcher.getWatched()[sourceDirectory])
+      .toContain('watched.ts');
+    let revision = 1;
+    await expect
+      .poll(async () => {
+        // Initial directory discovery can precede file watcher registration.
+        await writeFile(source, `export const value = ${++revision};`);
+        return { changes, errors };
+      })
+      .toEqual({ changes: expect.arrayContaining([source]), errors: [] });
+    const watchedDirectories = Object.keys(watcher.getWatched());
+    for (const name of ignoredDirectories)
+      expect(
+        watchedDirectories.some(
+          (path) =>
+            path === join(directory, name) ||
+            path.startsWith(`${join(directory, name)}${sep}`),
+        ),
+        `${name} must not consume recursive watchers`,
+      ).toBe(false);
+  } finally {
+    try {
+      await server?.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
 
 it('dev proxies a custom server port, enforces browser origin and stops both children gracefully', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'leaf-dev-test-'));
@@ -69,27 +163,29 @@ it('dev proxies a custom server port, enforces browser origin and stops both chi
       });
       current.once('close', resolve);
     });
-    let ready = false;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      if (failed || current.exitCode !== null || current.signalCode !== null)
-        throw new Error('Dev process exited early');
-      try {
-        if (
-          (
-            await fetch(`${devOrigin}/readyz`, {
-              signal: AbortSignal.timeout(200),
-            })
-          ).ok
-        ) {
-          ready = true;
-          break;
-        }
-      } catch {
-        /* Real process startup. */
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    expect(ready).toBe(true);
+    // Wait for actual readiness; cold CI startup can exceed the old 1.5s budget.
+    await expect
+      .poll(
+        async () => {
+          if (
+            failed ||
+            current.exitCode !== null ||
+            current.signalCode !== null
+          )
+            throw new Error('Dev process exited early');
+          try {
+            return (
+              await fetch(`${devOrigin}/readyz`, {
+                signal: AbortSignal.timeout(200),
+              })
+            ).ok;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 10_000, interval: 50 },
+      )
+      .toBe(true);
     expect((await fetch(devOrigin)).status).toBe(200);
     expect((await fetch(`${devOrigin}/api/projects`)).status).toBe(401);
     expect(

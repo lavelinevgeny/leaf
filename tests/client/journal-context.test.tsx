@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import {
+  changeJournalField,
+  expectJournalFieldValue,
+} from './journal-editor-helpers.js';
 import { act, renderHook, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '../../src/client/api.js';
@@ -7,7 +11,7 @@ import {
   type JournalContext,
 } from '../../src/client/use-journal.js';
 import { tree0, page5, deferred } from './journal-fixtures.js';
-import type { JournalPage } from '../../src/shared/journal-contracts.js';
+import type { JournalPageV2 as JournalPage } from '../../src/shared/journal-contracts-v2.js';
 const inactive: JournalContext = {
   status: 'inactive',
   reason: 'project-loading',
@@ -169,28 +173,28 @@ it('App no projects → create A → draft → loading B → B → A preserves R
   });
   render(<App />);
   await screen.findByLabelText('Пароль');
-  fireEvent.change(screen.getByLabelText('Пароль'), {
+  changeJournalField(screen.getByLabelText('Пароль'), {
     target: { value: 'synthetic-password' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
   await screen.findByText('Создайте первый проект.');
   expect(api.journalProject).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole('button', { name: 'Новый проект' }));
-  fireEvent.change(screen.getByLabelText('Название проекта'), {
+  changeJournalField(screen.getByLabelText('Название проекта'), {
     target: { value: 'Демо-проект' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Создать проект' }));
   await screen.findByRole('heading', { name: 'Демо-проект' });
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
-  fireEvent.change(await screen.findByLabelText('Текст записи'), {
+  changeJournalField(await screen.findByLabelText('Текст записи'), {
     target: { value: 'Project A private draft' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Закрыть панель' }));
   const late = deferred<ProjectTree>();
   vi.mocked(api.tree).mockReturnValueOnce(late.promise);
   await userEvent.click(screen.getByRole('button', { name: 'Новый проект' }));
-  fireEvent.change(screen.getByLabelText('Название проекта'), {
+  changeJournalField(screen.getByLabelText('Название проекта'), {
     target: { value: 'Synthetic B' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Создать проект' }));
@@ -211,7 +215,8 @@ it('App no projects → create A → draft → loading B → B → A preserves R
   await screen.findByRole('treeitem', { name: /Работа 1/ });
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
-  expect(await screen.findByLabelText('Текст записи')).toHaveValue(
+  expectJournalFieldValue(
+    await screen.findByLabelText('Текст записи'),
     'Project A private draft',
   );
   await userEvent.click(screen.getByRole('button', { name: 'Закрыть панель' }));
@@ -221,14 +226,14 @@ it('App no projects → create A → draft → loading B → B → A preserves R
   confirm.mockReturnValue(true);
   await userEvent.click(screen.getByRole('button', { name: 'Выйти' }));
   await screen.findByLabelText('Пароль');
-  fireEvent.change(screen.getByLabelText('Пароль'), {
+  changeJournalField(screen.getByLabelText('Пароль'), {
     target: { value: 'synthetic-password' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
   await screen.findByRole('treeitem', { name: /Работа 1/ });
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
-  expect(await screen.findByLabelText('Текст записи')).toHaveValue('');
+  expectJournalFieldValue(await screen.findByLabelText('Текст записи'), '');
   expect(api.journalCreate).not.toHaveBeenCalled();
 });
 it('authenticated journal401 clears all drafts and stale authenticated content before new login', async () => {
@@ -243,17 +248,17 @@ it('authenticated journal401 clears all drafts and stale authenticated content b
   await userEvent.click(
     screen.getByRole('button', { name: 'Сроки новой задачи' }),
   );
-  fireEvent.change(screen.getByRole('textbox', { name: /Длительность,/ }), {
+  changeJournalField(screen.getByRole('textbox', { name: /Длительность,/ }), {
     target: { value: '3' },
   });
   fireEvent.blur(screen.getByRole('textbox', { name: /Длительность,/ }));
-  fireEvent.change(screen.getByRole('textbox', { name: /Длительность,/ }), {
+  changeJournalField(screen.getByRole('textbox', { name: /Длительность,/ }), {
     target: { value: '3e' },
   });
   await userEvent.keyboard('{Escape}');
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
-  fireEvent.change(await screen.findByLabelText('Текст записи'), {
+  changeJournalField(await screen.findByLabelText('Текст записи'), {
     target: { value: 'Will be cleared on401' },
   });
   vi.mocked(api.journalProject).mockRejectedValueOnce(
@@ -262,7 +267,7 @@ it('authenticated journal401 clears all drafts and stale authenticated content b
   await act(async () => window.dispatchEvent(new Event('focus')));
   await screen.findByLabelText('Пароль');
   expect(screen.queryByText(journal5.body)).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('Пароль'), {
+  changeJournalField(screen.getByLabelText('Пароль'), {
     target: { value: 'synthetic-password' },
   });
   await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
@@ -270,7 +275,8 @@ it('authenticated journal401 clears all drafts and stale authenticated content b
   await userEvent.click(
     screen.getByRole('button', { name: 'Сроки новой задачи' }),
   );
-  expect(screen.getByRole('textbox', { name: /Длительность,/ })).toHaveValue(
+  expectJournalFieldValue(
+    screen.getByRole('textbox', { name: /Длительность,/ }),
     '1',
   );
   expect(screen.queryByText(/Длительность: Введите целое/)).toBeNull();
@@ -278,12 +284,12 @@ it('authenticated journal401 clears all drafts and stale authenticated content b
 
   await userEvent.click(screen.getByRole('treeitem', { name: /Работа 1/ }));
   await userEvent.click(document.getElementById('tab-journal')!);
-  expect(await screen.findByLabelText('Текст записи')).toHaveValue('');
+  expectJournalFieldValue(await screen.findByLabelText('Текст записи'), '');
 });
 import type {
-  JournalEntryRead,
-  JournalMutation,
-} from '../../src/shared/journal-contracts.js';
+  JournalEntryReadV2 as JournalEntryRead,
+  JournalMutationV2 as JournalMutation,
+} from '../../src/shared/journal-contracts-v2.js';
 it.each(['feed', 'metadata', 'write', 'entry'] as const)(
   'round1 same-session late401 from %s clears privacy after every read identity transition',
   async (source) => {

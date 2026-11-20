@@ -62,7 +62,9 @@ async function create(
 const taskId = (tree: ProjectTree, title: string) =>
   tree.tasks.find((t) => t.title === title)!.id;
 const picker = (page: Page) =>
-  page.getByRole('dialog', { name: 'После окончания', exact: true });
+  page.getByRole('dialog', {
+    name: /^(Добавить предшественника|Зависимости)$/,
+  });
 const panel = (page: Page) =>
   page.getByRole('complementary', { name: 'Задача', exact: true });
 const row = (page: Page, id: string) =>
@@ -182,7 +184,7 @@ test('subtask draft creates child plus edge atomically, retaining the main draft
   await choose(page, 'A');
   await expect(
     panel(page).getByRole('button', {
-      name: 'После окончания новой задачи',
+      name: /^Связи новой задачи:/,
       exact: true,
     }),
   ).toBeFocused();
@@ -369,7 +371,7 @@ test('C25 Details saves edited dates and new predecessor together with canonical
   expect(restored.dependencies).toEqual(tree.dependencies);
 });
 
-test('tree rows show the row action trigger without a chain in list, Gantt and subtask views', async ({
+test('tree rows share chain actions in list, Gantt and subtask views', async ({
   page,
   runtime,
 }) => {
@@ -382,9 +384,9 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     await page.getByRole('button', { name: view, exact: true }).click();
     await taskRow.hover();
     await expect(
-      taskRow.getByRole('button', { name: /^После окончания:/ }),
-    ).toHaveCount(0);
-    await expect(taskRow.locator('.task-row-actions-inner')).toHaveCSS(
+      taskRow.getByRole('button', { name: 'Зависимости: B', exact: true }),
+    ).toHaveCount(1);
+    await expect(taskRow.locator('.task-row-actions-secondary')).toHaveCSS(
       'opacity',
       '1',
     );
@@ -392,8 +394,8 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     await taskRow.press('Alt+l');
     await expect(picker(page)).toHaveCount(0);
     await expect(
-      taskRow.getByRole('button', { name: /^После окончания:/ }),
-    ).toHaveCount(0);
+      taskRow.getByRole('button', { name: 'Зависимости: B', exact: true }),
+    ).toHaveCount(1);
   }
   const ganttRow = page.locator(`[data-gantt-row="${taskId(tree, 'B')}"]`);
   await ganttRow.hover();
@@ -415,9 +417,9 @@ test('tree rows show the row action trigger without a chain in list, Gantt and s
     .locator(`[data-task-id="${taskId(tree, 'B')}"]`);
   await subtaskRow.hover();
   await expect(
-    subtaskRow.getByRole('button', { name: /^После окончания:/ }),
-  ).toHaveCount(0);
-  await expect(subtaskRow.locator('.task-row-actions-inner')).toHaveCSS(
+    subtaskRow.getByRole('button', { name: 'Зависимости: B', exact: true }),
+  ).toHaveCount(1);
+  await expect(subtaskRow.locator('.task-row-actions-secondary')).toHaveCSS(
     'opacity',
     '1',
   );
@@ -794,7 +796,10 @@ test('uncertain create applies on server, blocks draft, then exact retry acknowl
   await expect(row(page, taskId(applied, 'B'))).toHaveCount(0);
   await page.getByRole('button', { name: 'Повторить', exact: true }).click();
   await expect(title).toHaveValue('');
-  await expect(title).toBeFocused();
+  await expect(title).not.toBeFocused();
+  expect(
+    await page.evaluate(() => document.activeElement === document.body),
+  ).toBe(true);
   expect(envelopes).toHaveLength(2);
   expect(envelopes[1]).toEqual(envelopes[0]);
   const confirmed = await readTree(page, runtime.origin, tree.project.id);
@@ -1064,7 +1069,7 @@ test('bounded keyboard results and dynamic picker growth stay visible near viewp
   await search.press('Escape');
   await expect(
     page.getByRole('button', {
-      name: 'После окончания новой задачи',
+      name: /^Связи новой задачи:/,
       exact: true,
     }),
   ).toBeFocused();
@@ -1408,7 +1413,9 @@ test('C25 graph saves title source incoming in one revision and Undo; cycle enve
   await openIncoming(page);
   await choose(page, 'A');
   await expect(
-    panel(page).getByText('Не сохранено', { exact: true }),
+    panel(page)
+      .locator('.dependency-card')
+      .getByText('Не сохранено', { exact: true }),
   ).toBeVisible();
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
   const reply = await save(page);
@@ -1462,6 +1469,186 @@ test('C25 graph saves title source incoming in one revision and Undo; cycle enve
   );
   expect(rejected).toEqual(reverse);
 });
+
+test('row chain add/delete acknowledgement preserves global Undo and layered subtree Escape', async ({
+  page,
+  runtime,
+}) => {
+  let tree = await project(page, runtime);
+  tree = await create(page, runtime, tree, 'P');
+  tree = await create(page, runtime, tree, 'A', taskId(tree, 'P'));
+  tree = await create(page, runtime, tree, 'B', taskId(tree, 'P'));
+  await show(page);
+  const chain = row(page, taskId(tree, 'B')).getByRole('button', {
+    name: 'Зависимости: B',
+  });
+  async function add() {
+    await chain.focus();
+    await chain.press('Enter');
+    const search = picker(page).getByRole('searchbox');
+    await search.fill('A');
+    await search.press('Enter');
+    await expect(picker(page)).toHaveCount(0);
+    await expect(chain).toBeFocused();
+  }
+  for (const modifier of ['Control', 'Meta']) {
+    await add();
+    await chain.press(`${modifier}+z`);
+    await expect
+      .poll(
+        async () =>
+          (await readTree(page, runtime.origin, tree.project.id)).dependencies
+            .length,
+      )
+      .toBe(0);
+    await expect(chain).toHaveAttribute('data-count', '0');
+    await expect(chain).toBeFocused();
+    await add();
+    await chain.press('Enter');
+    await picker(page)
+      .getByRole('button', { name: 'Убрать предшественника: A' })
+      .click();
+    await expect(picker(page)).toHaveCount(0);
+    await expect(chain).toBeFocused();
+    await chain.press(`${modifier}+z`);
+    await expect
+      .poll(
+        async () =>
+          (await readTree(page, runtime.origin, tree.project.id)).dependencies
+            .length,
+      )
+      .toBe(1);
+    await expect(chain).toHaveAttribute('data-count', '1');
+    await expect(chain).toBeFocused();
+    // Reset the existing edge by another acknowledged delete for the next keyboard case.
+    await chain.press('Enter');
+    await picker(page)
+      .getByRole('button', { name: 'Убрать предшественника: A' })
+      .click();
+    await expect(picker(page)).toHaveCount(0);
+    await expect(chain).toHaveAttribute('data-count', '0');
+    await expect(chain).toBeFocused();
+  }
+  await row(page, taskId(tree, 'P')).click();
+  const subtreeChain = panel(page).getByRole('button', {
+    name: 'Зависимости: B',
+  });
+  await subtreeChain.focus();
+  await subtreeChain.press('Enter');
+  await picker(page).getByRole('searchbox').press('Escape');
+  await expect(subtreeChain).toBeFocused();
+  await subtreeChain.press('Escape');
+  await expect(panel(page)).toHaveCount(0);
+  for (const action of ['Добавить подзадачу: B', 'Добавить запись: B']) {
+    await row(page, taskId(tree, 'P')).click();
+    const button = panel(page).getByRole('button', { name: action });
+    await button.focus();
+    await button.press('Escape');
+    await expect(panel(page)).toHaveCount(0);
+  }
+});
+
+for (const mode of [
+  'owned',
+  'close',
+  'outside-focus',
+  'outside-pointer',
+  'delete',
+] as const)
+  test(`graph outgoing exact retry preserves picker ownership: ${mode}`, async ({
+    page,
+    runtime,
+  }) => {
+    let tree = await project(page, runtime);
+    for (const name of ['A', 'B'])
+      tree = await create(page, runtime, tree, name);
+    if (mode === 'delete')
+      tree = await send(page, runtime.origin, tree, {
+        type: 'dependency.create',
+        predecessorId: taskId(tree, 'A'),
+        successorId: taskId(tree, 'B'),
+      });
+    const before = tree;
+    await show(page);
+    await row(page, taskId(tree, 'A')).click();
+    await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+    const trigger = panel(page).getByRole('button', {
+      name: 'Добавить последователя',
+      exact: true,
+    });
+    await trigger.click();
+    const dialog = page.getByRole('dialog', {
+      name: 'Добавить последователя',
+      exact: true,
+    });
+    await dialog.getByRole('searchbox').fill('B');
+    const envelopes: unknown[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/projects/*/commands', async (route) => {
+      envelopes.push(route.request().postDataJSON());
+      const reply = await route.fetch();
+      expect(reply.status()).toBe(200);
+      if (envelopes.length === 1) await route.abort('failed');
+      else {
+        await held;
+        await route.fulfill({ response: reply });
+      }
+    });
+    if (mode === 'delete')
+      await dialog
+        .getByRole('button', { name: 'Убрать последователя: B' })
+        .click();
+    else await dialog.getByRole('searchbox').press('Enter');
+    const retry = page.getByRole('button', { name: 'Повторить', exact: true });
+    await expect(retry).toBeVisible();
+    expect(
+      (await readTree(page, runtime.origin, tree.project.id)).project.revision,
+    ).toBe(before.project.revision + 1);
+    if (mode === 'close') {
+      await dialog
+        .getByRole('button', { name: 'Закрыть выбор последователей' })
+        .click();
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeDisabled();
+    }
+    await retry.click();
+    await expect.poll(() => envelopes.length).toBe(2);
+    await expect(trigger).toBeDisabled();
+    if (mode.startsWith('outside')) {
+      const outside = page.getByRole('searchbox', { name: 'Поиск задач' });
+      if (mode === 'outside-pointer') await outside.click();
+      else await outside.focus();
+      await outside.blur();
+    }
+    release();
+    await expect(trigger).toBeEnabled();
+    expect(envelopes).toHaveLength(2);
+    expect(envelopes[1]).toEqual(envelopes[0]);
+    const after = await readTree(page, runtime.origin, tree.project.id);
+    expect(after.project.revision).toBe(before.project.revision + 1);
+    expect(after.dependencies).toHaveLength(mode === 'delete' ? 0 : 1);
+    if (mode === 'delete') {
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('searchbox')).toHaveValue('B');
+      await expect(
+        dialog.getByRole('button', { name: 'Убрать последователя: B' }),
+      ).toHaveCount(0);
+      await dialog
+        .getByRole('button', { name: 'Закрыть выбор последователей' })
+        .click();
+    } else {
+      await expect(dialog).toHaveCount(0);
+      if (mode.startsWith('outside')) await expect(trigger).not.toBeFocused();
+      else await expect(trigger).toBeFocused();
+    }
+    await page.unroute('**/api/projects/*/commands');
+    const undone = await send(page, runtime.origin, after, { type: 'undo' });
+    expect(undone.tasks).toEqual(before.tasks);
+    expect(undone.dependencies).toEqual(before.dependencies);
+  });
 
 for (const direction of ['incoming', 'outgoing'] as const)
   test(`graph ${direction} lost response exact retry resolves frozen ack and refreshes newer tree without another write`, async ({
@@ -1539,6 +1726,20 @@ for (const direction of ['incoming', 'outgoing'] as const)
       latest,
     );
     await expect(row(page, c)).toContainText('C newer');
+    if (direction === 'outgoing')
+      await expect(
+        page.getByRole('dialog', {
+          name: 'Добавить последователя',
+          exact: true,
+        }),
+      ).toHaveCount(0);
+    if (direction === 'outgoing')
+      await expect(
+        panel(page).getByRole('button', {
+          name: 'Добавить последователя',
+          exact: true,
+        }),
+      ).toBeFocused();
     // Busy/uncertain locks intentionally prevent a new local draft until retry resolves.
     await expect(
       panel(page).getByRole('button', {
@@ -1549,7 +1750,9 @@ for (const direction of ['incoming', 'outgoing'] as const)
     await openIncoming(page);
     await choose(page, direction === 'incoming' ? 'C newer' : 'A');
     await expect(
-      panel(page).getByText('Не сохранено', { exact: true }),
+      panel(page)
+        .locator('.dependency-card')
+        .getByText('Не сохранено', { exact: true }),
     ).toBeVisible();
     await expect(
       panel(page).getByRole('button', { name: 'Сохранить', exact: true }),
@@ -1597,6 +1800,46 @@ test('fan-in and fan-out arrows meet their real cards with visible arrowheads', 
     const screenshot = await graph.screenshot({
       path: `/tmp/leaf-task4-geometry-${info.project.name}-${viewport.width}.png`,
     });
+    const sections = await graph
+      .locator('.dependency-section-header')
+      .evaluateAll((headers) =>
+        headers.map((header) => {
+          const bounds = header.getBoundingClientRect(),
+            graph = header.parentElement!.getBoundingClientRect();
+          const add = header
+            .querySelector<HTMLButtonElement>('button[aria-label^="Добавить"]')!
+            .getBoundingClientRect();
+          const card = header
+            .parentElement!.querySelector<HTMLElement>(
+              header === headers[0]
+                ? '[data-dependency-direction="incoming"]'
+                : '[data-dependency-direction="outgoing"]',
+            )!
+            .getBoundingClientRect();
+          return {
+            label: header.querySelector('span')!.textContent,
+            left: bounds.left - graph.left,
+            right: graph.right - bounds.right,
+            height: bounds.height,
+            cardInset: card.top - bounds.top,
+            addRight: graph.right - add.right,
+            addWidth: add.width,
+            addHeight: add.height,
+          };
+        }),
+      );
+    expect(sections).toHaveLength(2);
+    expect(sections[0]!.label).toBe('Предшественники (2)');
+    expect(sections[1]!.label).toBe('Последователи (2)');
+    for (const section of sections) {
+      expect(section.height).toBe(36);
+      expect(section.cardInset).toBe(44);
+      expect(section.addWidth).toBeGreaterThanOrEqual(28);
+      expect(section.addHeight).toBeGreaterThanOrEqual(28);
+    }
+    expect(sections[0]!.left).toBe(sections[1]!.left);
+    expect(sections[0]!.right).toBe(sections[1]!.right);
+    expect(sections[0]!.addRight).toBe(sections[1]!.addRight);
     const geometry = await graph.evaluate((element, edges) => {
       const graph = element.getBoundingClientRect();
       function card(title: string) {
@@ -1696,4 +1939,96 @@ test('fan-in and fan-out arrows meet their real cards with visible arrowheads', 
         expect(brightness, geometry[index]!.label).toBeLessThan(220);
   }
   expect(await readTree(page, runtime.origin, tree.project.id)).toEqual(tree);
+});
+
+test('five-neighbor graph paging keeps unsaved section headers inside the narrow graph', async ({
+  page,
+  runtime,
+}, info) => {
+  let tree = await project(page, runtime);
+  for (const title of [
+    'T',
+    'P0',
+    'P1',
+    'P2',
+    'P3',
+    'P4',
+    'S0',
+    'S1',
+    'S2',
+    'S3',
+    'S4',
+  ])
+    tree = await create(page, runtime, tree, title);
+  for (let index = 0; index < 5; index++) {
+    tree = await send(page, runtime.origin, tree, {
+      type: 'dependency.create',
+      predecessorId: taskId(tree, `P${index}`),
+      successorId: taskId(tree, 'T'),
+    });
+    tree = await send(page, runtime.origin, tree, {
+      type: 'dependency.create',
+      predecessorId: taskId(tree, 'T'),
+      successorId: taskId(tree, `S${index}`),
+    });
+  }
+  await page.setViewportSize({ width: 375, height: 812 });
+  await show(page);
+  await row(page, taskId(tree, 'T')).click();
+  await page.getByRole('tab', { name: 'Зависимости', exact: true }).click();
+  const graph = panel(page).locator('.dependency-graph');
+  const headers = graph.locator('.dependency-section-header');
+  const incoming = graph.locator('[data-dependency-direction="incoming"]');
+  const outgoing = graph.locator('[data-dependency-direction="outgoing"]');
+  await expect(incoming).toHaveCount(4);
+  await expect(outgoing).toHaveCount(4);
+  await headers
+    .nth(0)
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(incoming).toHaveCount(1);
+  await expect(outgoing).toHaveCount(4);
+  await headers
+    .nth(1)
+    .getByRole('button', { name: 'Показать ещё', exact: true })
+    .click();
+  await expect(outgoing).toHaveCount(1);
+  const deletion = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/commands') &&
+      response.request().method() === 'POST',
+  );
+  await outgoing.getByRole('button', { name: /^Удалить связь:/ }).click();
+  expect((await deletion).status()).toBe(200);
+  await expect(outgoing).toHaveCount(4);
+  await expect(incoming).toHaveCount(1);
+  await incoming.getByRole('button', { name: /^Удалить связь:/ }).click();
+  await expect(
+    incoming.getByText('Ожидает удаления', { exact: true }),
+  ).toBeVisible();
+  const geometry = await headers.evaluateAll((headers) =>
+    headers.map((header) => {
+      const bounds = header.getBoundingClientRect(),
+        label = header.querySelector('span')!.getBoundingClientRect();
+      return {
+        height: bounds.height,
+        labelTop: label.top - bounds.top,
+        labelBottom: label.bottom - bounds.top,
+      };
+    }),
+  );
+  for (const section of geometry) {
+    expect(section.height).toBe(36);
+    expect(section.labelTop).toBeGreaterThanOrEqual(0);
+    expect(section.labelBottom).toBeLessThanOrEqual(36);
+  }
+  await expect(headers.nth(0)).toHaveText(/\(4\).*Не сохранено/);
+  await expect(headers.nth(1)).toHaveText(/\(4\)/);
+  await expect(graph.locator('.dependency-card.current')).toHaveCount(1);
+  await graph.screenshot({
+    path: `/tmp/leaf-task2-five-${info.project.name}.png`,
+  });
+  const saved = await readTree(page, runtime.origin, tree.project.id);
+  expect(saved.project.revision).toBe(tree.project.revision + 1);
+  expect(saved.dependencies).toHaveLength(9);
 });

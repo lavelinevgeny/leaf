@@ -1,5 +1,5 @@
 import { uuidSchema } from '../shared/contracts.js';
-export type ProjectView = 'tasks' | 'journal';
+export type ProjectView = 'tasks' | 'current' | 'journal';
 export type WorkspaceVisit = {
   projectId: string;
   view: ProjectView;
@@ -15,7 +15,7 @@ export function parseWorkspaceUrl(url: URL): WorkspaceVisit | null {
   if (
     !uuidSchema.safeParse(projectId).success ||
     (taskId !== null && !uuidSchema.safeParse(taskId).success) ||
-    !['tasks', 'journal'].includes(view) ||
+    !['tasks', 'current', 'journal'].includes(view) ||
     !['details', 'subtasks', 'dependencies', 'journal'].includes(panel)
   )
     return null;

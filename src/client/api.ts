@@ -1,13 +1,24 @@
 import {
-  journalPageSchema,
-  journalEntryReadSchema,
+  journalPageV2Schema,
+  journalEntryReadV2Schema,
+  journalMutationV2Schema,
+  type JournalCreateV2,
+  type JournalUpdateV2,
+  type JournalDeleteV2,
+} from '../shared/journal-contracts-v2.js';
+import {
   journalMutationSchema,
-  type JournalProjectQuery,
-  type JournalTaskQuery,
+  journalCreateSchema,
+  journalUpdateSchema,
+  journalDeleteSchema,
   type JournalCreate,
   type JournalUpdate,
   type JournalDelete,
+  type JournalProjectQuery,
+  type JournalTaskQuery,
 } from '../shared/journal-contracts.js';
+import { journalUploadReadySchema } from '../shared/journal-media-contracts.js';
+import { journalMediaUrl, type JournalUpload } from './journal-upload-state.js';
 import {
   errorSchema,
   projectSchema,
@@ -15,6 +26,7 @@ import {
   sessionSchema,
   type CommandEnvelope,
   type RenameProject,
+  uuidSchema,
 } from '../shared/contracts.js';
 import { z } from 'zod';
 import { strings } from './strings.js';
@@ -35,8 +47,13 @@ async function request<T>(
   method = 'GET',
   body?: unknown,
   replay = false,
+  uploadSignal?: AbortSignal,
+  journalContract: 1 | 2 = 2,
 ): Promise<T> {
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  uploadSignal?.addEventListener('abort', cancel, { once: true });
+  if (uploadSignal?.aborted) cancel();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
     const response = await fetch(`/api${path}`, {
@@ -47,13 +64,18 @@ async function request<T>(
         ...(path.startsWith('/projects')
           ? { 'X-Leaf-Contract-Version': '2' }
           : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(path.includes('/journal') && journalContract === 2
+          ? { 'X-Leaf-Journal-Contract-Version': '2' }
+          : {}),
+        ...(body === undefined || body instanceof FormData
+          ? {}
+          : { 'Content-Type': 'application/json' }),
         ...(replay ? { 'X-Leaf-Legacy-Replay': '1' } : {}),
       },
       ...(body === undefined
         ? {}
         : {
-            body: JSON.stringify(body),
+            body: body instanceof FormData ? body : JSON.stringify(body),
           }),
     });
     let value: unknown;
@@ -73,6 +95,7 @@ async function request<T>(
         error.success ? error.data.code : 'REQUEST_FAILED',
         error.success ? error.data.message : strings.genericError,
         response.status,
+        method !== 'GET' && response.status >= 500,
       );
     }
     const result = schema.safeParse(value);
@@ -89,6 +112,7 @@ async function request<T>(
     throw new ApiError('NETWORK_ERROR', strings.network, null, true);
   } finally {
     clearTimeout(timer);
+    uploadSignal?.removeEventListener('abort', cancel);
   }
 }
 function journalQuery(query: JournalProjectQuery | JournalTaskQuery) {
@@ -97,29 +121,125 @@ function journalQuery(query: JournalProjectQuery | JournalTaskQuery) {
     if (value !== undefined) fields.set(key, String(value));
   return fields.size ? `?${fields}` : '';
 }
+export type LegacyJournalRetry =
+  | { method: 'POST'; input: JournalCreate }
+  | { method: 'PATCH'; entryId: string; taskId: string; input: JournalUpdate }
+  | { method: 'DELETE'; entryId: string; input: JournalDelete };
+
+// Only an original v1 operation can use this compatibility path. Its frozen
+// acknowledgement is separate from live2 pending writes and current GET state.
+async function journalReplayLegacy(id: string, original: LegacyJournalRetry) {
+  uuidSchema.parse(id);
+  const retry = {
+    ...original,
+    input: { ...original.input },
+  } as LegacyJournalRetry;
+  if (retry.method !== 'POST') uuidSchema.parse(retry.entryId);
+  if (retry.method === 'PATCH') uuidSchema.parse(retry.taskId);
+  const schema =
+    retry.method === 'POST'
+      ? journalCreateSchema
+      : retry.method === 'PATCH'
+        ? journalUpdateSchema
+        : journalDeleteSchema;
+  // Validate without normalizing or rebuilding the original wire payload.
+  schema.parse(retry.input);
+  const result = await request(
+    `/projects/${id}/journal${retry.method === 'POST' ? '' : `/${retry.entryId}`}`,
+    journalMutationSchema,
+    retry.method,
+    retry.input,
+    false,
+    undefined,
+    1,
+  );
+  const matches =
+    result.projectId === id &&
+    result.journalRevision === retry.input.expectedJournalRevision + 1 &&
+    (retry.method === 'DELETE'
+      ? result.kind === 'deleted' && result.deletedEntryId === retry.entryId
+      : result.kind === 'saved' &&
+        result.entry.projectId === id &&
+        result.entry.taskId ===
+          (retry.method === 'POST' ? retry.input.taskId : retry.taskId) &&
+        (retry.method === 'POST' || result.entry.id === retry.entryId) &&
+        result.entry.workDate === retry.input.workDate &&
+        result.entry.body === retry.input.body);
+  if (!matches)
+    throw new ApiError('INVALID_RESPONSE', strings.genericError, 200, true);
+  return result;
+}
 export const api = {
+  journalReplayLegacy,
+  journalMediaRead: async (
+    projectId: string,
+    taskId: string,
+    mediaId: string,
+    download = false,
+    signal?: AbortSignal,
+  ): Promise<Blob> => {
+    const response = await fetch(
+      journalMediaUrl(projectId, taskId, mediaId, download),
+      { credentials: 'same-origin', ...(signal ? { signal } : {}) },
+    );
+    if (!response.ok)
+      throw new ApiError(
+        'MEDIA_READ_FAILED',
+        'Вложение недоступно.',
+        response.status,
+      );
+    return response.blob();
+  },
+  journalUpload: async (
+    id: string,
+    taskId: string,
+    upload: Pick<JournalUpload, 'uploadId' | 'kind' | 'file'>,
+    signal?: AbortSignal,
+  ) => {
+    const form = new FormData();
+    form.set('uploadId', upload.uploadId);
+    form.set('kind', upload.kind);
+    form.set('file', upload.file);
+    const result = await request(
+      `/projects/${id}/tasks/${taskId}/journal-media`,
+      journalUploadReadySchema,
+      'POST',
+      form,
+      false,
+      signal,
+    );
+    if (
+      result.uploadId !== upload.uploadId ||
+      result.media.kind !== upload.kind
+    )
+      throw new ApiError('INVALID_RESPONSE', strings.genericError, 201, true);
+    return result;
+  },
   journalProject: (id: string, query: JournalProjectQuery) =>
-    request(`/projects/${id}/journal${journalQuery(query)}`, journalPageSchema),
+    request(
+      `/projects/${id}/journal${journalQuery(query)}`,
+      journalPageV2Schema,
+    ),
   journalTask: (id: string, taskId: string, query: JournalTaskQuery) =>
     request(
       `/projects/${id}/tasks/${taskId}/journal${journalQuery(query)}`,
-      journalPageSchema,
+      journalPageV2Schema,
     ),
   journalEntry: (id: string, entryId: string) =>
-    request(`/projects/${id}/journal/${entryId}`, journalEntryReadSchema),
-  journalCreate: (id: string, input: JournalCreate) =>
-    request(`/projects/${id}/journal`, journalMutationSchema, 'POST', input),
-  journalUpdate: (id: string, entryId: string, input: JournalUpdate) =>
+    request(`/projects/${id}/journal/${entryId}`, journalEntryReadV2Schema),
+  journalCreate: (id: string, input: JournalCreateV2) =>
+    request(`/projects/${id}/journal`, journalMutationV2Schema, 'POST', input),
+  journalUpdate: (id: string, entryId: string, input: JournalUpdateV2) =>
     request(
       `/projects/${id}/journal/${entryId}`,
-      journalMutationSchema,
+      journalMutationV2Schema,
       'PATCH',
       input,
     ),
-  journalDelete: (id: string, entryId: string, input: JournalDelete) =>
+  journalDelete: (id: string, entryId: string, input: JournalDeleteV2) =>
     request(
       `/projects/${id}/journal/${entryId}`,
-      journalMutationSchema,
+      journalMutationV2Schema,
       'DELETE',
       input,
     ),
